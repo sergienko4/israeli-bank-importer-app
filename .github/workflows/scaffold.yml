@@ -1,0 +1,43 @@
+name: Scaffold Expo app (one-shot)
+
+# One-shot, self-deleting bootstrap. Local npm is unavailable in the authoring
+# environment, so the initial Expo blank-typescript scaffold (with a version-
+# correct lockfile) is generated here by Expo's own tooling, committed to main,
+# and then this workflow removes itself so it never runs again.
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/scaffold.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Generate Expo blank-typescript app
+        env:
+          CI: '1'
+        run: |
+          npx --yes create-expo-app@latest _scaffold --template blank-typescript
+          rm -rf _scaffold/.git _scaffold/node_modules
+          shopt -s dotglob
+          cp -rf _scaffold/* .
+          rm -rf _scaffold
+          echo "Scaffolded expo version:"
+          node -e "console.log(require('./package.json').dependencies.expo)"
+      - name: Commit scaffold and remove this workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm --quiet .github/workflows/scaffold.yml
+          git add -A
+          git commit -m 'chore: scaffold Expo blank-typescript app'
+          git push origin HEAD:main

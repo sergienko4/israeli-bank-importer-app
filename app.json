@@ -1,15 +1,18 @@
 {
   "expo": {
-    "name": "_scaffold",
-    "slug": "_scaffold",
-    "version": "1.0.0",
+    "name": "Israeli Bank Importer",
+    "slug": "israeli-bank-importer-app",
+    "version": "0.1.0",
+    "scheme": "bankimporter",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sergienko4.israelibankimporter"
     },
     "android": {
+      "package": "com.sergienko4.israelibankimporter",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

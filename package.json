@@ -1,6 +1,6 @@
 {
-  "name": "scaffold",
-  "version": "1.0.0",
+  "name": "israeli-bank-importer-app",
+  "version": "0.1.0",
   "main": "index.ts",
   "dependencies": {
     "expo": "~57.0.8",
@@ -16,7 +16,10 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "export": "expo export --platform android --platform ios"
   },
   "private": true
 }

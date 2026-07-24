@@ -29,6 +29,8 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
+      - name: Test
+        run: npm test
       - name: Expo Doctor (advisory)
         run: npx --yes expo-doctor@latest
         continue-on-error: true

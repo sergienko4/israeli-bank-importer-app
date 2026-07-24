@@ -26,6 +26,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "test": "jest",
     "export": "expo export --platform android --platform ios"
   },
   "private": true

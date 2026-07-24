@@ -1,0 +1,47 @@
+name: EAS Build
+
+# Release DAG tail: on a release tag (created when the release-please PR merges),
+# build the app with EAS. Self-skips until an EXPO_TOKEN repository secret exists,
+# so the workflow stays green before EAS is configured.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: EAS production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping EAS build. Add it in repo settings to enable device builds."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v4
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - if: steps.guard.outputs.run == 'true'
+        run: npm ci
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Build (all platforms, production profile)
+        run: eas build --platform all --profile production --non-interactive --no-wait

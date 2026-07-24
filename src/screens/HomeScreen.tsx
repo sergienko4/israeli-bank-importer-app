@@ -10,7 +10,7 @@ import { useAuth } from '../auth/AuthContext';
  * Shows the active connection and a disconnect action.
  * @returns The home screen element.
  */
-export function HomeScreen(): React.JSX.Element {
+export function HomeScreen() {
   const { connection, disconnect } = useAuth();
   return (
     <View style={styles.container}>

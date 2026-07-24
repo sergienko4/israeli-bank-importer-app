@@ -13,7 +13,7 @@ import { useAuth } from '../auth/AuthContext';
  * Renders the connect form and drives the connect action.
  * @returns The connect screen element.
  */
-export function ConnectScreen(): React.JSX.Element {
+export function ConnectScreen() {
   const { connect } = useAuth();
   const [baseUrl, setBaseUrl] = useState('');
   const [password, setPassword] = useState('');

@@ -27,7 +27,7 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
  * @param props - Children to render inside the provider.
  * @returns The provider element.
  */
-export function AuthProvider({ children }: { children: ReactNode }): React.JSX.Element {
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
 

@@ -10,7 +10,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
  * saved connection, then the home screen when connected or the connect form.
  * @returns The active screen element.
  */
-function Root(): React.JSX.Element {
+function Root() {
   const { status } = useAuth();
   if (status === 'loading') {
     return (
@@ -26,7 +26,7 @@ function Root(): React.JSX.Element {
  * App entry point: wraps the tree in the auth provider.
  * @returns The root app element.
  */
-export default function App(): React.JSX.Element {
+export default function App() {
   return (
     <AuthProvider>
       <StatusBar style="auto" />

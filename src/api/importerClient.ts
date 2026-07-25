@@ -172,3 +172,33 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   const data = (await res.json()) as { runs?: RunEntry[] };
   return Array.isArray(data.runs) ? data.runs : [];
 }
+
+/**
+ * Registers this device's Expo push token via `POST /api/devices`.
+ * @param session - The active session.
+ * @param token - The Expo push token.
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function registerDevice(session: Session, token: string): Promise<SaveResult> {
+  const res = await authed(session, '/api/devices', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Unregisters this device's Expo push token via `DELETE /api/devices`.
+ * @param session - The active session.
+ * @param token - The Expo push token.
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
+  const res = await authed(session, '/api/devices', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}

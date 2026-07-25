@@ -5,6 +5,7 @@
  */
 
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
+import type { RunEntry } from './status';
 
 /**
  * Normalizes a user-typed address to an origin with a scheme and no trailing
@@ -152,4 +153,22 @@ export async function saveConfig(session: Session, config: ConfigObject): Promis
 export async function removeBank(session: Session, name: string): Promise<SaveResult> {
   const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, { method: 'DELETE' });
   return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Loads the recent import runs (redacted per-bank summaries) via `GET /api/status`.
+ * @param session - The active session.
+ * @returns The recent runs, most recent last (may be empty).
+ * @throws Error when unauthorized or the request fails.
+ */
+export async function getStatus(session: Session): Promise<RunEntry[]> {
+  const res = await authed(session, '/api/status');
+  if (res.status === 401) {
+    throw new Error('Session expired. Please reconnect.');
+  }
+  if (!res.ok) {
+    throw new Error(`Could not load status (${String(res.status)}).`);
+  }
+  const data = (await res.json()) as { runs?: RunEntry[] };
+  return Array.isArray(data.runs) ? data.runs : [];
 }

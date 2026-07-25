@@ -9,8 +9,9 @@ import { Button, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth/AuthContext';
 import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
+import { StatusScreen } from './StatusScreen';
 
-type Screen = 'home' | 'config' | 'banks';
+type Screen = 'home' | 'config' | 'banks' | 'status';
 
 /**
  * Shows the connection summary and routes to the editors.
@@ -26,6 +27,9 @@ export function HomeScreen() {
   if (screen === 'banks') {
     return <BanksScreen onBack={() => { setScreen('home'); }} />;
   }
+  if (screen === 'status') {
+    return <StatusScreen onBack={() => { setScreen('home'); }} />;
+  }
 
   return (
     <View style={styles.container}>
@@ -36,6 +40,9 @@ export function HomeScreen() {
       </View>
       <View style={styles.button}>
         <Button title="Manage banks" onPress={() => { setScreen('banks'); }} />
+      </View>
+      <View style={styles.button}>
+        <Button title="Import status" onPress={() => { setScreen('status'); }} />
       </View>
       <View style={styles.button}>
         <Button title="Disconnect" color="#b00020" onPress={() => { void disconnect(); }} />

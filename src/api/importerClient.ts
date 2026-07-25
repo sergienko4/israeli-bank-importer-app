@@ -4,6 +4,8 @@
  * All calls target the user's own importer over their private network.
  */
 
+import type { ConfigObject, Manifest, SaveResult } from './manifest';
+
 /**
  * Normalizes a user-typed address to an origin with a scheme and no trailing
  * slash, so `host:8080`, `http://host:8080`, and `http://host:8080/` all resolve
@@ -58,4 +60,112 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   }
   const data = (await res.json()) as { authorized?: unknown };
   return data.authorized === true;
+}
+
+/** An authenticated importer session (base URL + bearer token). */
+export interface Session {
+  baseUrl: string;
+  token: string;
+}
+
+/**
+ * Performs an authenticated request against the importer, attaching the bearer.
+ * @param session - The active session.
+ * @param path - The API path (e.g. `/api/config`).
+ * @param init - Optional fetch init (method, body, headers).
+ * @returns The fetch Response.
+ */
+async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = {
+    ...(init.headers as Record<string, string> | undefined),
+    authorization: `Bearer ${session.token}`,
+  };
+  return fetch(`${normalizeBaseUrl(session.baseUrl)}${path}`, { ...init, headers });
+}
+
+/**
+ * Loads the config manifest (sections, banks, per-bank requirements).
+ * @param session - The active session.
+ * @returns The manifest.
+ * @throws Error when the request fails.
+ */
+export async function getManifest(session: Session): Promise<Manifest> {
+  const res = await authed(session, '/api/manifest');
+  if (!res.ok) {
+    throw new Error(`Could not load the manifest (${String(res.status)}).`);
+  }
+  return (await res.json()) as Manifest;
+}
+
+/**
+ * Loads the current (masked) importer config.
+ * @param session - The active session.
+ * @returns The config object.
+ * @throws Error when unauthorized or the request fails.
+ */
+export async function getConfig(session: Session): Promise<ConfigObject> {
+  const res = await authed(session, '/api/config');
+  if (res.status === 401) {
+    throw new Error('Session expired. Please reconnect.');
+  }
+  if (!res.ok) {
+    throw new Error(`Could not load the config (${String(res.status)}).`);
+  }
+  return (await res.json()) as ConfigObject;
+}
+
+/**
+ * Reads a non-ok response body defensively into a failure result.
+ * @param res - A non-ok response.
+ * @returns A failure SaveResult with the importer's message + errors when present.
+ */
+async function toFailure(res: Response): Promise<SaveResult> {
+  const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
+  return {
+    ok: false,
+    error: data.error ?? `Request failed (${String(res.status)}).`,
+    errors: data.errors,
+  };
+}
+
+/**
+ * Persists a full config via `PUT /api/config`, surfacing validation errors.
+ * @param session - The active session.
+ * @param config - The config object to save.
+ * @returns Success, or a failure carrying the importer's validation errors.
+ */
+export async function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
+  const res = await authed(session, '/api/config', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Adds a bank via `POST /api/banks/:name`.
+ * @param session - The active session.
+ * @param name - The bank id.
+ * @param bank - The new bank's config.
+ * @returns Success or a failure with validation errors.
+ */
+export async function addBank(session: Session, name: string, bank: ConfigObject): Promise<SaveResult> {
+  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(bank),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Removes a bank via `DELETE /api/banks/:name`.
+ * @param session - The active session.
+ * @param name - The bank id to remove.
+ * @returns Success or a failure with validation errors.
+ */
+export async function removeBank(session: Session, name: string): Promise<SaveResult> {
+  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  return res.ok ? { ok: true } : toFailure(res);
 }

@@ -1,0 +1,35 @@
+name: Setup push deps (one-shot)
+
+# One-shot, self-deleting. Adds expo-notifications, expo-device and expo-constants
+# at SDK-correct versions and syncs the lockfile on clean CI npm (npm is blocked
+# in the authoring environment). Removes itself when done.
+
+on:
+  push:
+    branches: [feat/push-notifications]
+    paths: ['.github/workflows/setup-push-deps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install current dependencies
+        run: npm install
+      - name: Add push runtime deps (Expo-resolved versions)
+        run: npx --yes expo install expo-notifications expo-device expo-constants
+      - name: Commit synced manifests and remove this workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm --quiet .github/workflows/setup-push-deps.yml
+          git add package.json package-lock.json app.json
+          git commit -m 'chore: add expo-notifications/device/constants'
+          git push origin HEAD:feat/push-notifications

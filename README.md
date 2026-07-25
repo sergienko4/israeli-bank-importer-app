@@ -64,10 +64,26 @@ Useful scripts:
 
 ## Roadmap
 
-- **Phase 1** — connect + log in (bearer token in `expo-secure-store`).
-- **Phase 2** — manifest-driven config editing (mirror the web portal).
-- **Phase 3** — read-only import status / logs.
-- **Phase 4** — native push notifications on import completion.
+- ✅ **Phase 1** — connect + log in (bearer token in `expo-secure-store`).
+- ✅ **Phase 2** — manifest-driven config editing + banks/targets (mirrors the web portal).
+- ✅ **Phase 3** — read-only import status from the importer's audit log.
+- ✅ **Phase 4** — native push notifications on import completion (deep-links to status).
+
+## Releasing a beta
+
+The release pipeline is already wired (`release-please` → tag → EAS build). To cut
+device builds and distribute a beta, one-time setup is needed:
+
+1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
+   secret (Settings → Secrets and variables → Actions) — this unlocks
+   `eas-build.yml`.
+2. Run **`eas init`** once locally to link the project (writes `extra.eas.projectId`
+   into `app.json`); this id is also what the app uses to mint push tokens.
+3. Add your **Apple Developer** ($99/yr) and/or **Google Play** ($25) accounts to
+   EAS for signing + store submission.
+4. Merge the open **`release-please`** PR to tag a release; the tag triggers an EAS
+   build. Distribute via **TestFlight** (iOS) / **Play internal testing** (Android),
+   or run `eas build` / `eas submit` directly.
 
 ## License
 

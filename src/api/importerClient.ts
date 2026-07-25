@@ -144,22 +144,6 @@ export async function saveConfig(session: Session, config: ConfigObject): Promis
 }
 
 /**
- * Adds a bank via `POST /api/banks/:name`.
- * @param session - The active session.
- * @param name - The bank id.
- * @param bank - The new bank's config.
- * @returns Success or a failure with validation errors.
- */
-export async function addBank(session: Session, name: string, bank: ConfigObject): Promise<SaveResult> {
-  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(bank),
-  });
-  return res.ok ? { ok: true } : toFailure(res);
-}
-
-/**
  * Removes a bank via `DELETE /api/banks/:name`.
  * @param session - The active session.
  * @param name - The bank id to remove.

@@ -1,5 +1,5 @@
 import {
-  addBank, getConfig, getManifest, removeBank, saveConfig, type Session,
+  getConfig, getManifest, removeBank, saveConfig, type Session,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
@@ -90,15 +90,7 @@ describe('saveConfig', () => {
   });
 });
 
-describe('addBank / removeBank', () => {
-  it('POSTs a new bank to the encoded name', async () => {
-    stubFetch(200, { ok: true });
-    const result = await addBank(session, 'leumi', { username: 'u' });
-    expect(result.ok).toBe(true);
-    expect(calls[0].url).toBe('http://host:8080/api/banks/leumi');
-    expect(calls[0].init?.method).toBe('POST');
-  });
-
+describe('removeBank', () => {
   it('DELETEs a bank', async () => {
     stubFetch(200, { ok: true });
     const result = await removeBank(session, 'discount');

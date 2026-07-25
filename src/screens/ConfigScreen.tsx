@@ -32,28 +32,42 @@ export function ConfigScreen({ onBack }: Props) {
   const [selected, setSelected] = useState<SectionDef | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
     if (!connection) {
-      return;
+      return undefined;
     }
-    setLoading(true);
-    setError(null);
-    try {
-      const [loadedManifest, loadedConfig] = await Promise.all([
-        getManifest(connection),
-        getConfig(connection),
-      ]);
-      setManifest(loadedManifest);
-      setConfig(loadedConfig);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load the config.');
-    } finally {
-      setLoading(false);
-    }
-  }, [connection]);
+    let active = true;
+    const run = async () => {
+      try {
+        const [loadedManifest, loadedConfig] = await Promise.all([
+          getManifest(connection),
+          getConfig(connection),
+        ]);
+        if (active) {
+          setManifest(loadedManifest);
+          setConfig(loadedConfig);
+        }
+      } catch (e) {
+        if (active) {
+          setError(e instanceof Error ? e.message : 'Failed to load the config.');
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+    void run();
+    return () => { active = false; };
+  }, [connection, reloadKey]);
 
-  useEffect(() => { void load(); }, [load]);
+  const reload = () => {
+    setError(null);
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
 
   const update = useCallback((path: string[], value: unknown) => {
     setConfig((current) => setAtPath(current, path, value));
@@ -81,7 +95,7 @@ export function ConfigScreen({ onBack }: Props) {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>{error}</Text>
-        <Button title="Retry" onPress={() => { void load(); }} />
+        <Button title="Retry" onPress={reload} />
         <Button title="Back" onPress={onBack} />
       </View>
     );

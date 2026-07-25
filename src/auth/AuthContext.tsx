@@ -6,7 +6,8 @@ import {
   createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState,
 } from 'react';
 
-import { requestToken } from '../api/importerClient';
+import { registerDevice, requestToken } from '../api/importerClient';
+import { getPushToken } from '../push/pushRegistration';
 import { clearConnection, type Connection, loadConnection, saveConnection } from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
@@ -21,6 +22,22 @@ export interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
+
+/**
+ * Best-effort push registration: mints an Expo push token and registers it with
+ * the importer. Never blocks or fails connecting — push is optional.
+ * @param session - The connection to register this device with.
+ */
+async function registerForPush(session: Connection): Promise<void> {
+  try {
+    const pushToken = await getPushToken();
+    if (pushToken) {
+      await registerDevice(session, pushToken);
+    }
+  } catch {
+    // Push is best-effort; a failure here never affects the connection.
+  }
+}
 
 /**
  * Provides connection state + actions, restoring any saved connection on mount.
@@ -48,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await saveConnection(next);
     setConnection(next);
     setStatus('connected');
+    void registerForPush(next);
   }, []);
 
   const disconnect = useCallback(async () => {

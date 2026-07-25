@@ -3,7 +3,8 @@
  * editor, the banks editor, or disconnect. Navigation is a simple screen enum
  * (no navigation library needed yet).
  */
-import { useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import { useEffect, useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
@@ -20,6 +21,13 @@ type Screen = 'home' | 'config' | 'banks' | 'status';
 export function HomeScreen() {
   const { connection, disconnect } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
+
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+      setScreen('status');
+    });
+    return () => { sub.remove(); };
+  }, []);
 
   if (screen === 'config') {
     return <ConfigScreen onBack={() => { setScreen('home'); }} />;

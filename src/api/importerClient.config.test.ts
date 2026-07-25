@@ -1,5 +1,5 @@
 import {
-  getConfig, getManifest, removeBank, saveConfig, type Session,
+  getConfig, getManifest, getStatus, removeBank, saveConfig, type Session,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
@@ -102,5 +102,22 @@ describe('removeBank', () => {
     stubFetch(400, { error: 'nope' });
     const result = await removeBank(session, 'discount');
     expect(result).toEqual({ ok: false, error: 'nope', errors: undefined });
+  });
+});
+
+describe('getStatus', () => {
+  it('returns the runs on success', async () => {
+    stubFetch(200, { runs: [{ timestamp: 't', banks: [] }] });
+    await expect(getStatus(session)).resolves.toHaveLength(1);
+  });
+
+  it('returns an empty list when there are no runs', async () => {
+    stubFetch(200, {});
+    await expect(getStatus(session)).resolves.toEqual([]);
+  });
+
+  it('throws a reconnect message on 401', async () => {
+    stubFetch(401, {});
+    await expect(getStatus(session)).rejects.toThrow('Session expired');
   });
 });

@@ -1,24 +1,30 @@
 /**
- * Post-connection home: confirms the active connection and offers entry to the
- * config editor plus a disconnect action. Navigation is a simple screen toggle
+ * Post-connection home: confirms the active connection and routes to the config
+ * editor, the banks editor, or disconnect. Navigation is a simple screen enum
  * (no navigation library needed yet).
  */
 import { useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
+import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
 
+type Screen = 'home' | 'config' | 'banks';
+
 /**
- * Shows the connection summary and navigates to the config editor.
+ * Shows the connection summary and routes to the editors.
  * @returns The home screen element.
  */
 export function HomeScreen() {
   const { connection, disconnect } = useAuth();
-  const [editing, setEditing] = useState(false);
+  const [screen, setScreen] = useState<Screen>('home');
 
-  if (editing) {
-    return <ConfigScreen onBack={() => { setEditing(false); }} />;
+  if (screen === 'config') {
+    return <ConfigScreen onBack={() => { setScreen('home'); }} />;
+  }
+  if (screen === 'banks') {
+    return <BanksScreen onBack={() => { setScreen('home'); }} />;
   }
 
   return (
@@ -26,7 +32,10 @@ export function HomeScreen() {
       <Text style={styles.title}>Connected</Text>
       <Text style={styles.host}>{connection?.baseUrl}</Text>
       <View style={styles.button}>
-        <Button title="Edit configuration" onPress={() => { setEditing(true); }} />
+        <Button title="Edit configuration" onPress={() => { setScreen('config'); }} />
+      </View>
+      <View style={styles.button}>
+        <Button title="Manage banks" onPress={() => { setScreen('banks'); }} />
       </View>
       <View style={styles.button}>
         <Button title="Disconnect" color="#b00020" onPress={() => { void disconnect(); }} />

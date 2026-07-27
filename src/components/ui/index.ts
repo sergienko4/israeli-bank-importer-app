@@ -16,6 +16,8 @@ export { Screen } from './Screen';
 export { ScreenSwitch } from './ScreenSwitch';
 export { Sheet } from './Sheet';
 export { Skeleton, SkeletonList, SkeletonRow } from './Skeleton';
+export { TabBar } from './TabBar';
+export type { TabItem } from './TabBar';
 export { StatusPill } from './StatusPill';
 export type { PillTone } from './StatusPill';
 export { TextField } from './TextField';

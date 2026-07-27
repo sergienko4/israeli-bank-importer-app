@@ -15,6 +15,7 @@ export { ListRow } from './ListRow';
 export { Screen } from './Screen';
 export { ScreenSwitch } from './ScreenSwitch';
 export { Sheet } from './Sheet';
+export { Skeleton, SkeletonList, SkeletonRow } from './Skeleton';
 export { StatusPill } from './StatusPill';
 export type { PillTone } from './StatusPill';
 export { TextField } from './TextField';

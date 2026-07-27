@@ -1,16 +1,21 @@
 /**
- * Bottom sheet modal: a themed panel that slides up from the bottom over a
+ * Bottom sheet modal: a themed panel that springs up from the bottom over a
  * fading backdrop, with a grab handle and optional title. Stays mounted during
- * the close animation so the exit is smooth. Built on the Animated API + Modal.
+ * the close animation so the exit is smooth. Built on the Animated API + Modal,
+ * and honors reduced motion by snapping open/closed.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Animated, Easing, Modal, Pressable, StyleSheet, Text, View,
+  Animated, Modal, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
+import { useReducedMotion } from '../../lib/useReducedMotion';
+import {
+  durations, easing, motionDuration, spring,
+} from '../../theme/motion';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface SheetProps {
@@ -34,6 +39,7 @@ export function Sheet({
 }: SheetProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -41,15 +47,20 @@ export function Sheet({
     if (visible) {
       setMounted(true);
       haptics.light();
-      Animated.timing(progress, {
-        toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-      }).start();
+      if (reduced) {
+        progress.setValue(1);
+      } else {
+        Animated.spring(progress, { toValue: 1, useNativeDriver: true, ...spring.sheet }).start();
+      }
     } else if (mounted) {
       Animated.timing(progress, {
-        toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true,
+        toValue: 0,
+        duration: motionDuration(durations.base, reduced),
+        easing: easing.accelerate,
+        useNativeDriver: true,
       }).start(({ finished }) => { if (finished) { setMounted(false); } });
     }
-  }, [visible, mounted, progress]);
+  }, [visible, mounted, progress, reduced]);
 
   if (!mounted) {
     return null;

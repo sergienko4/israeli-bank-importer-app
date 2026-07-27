@@ -4,15 +4,21 @@
  * (via the bank DELETE endpoint). Bank/target fields come from the manifest's
  * `bankMap` section, so they stay in sync with the importer.
  */
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Button, ScrollView, StyleSheet, Text, TouchableOpacity, View,
+  Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 
 import { getConfig, getManifest, removeBank, saveConfig } from '../api/importerClient';
 import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
 import { FieldInput } from '../components/FieldInput';
+import {
+  AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Loader, Screen, Sheet,
+} from '../components/ui';
+import { haptics } from '../lib/haptics';
+import { useTheme } from '../theme/ThemeContext';
 
 type BankConfig = Record<string, unknown>;
 type TargetConfig = Record<string, unknown>;
@@ -59,6 +65,26 @@ function bankSection(manifest: Manifest): SectionDef | undefined {
   return manifest.sections.find((section) => section.kind === 'bankMap');
 }
 
+/**
+ * The catalog fields currently present on a bank (mirrors the importer portal:
+ * a bank only shows the fields it actually has, seeded from its requirements).
+ * @param fields - The full bank field catalog.
+ * @param bank - The bank config.
+ * @returns The subset of fields present on the bank.
+ */
+function presentFields(fields: FieldDef[], bank: BankConfig): FieldDef[] {
+  return fields.filter((field) => Object.prototype.hasOwnProperty.call(bank, field.key));
+}
+
+/**
+ * The default value to seed when a user adds an optional field.
+ * @param field - The field being added.
+ * @returns A sensible empty default for the field kind.
+ */
+function defaultForField(field: FieldDef): unknown {
+  return field.kind === 'boolean' ? false : '';
+}
+
 interface TargetsProps {
   fields: FieldDef[];
   targets: TargetConfig[];
@@ -71,15 +97,26 @@ interface TargetsProps {
  * @returns The targets editor.
  */
 function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
+  const theme = useTheme();
   const setField = (index: number, key: string, value: unknown) => {
     onChange(targets.map((target, i) => (i === index ? { ...target, [key]: value } : target)));
   };
   return (
     <View style={styles.targets}>
-      <Text style={styles.subTitle}>Targets</Text>
+      <Text style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}>TARGETS</Text>
       {targets.map((target, index) => (
-        <View key={`target-${String(index)}`} style={styles.target}>
-          <Text style={styles.targetLabel}>Target {String(index + 1)}</Text>
+        <Card key={`target-${String(index)}`} elevation={0} style={styles.targetCard}>
+          <View style={styles.targetHeader}>
+            <Text style={[theme.typography.h3, { color: theme.colors.text }]}>Target {String(index + 1)}</Text>
+            <Button
+              title="Remove"
+              variant="ghost"
+              size="sm"
+              icon="trash-outline"
+              fullWidth={false}
+              onPress={() => { onChange(targets.filter((_, i) => i !== index)); }}
+            />
+          </View>
           {fields.map((field) => (
             <FieldInput
               key={field.key}
@@ -88,14 +125,16 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
               onChange={(value) => { setField(index, field.key, value); }}
             />
           ))}
-          <Button
-            title="Remove target"
-            color="#b00020"
-            onPress={() => { onChange(targets.filter((_, i) => i !== index)); }}
-          />
-        </View>
+        </Card>
       ))}
-      <Button title="Add target" onPress={() => { onChange([...targets, {}]); }} />
+      <Button
+        title="Add target"
+        variant="secondary"
+        size="sm"
+        icon="add"
+        fullWidth={false}
+        onPress={() => { onChange([...targets, {}]); }}
+      />
     </View>
   );
 }
@@ -106,6 +145,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
  * @returns The banks editor element.
  */
 export function BanksScreen({ onBack }: Props) {
+  const theme = useTheme();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
@@ -115,6 +155,7 @@ export function BanksScreen({ onBack }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!connection) {
@@ -156,6 +197,17 @@ export function BanksScreen({ onBack }: Props) {
     setConfig((current) => ({ ...current, banks: { ...banksOf(current), [id]: bank } }));
   };
 
+  const addField = (id: string, bank: BankConfig, field: FieldDef) => {
+    setBank(id, { ...bank, [field.key]: defaultForField(field) });
+    setSheetOpen(false);
+  };
+
+  const removeField = (id: string, bank: BankConfig, key: string) => {
+    const next = { ...bank };
+    delete next[key];
+    setBank(id, next);
+  };
+
   const startAdd = (id: string) => {
     const required = manifest?.bankRequirements[id]?.required ?? [];
     setBank(id, templateBank(required));
@@ -172,8 +224,10 @@ export function BanksScreen({ onBack }: Props) {
     const result = await saveConfig(connection, config);
     setSaving(false);
     if (result.ok) {
+      haptics.success();
       setSelected(null);
     } else {
+      haptics.warning();
       setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
     }
   };
@@ -184,22 +238,27 @@ export function BanksScreen({ onBack }: Props) {
     }
     const result = await removeBank(connection, id);
     if (result.ok) {
+      haptics.success();
       reload();
     } else {
       setError(result.error ?? 'Could not remove the bank.');
     }
   };
 
+  const nameOf = (id: string): string => manifest?.bankRequirements[id]?.displayName ?? id;
+
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
+        <Loader label="Loading banks" />
+      </Screen>
+    );
   }
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error}</Text>
-        <Button title="Retry" onPress={reload} />
-        <Button title="Back" onPress={onBack} />
-      </View>
+      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
+        <ErrorView message={error} onRetry={reload} />
+      </Screen>
     );
   }
 
@@ -208,32 +267,62 @@ export function BanksScreen({ onBack }: Props) {
 
   if (selected && section) {
     const bank = banks[selected] ?? {};
+    const catalog = section.bankFields ?? [];
+    const requiredKeys = new Set<string>(manifest?.bankRequirements[selected]?.required ?? []);
+    const present = presentFields(catalog, bank);
+    const missing = catalog.filter((field) => !Object.prototype.hasOwnProperty.call(bank, field.key));
     return (
-      <ScrollView contentContainerStyle={styles.form}>
-        <Text style={styles.title}>{manifest?.bankRequirements[selected]?.displayName ?? selected}</Text>
-        {(section.bankFields ?? []).map((field) => (
-          <FieldInput
-            key={field.key}
-            field={field}
-            value={bank[field.key]}
-            onChange={(value) => { setBank(selected, { ...bank, [field.key]: value }); }}
-          />
-        ))}
+      <Screen
+        header={<AppHeader title={nameOf(selected)} subtitle="Credentials & targets" onBack={() => { setSelected(null); }} />}
+        footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={() => { void save(); }} />}
+      >
+        <Text style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}>CREDENTIALS</Text>
+        <Card>
+          {present.map((field) => {
+            const isRequired = requiredKeys.has(field.key);
+            return (
+              <FieldInput
+                key={field.key}
+                field={{ ...field, required: isRequired }}
+                value={bank[field.key]}
+                onChange={(value) => { setBank(selected, { ...bank, [field.key]: value }); }}
+                onRemove={isRequired ? undefined : () => { removeField(selected, bank, field.key); }}
+              />
+            );
+          })}
+          {missing.length > 0 ? (
+            <Button
+              title="Add field"
+              variant="secondary"
+              size="sm"
+              icon="add"
+              fullWidth={false}
+              onPress={() => { setSheetOpen(true); }}
+              style={styles.addField}
+            />
+          ) : null}
+        </Card>
         <TargetsEditor
           fields={section.targetFields ?? []}
           targets={targetsOf(bank)}
           onChange={(targets) => { setBank(selected, { ...bank, targets }); }}
         />
-        {saveErrors ? saveErrors.map((msg, i) => (
-          <Text key={`err-${String(i)}`} style={styles.error}>{msg}</Text>
-        )) : null}
-        {saving ? <ActivityIndicator /> : (
-          <View style={styles.actions}>
-            <Button title="Save" onPress={() => { void save(); }} />
-            <Button title="Back to banks" color="#666" onPress={() => { setSelected(null); }} />
-          </View>
-        )}
-      </ScrollView>
+        {saveErrors ? <View style={styles.errors}><Banner messages={saveErrors} /></View> : null}
+
+        <Sheet visible={sheetOpen} onClose={() => { setSheetOpen(false); }} title="Add a field">
+          <ScrollView>
+            {missing.map((field) => (
+              <ListRow
+                key={field.key}
+                icon="add-circle-outline"
+                title={field.label}
+                subtitle={field.help}
+                onPress={() => { addField(selected, bank, field); }}
+              />
+            ))}
+          </ScrollView>
+        </Sheet>
+      </Screen>
     );
   }
 
@@ -241,46 +330,73 @@ export function BanksScreen({ onBack }: Props) {
   const catalog = (manifest?.banks ?? []).filter((id) => !configuredIds.includes(id));
 
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      <Text style={styles.title}>Banks</Text>
-      {configuredIds.length === 0 ? <Text style={styles.help}>No banks configured yet.</Text> : null}
-      {configuredIds.map((id) => (
-        <View key={id} style={styles.bankRow}>
-          <TouchableOpacity style={styles.bankName} onPress={() => { setSaveErrors(null); setSelected(id); }}>
-            <Text style={styles.sectionLabel}>{manifest?.bankRequirements[id]?.displayName ?? id}</Text>
-          </TouchableOpacity>
-          <Button title="Remove" color="#b00020" onPress={() => { void doRemove(id); }} />
-        </View>
-      ))}
+    <Screen header={<AppHeader title="Banks" onBack={onBack} />}>
+      {configuredIds.length === 0 ? (
+        <Entrance>
+          <EmptyState
+            icon="business-outline"
+            title="No banks yet"
+            message="Add your first bank below to start importing transactions."
+          />
+        </Entrance>
+      ) : (
+        <>
+          <Text style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}>YOUR BANKS</Text>
+          <Card padded={false} style={styles.menu}>
+            {configuredIds.map((id, index) => (
+              <Entrance key={id} index={index}>
+                <ListRow
+                  icon="business"
+                  title={nameOf(id)}
+                  subtitle={`${targetsOf(banks[id] ?? {}).length} target(s)`}
+                  onPress={() => { setSaveErrors(null); setSelected(id); }}
+                  right={(
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${nameOf(id)}`}
+                      hitSlop={8}
+                      onPress={() => { void doRemove(id); }}
+                      style={styles.iconBtn}
+                    >
+                      <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
+                    </Pressable>
+                  )}
+                />
+                {index < configuredIds.length - 1 ? <Divider style={styles.indent} /> : null}
+              </Entrance>
+            ))}
+          </Card>
+        </>
+      )}
 
-      <Text style={styles.subTitle}>Add a bank</Text>
-      {catalog.map((id) => (
-        <TouchableOpacity key={id} style={styles.catalogRow} onPress={() => { startAdd(id); }}>
-          <Text style={styles.sectionLabel}>+ {manifest?.bankRequirements[id]?.displayName ?? id}</Text>
-        </TouchableOpacity>
-      ))}
-
-      <View style={styles.actions}>
-        <Button title="Back" color="#666" onPress={onBack} />
-      </View>
-    </ScrollView>
+      {catalog.length > 0 ? (
+        <>
+          <Text style={[theme.typography.caption, styles.sectionLabel, styles.addLabel, { color: theme.colors.textSubtle }]}>
+            ADD A BANK
+          </Text>
+          <Card padded={false} style={styles.menu}>
+            {catalog.map((id, index) => (
+              <Entrance key={id} index={index}>
+                <ListRow icon="add-circle-outline" title={nameOf(id)} onPress={() => { startAdd(id); }} />
+                {index < catalog.length - 1 ? <Divider style={styles.indent} /> : null}
+              </Entrance>
+            ))}
+          </Card>
+        </>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  list: { padding: 20, gap: 4 },
-  form: { padding: 20 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 16 },
-  subTitle: { fontSize: 16, fontWeight: '600', marginTop: 20, marginBottom: 8 },
-  sectionLabel: { fontSize: 16, color: '#222' },
-  help: { fontSize: 13, color: '#888', marginVertical: 8 },
-  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  bankName: { flex: 1 },
-  catalogRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  targets: { marginTop: 12 },
-  target: { borderWidth: 1, borderColor: '#eee', borderRadius: 8, padding: 12, marginBottom: 12 },
-  targetLabel: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 8 },
-  actions: { marginTop: 20, gap: 8 },
-  error: { color: '#b00020', marginTop: 8 },
+  menu: { overflow: 'hidden' },
+  indent: { marginLeft: 68 },
+  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  addLabel: { marginTop: 20 },
+  addField: { marginTop: 8 },
+  iconBtn: { padding: 6 },
+  targets: { marginTop: 20, gap: 12 },
+  targetCard: { gap: 4, backgroundColor: 'transparent' },
+  targetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  errors: { marginTop: 16 },
 });

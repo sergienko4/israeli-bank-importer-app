@@ -12,10 +12,12 @@ import { StyleSheet, View } from 'react-native';
 
 import { ScreenSwitch, TabBar } from '../components/ui';
 import type { TabItem } from '../components/ui';
+import { useOtpWatcher } from '../push/useOtpWatcher';
 import { useTheme } from '../theme/ThemeContext';
 import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
 import { HomeScreen } from './HomeScreen';
+import { OtpPrompt } from './OtpPrompt';
 import { StatusScreen } from './StatusScreen';
 
 /** The top-level destinations. */
@@ -36,12 +38,17 @@ const ORDER: Tab[] = TABS.map((tab) => tab.key);
  */
 export function AppShell() {
   const theme = useTheme();
+  const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
   const prevIndex = useRef(0);
 
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as { type?: string } | undefined;
+      if (data?.type === 'otp') {
+        return;
+      }
       setDepth(0);
       setActive('status');
     });
@@ -77,6 +84,7 @@ export function AppShell() {
         {content}
       </ScreenSwitch>
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
+      {pending ? <OtpPrompt request={pending} onSubmitted={dismiss} onDismiss={dismiss} /> : null}
     </View>
   );
 }

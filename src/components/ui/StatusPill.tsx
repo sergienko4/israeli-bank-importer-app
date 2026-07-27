@@ -3,8 +3,9 @@
  * label. Conveys state with color *and* text/icon (never color alone).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text } from 'react-native';
 
+import { useMountPop } from '../../lib/useMountPop';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
 
@@ -47,12 +48,23 @@ function toneStyle(theme: Theme, tone: PillTone): { fg: string; bg: string; icon
  */
 export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps) {
   const theme = useTheme();
+  const pop = useMountPop();
   const style = toneStyle(theme, tone);
   return (
-    <View style={[styles.pill, { backgroundColor: style.bg, borderRadius: theme.radius.pill }]}>
+    <Animated.View
+      style={[
+        styles.pill,
+        {
+          backgroundColor: style.bg,
+          borderRadius: theme.radius.pill,
+          opacity: pop.opacity,
+          transform: [{ scale: pop.scale }],
+        },
+      ]}
+    >
       <Ionicons name={icon ?? style.icon} size={13} color={style.fg} />
       <Text style={[styles.label, { color: style.fg }]}>{label}</Text>
-    </View>
+    </Animated.View>
   );
 }
 

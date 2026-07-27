@@ -3,8 +3,11 @@
  * and an optional call-to-action button. Used instead of blank screens.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Animated, StyleSheet, Text, View,
+} from 'react-native';
 
+import { useMountPop } from '../../lib/useMountPop';
 import { useTheme } from '../../theme/ThemeContext';
 import { Button } from './Button';
 
@@ -30,11 +33,22 @@ export function EmptyState({
   icon = 'file-tray-outline', title, message, actionLabel, onAction,
 }: EmptyStateProps) {
   const theme = useTheme();
+  const pop = useMountPop(0.8);
   return (
     <View style={styles.root} accessibilityRole="summary">
-      <View style={[styles.bubble, { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.pill }]}>
+      <Animated.View
+        style={[
+          styles.bubble,
+          {
+            backgroundColor: theme.colors.primarySoft,
+            borderRadius: theme.radius.pill,
+            opacity: pop.opacity,
+            transform: [{ scale: pop.scale }],
+          },
+        ]}
+      >
         <Ionicons name={icon} size={30} color={theme.colors.primary} />
-      </View>
+      </Animated.View>
       <Text style={[theme.typography.h3, styles.title, { color: theme.colors.text }]}>{title}</Text>
       {message ? (
         <Text style={[theme.typography.body, styles.message, { color: theme.colors.textMuted }]}>{message}</Text>

@@ -3,13 +3,13 @@
  * and a trailing slot (defaults to a chevron when the row is pressable).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   Animated, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
+import { usePressScale } from '../../lib/usePressScale';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface ListRowProps {
@@ -38,7 +38,7 @@ export function ListRow({
   title, subtitle, icon, emoji, onPress, right, danger = false,
 }: ListRowProps) {
   const theme = useTheme();
-  const scale = useRef(new Animated.Value(1)).current;
+  const press = usePressScale(0.98);
   const tint = danger ? theme.colors.danger : theme.colors.primary;
   const bubbleBg = danger ? theme.colors.dangerSoft : theme.colors.primarySoft;
 
@@ -76,18 +76,15 @@ export function ListRow({
   }
   const pressIn = (): void => {
     haptics.light();
-    Animated.spring(scale, { toValue: 0.98, speed: 50, bounciness: 0, useNativeDriver: true }).start();
-  };
-  const pressOut = (): void => {
-    Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
+    press.onPressIn();
   };
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
       <Pressable
         accessibilityRole="button"
         onPress={onPress}
         onPressIn={pressIn}
-        onPressOut={pressOut}
+        onPressOut={press.onPressOut}
         style={({ pressed }) => [styles.row, rowStyle, { opacity: pressed ? 0.85 : 1 }]}
       >
         {content}

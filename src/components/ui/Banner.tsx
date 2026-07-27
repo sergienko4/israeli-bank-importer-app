@@ -1,10 +1,13 @@
-/**
+﻿/**
  * Inline banner for validation errors, warnings, or success notices. Conveys
  * tone with a tinted background and an icon alongside one or more messages.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  Animated, StyleSheet, Text, View,
+} from 'react-native';
 
+import { useMountPop } from '../../lib/useMountPop';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
 
@@ -18,12 +21,6 @@ interface BannerProps {
   tone?: BannerTone;
 }
 
-/**
- * Resolves the banner colors and icon for a tone.
- * @param theme - The active theme.
- * @param tone - The banner tone.
- * @returns Foreground, background, and icon.
- */
 /**
  * Resolves the banner tone to semantic foreground, background, and icon.
  * @param theme - The active theme.
@@ -54,15 +51,26 @@ export function resolveBannerToneStyle(
  */
 export function Banner({ messages, tone = 'danger' }: BannerProps) {
   const theme = useTheme();
+  const pop = useMountPop();
   if (messages.length === 0) {
     return null;
   }
+
   const style = resolveBannerToneStyle(theme, tone);
+  const translateY = pop.opacity.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] });
   return (
-    <View
+    <Animated.View
       accessibilityRole={tone === 'danger' ? 'alert' : undefined}
       accessibilityLiveRegion={tone === 'danger' ? 'polite' : undefined}
-      style={[styles.root, { backgroundColor: style.bg, borderRadius: theme.radius.md }]}
+      style={[
+        styles.root,
+        {
+          backgroundColor: style.bg,
+          borderRadius: theme.radius.md,
+          opacity: pop.opacity,
+          transform: [{ translateY }],
+        },
+      ]}
     >
       <Ionicons name={style.icon} size={18} color={style.fg} style={styles.icon} />
       <View style={styles.messages}>
@@ -70,7 +78,7 @@ export function Banner({ messages, tone = 'danger' }: BannerProps) {
           <Text key={`${message}-${String(index)}`} style={[theme.typography.small, { color: style.fg }]}>{message}</Text>
         ))}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

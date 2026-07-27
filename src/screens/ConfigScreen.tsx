@@ -17,6 +17,7 @@ import { setAtPath } from '../config/formState';
 import { editableSections } from '../config/sections';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
+import { OtpSettingsScreen } from './OtpSettingsScreen';
 
 interface Props {
   /** Reports drill-down depth (0 = section list, 1 = editing a section). */
@@ -36,6 +37,7 @@ export function ConfigScreen({ onDepthChange }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SectionDef | null>(null);
+  const [showOtp, setShowOtp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -76,8 +78,8 @@ export function ConfigScreen({ onDepthChange }: Props) {
   };
 
   useEffect(() => {
-    onDepthChange?.(selected ? 1 : 0);
-  }, [selected, onDepthChange]);
+    onDepthChange?.(selected || showOtp ? 1 : 0);
+  }, [selected, showOtp, onDepthChange]);
 
   const update = useCallback((path: string[], value: unknown) => {
     setConfig((current) => setAtPath(current, path, value));
@@ -115,6 +117,10 @@ export function ConfigScreen({ onDepthChange }: Props) {
     );
   }
 
+  if (showOtp) {
+    return <OtpSettingsScreen onBack={() => { setShowOtp(false); }} />;
+  }
+
   if (selected) {
     return (
       <Screen
@@ -148,12 +154,23 @@ export function ConfigScreen({ onDepthChange }: Props) {
           </Entrance>
         ))}
       </Card>
+
+      <Text style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}>DEVICE</Text>
+      <Card padded={false} style={styles.menu}>
+        <ListRow
+          icon="key-outline"
+          title="OTP delivery"
+          subtitle="Collect bank codes in this app or via Telegram"
+          onPress={() => { haptics.selection(); setShowOtp(true); }}
+        />
+      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12, marginLeft: 4 },
+  sectionLabel: { letterSpacing: 0.6, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   menu: { overflow: 'hidden' },
   indent: { marginLeft: 68 },
   errors: { marginTop: 16 },

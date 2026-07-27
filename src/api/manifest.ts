@@ -49,6 +49,12 @@ export interface SectionDef {
 /** Per-bank requirements the importer advertises. */
 export interface BankRequirement {
   required: string[];
+  /**
+   * The bank's own optional credential fields, when the importer advertises
+   * them. Absent on older importers, in which case the editor scopes to
+   * `required` only so no cross-bank field can leak in.
+   */
+  optional?: string[];
   displayName?: string;
 }
 

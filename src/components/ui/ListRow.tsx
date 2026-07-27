@@ -1,16 +1,15 @@
-/**
+﻿/**
  * Tappable list row with a leading icon bubble, a title, an optional subtitle,
  * and a trailing slot (defaults to a chevron when the row is pressable).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   Animated, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
-import { useReducedMotion } from '../../lib/useReducedMotion';
+import { usePressScale } from '../../lib/usePressScale';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface ListRowProps {
@@ -39,10 +38,10 @@ export function ListRow({
   title, subtitle, icon, emoji, onPress, right, danger = false,
 }: ListRowProps) {
   const theme = useTheme();
-  const reducedMotion = useReducedMotion();
-  const scale = useRef(new Animated.Value(1)).current;
+  const press = usePressScale(0.98);
   const tint = danger ? theme.colors.danger : theme.colors.primary;
   const bubbleBg = danger ? theme.colors.dangerSoft : theme.colors.primarySoft;
+  const accessibleName = subtitle ? `${title}, ${subtitle}` : title;
 
   const content = (
     <>
@@ -76,28 +75,20 @@ export function ListRow({
   if (!onPress) {
     return <View style={[styles.row, rowStyle]}>{content}</View>;
   }
+
   const pressIn = (): void => {
     haptics.light();
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 0.98, speed: 50, bounciness: 0, useNativeDriver: true }).start();
+    press.onPressIn();
   };
-  const pressOut = (): void => {
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
-  };
+
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={accessibleName}
         onPress={onPress}
         onPressIn={pressIn}
-        onPressOut={pressOut}
+        onPressOut={press.onPressOut}
         style={({ pressed }) => [styles.row, rowStyle, { opacity: pressed ? 0.85 : 1 }]}
       >
         {content}

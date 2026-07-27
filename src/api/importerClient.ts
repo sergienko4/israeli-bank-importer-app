@@ -5,6 +5,7 @@
  */
 
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
+import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
 
 /**
@@ -199,6 +200,66 @@ export async function unregisterDevice(session: Session, token: string): Promise
     method: 'DELETE',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ token }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Reads the app-only OTP delivery settings via `GET /api/otp/settings`.
+ * @param session - The active session.
+ * @returns The OTP settings (channel).
+ * @throws Error when the request fails.
+ */
+export async function getOtpSettings(session: Session): Promise<OtpSettings> {
+  const res = await authed(session, '/api/otp/settings');
+  if (!res.ok) {
+    throw new Error(`Could not load OTP settings (${String(res.status)}).`);
+  }
+  return (await res.json()) as OtpSettings;
+}
+
+/**
+ * Sets the OTP delivery channel via `PUT /api/otp/settings`.
+ * @param session - The active session.
+ * @param channel - The channel to select (`telegram` or `app`).
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  const res = await authed(session, '/api/otp/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ channel }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Loads the pending OTP requests via `GET /api/otp/pending`.
+ * @param session - The active session.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the request fails.
+ */
+export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
+  const res = await authed(session, '/api/otp/pending');
+  if (!res.ok) {
+    throw new Error(`Could not load pending OTP requests (${String(res.status)}).`);
+  }
+  const data = (await res.json()) as { requests?: PendingOtpRequest[] };
+  return Array.isArray(data.requests) ? data.requests : [];
+}
+
+/**
+ * Submits an OTP code for a pending request via `POST /api/otp/:id`.
+ * @param session - The active session.
+ * @param id - The pending request id.
+ * @param code - The OTP code entered by the user.
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  const res = await authed(session, `/api/otp/${encodeURIComponent(id)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code }),
   });
   return res.ok ? { ok: true } : toFailure(res);
 }

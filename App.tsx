@@ -3,8 +3,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { Loader } from './src/components/ui';
+import { AppShell } from './src/screens/AppShell';
 import { ConnectScreen } from './src/screens/ConnectScreen';
-import { HomeScreen } from './src/screens/HomeScreen';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 /**
@@ -21,7 +21,7 @@ function Root() {
   return (
     <>
       <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
-      {status === 'connected' ? <HomeScreen /> : <ConnectScreen />}
+      {status === 'connected' ? <AppShell /> : <ConnectScreen />}
     </>
   );
 }

@@ -27,7 +27,8 @@ type BankConfig = Record<string, unknown>;
 type TargetConfig = Record<string, unknown>;
 
 interface Props {
-  onBack: () => void;
+  /** Reports drill-down depth (0 = bank list, 1 = editing a bank). */
+  onDepthChange?: (depth: number) => void;
 }
 
 /**
@@ -156,7 +157,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
  * @param props - Callback to return to the home screen.
  * @returns The banks editor element.
  */
-export function BanksScreen({ onBack }: Props) {
+export function BanksScreen({ onDepthChange }: Props) {
   const theme = useTheme();
   const reduced = useReducedMotion();
   const { connection } = useAuth();
@@ -198,6 +199,10 @@ export function BanksScreen({ onBack }: Props) {
     void run();
     return () => { active = false; };
   }, [connection, reloadKey]);
+
+  useEffect(() => {
+    onDepthChange?.(selected ? 1 : 0);
+  }, [selected, onDepthChange]);
 
   const reload = () => {
     setError(null);
@@ -264,14 +269,14 @@ export function BanksScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen header={<AppHeader title="Banks" onBack={onBack} />}>
+      <Screen header={<AppHeader title="Banks" />}>
         <SkeletonList count={3} />
       </Screen>
     );
   }
   if (error) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Banks" />}>
         <ErrorView message={error} onRetry={reload} />
       </Screen>
     );
@@ -346,7 +351,7 @@ export function BanksScreen({ onBack }: Props) {
   const catalog = (manifest?.banks ?? []).filter((id) => !configuredIds.includes(id));
 
   return (
-    <Screen header={<AppHeader title="Banks" onBack={onBack} />}>
+    <Screen header={<AppHeader title="Banks" />}>
       {configuredIds.length === 0 ? (
         <Entrance>
           <EmptyState

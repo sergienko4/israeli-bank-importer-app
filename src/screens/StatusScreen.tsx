@@ -18,7 +18,7 @@ import type { PillTone } from '../components/ui';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 /**

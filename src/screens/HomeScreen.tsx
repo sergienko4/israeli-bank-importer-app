@@ -11,7 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
-  Button, Card, Divider, Entrance, ListRow, Screen, StatusPill,
+  Button, Card, Divider, ListRow, Screen, ScreenSwitch, StatusPill,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
@@ -102,14 +102,17 @@ export function HomeScreen() {
   }
 
   return (
-    <Entrance key={screen} axis="x" distance={26} style={styles.fill}>
+    <ScreenSwitch
+      screenKey={screen}
+      direction={screen === 'home' ? 'back' : 'forward'}
+      onSwipeBack={screen === 'home' ? undefined : () => { go('home'); }}
+    >
       {active}
-    </Entrance>
+    </ScreenSwitch>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
   content: { gap: 12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
   logo: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },

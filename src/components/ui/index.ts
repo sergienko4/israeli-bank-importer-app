@@ -13,6 +13,7 @@ export { Entrance } from './Entrance';
 export { ErrorView, Loader } from './Feedback';
 export { ListRow } from './ListRow';
 export { Screen } from './Screen';
+export { ScreenSwitch } from './ScreenSwitch';
 export { Sheet } from './Sheet';
 export { StatusPill } from './StatusPill';
 export type { PillTone } from './StatusPill';

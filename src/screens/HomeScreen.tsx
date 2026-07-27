@@ -52,6 +52,7 @@ export function HomeScreen({ onNavigate }: Props) {
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [config, setConfig] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!connection) {
@@ -67,9 +68,13 @@ export function HomeScreen({ onNavigate }: Props) {
         if (active) {
           setRuns(loadedRuns);
           setConfig(loadedConfig);
+          setFailed(false);
         }
       } catch {
         // Overview is best-effort; the dedicated tabs surface real errors.
+        if (active) {
+          setFailed(true);
+        }
       } finally {
         if (active) {
           setLoading(false);
@@ -108,6 +113,12 @@ export function HomeScreen({ onNavigate }: Props) {
       </Entrance>
 
       <Text style={[theme.typography.caption, styles.section, { color: theme.colors.textSubtle }]}>OVERVIEW</Text>
+
+      {failed && !loading ? (
+        <Text style={[theme.typography.small, styles.overviewNote, { color: theme.colors.textMuted }]}>
+          Couldn&apos;t refresh the overview. Open a tab to retry.
+        </Text>
+      ) : null}
 
       <Entrance index={2}>
         <Card onPress={() => { onNavigate('status'); }} style={styles.card}>
@@ -183,6 +194,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { letterSpacing: 0.6 },
   section: { letterSpacing: 0.6, marginTop: 12, marginLeft: 4 },
+  overviewNote: { marginLeft: 4, marginBottom: 4 },
   card: { gap: 12 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 },

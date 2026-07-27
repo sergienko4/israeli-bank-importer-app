@@ -19,15 +19,16 @@ import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
-  onBack: () => void;
+  /** Reports drill-down depth (0 = section list, 1 = editing a section). */
+  onDepthChange?: (depth: number) => void;
 }
 
 /**
  * Renders the config editor screen.
- * @param props - Callback to return to the home screen.
+ * @param props - Optional drill-down depth reporter for the tab shell.
  * @returns The config editor element.
  */
-export function ConfigScreen({ onBack }: Props) {
+export function ConfigScreen({ onDepthChange }: Props) {
   const theme = useTheme();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -74,6 +75,10 @@ export function ConfigScreen({ onBack }: Props) {
     setReloadKey((key) => key + 1);
   };
 
+  useEffect(() => {
+    onDepthChange?.(selected ? 1 : 0);
+  }, [selected, onDepthChange]);
+
   const update = useCallback((path: string[], value: unknown) => {
     setConfig((current) => setAtPath(current, path, value));
   }, []);
@@ -97,14 +102,14 @@ export function ConfigScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Configuration" />}>
         <Loader label="Loading configuration" />
       </Screen>
     );
   }
   if (error) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Configuration" />}>
         <ErrorView message={error} onRetry={reload} />
       </Screen>
     );
@@ -126,7 +131,7 @@ export function ConfigScreen({ onBack }: Props) {
 
   const sections = editableSections(manifest);
   return (
-    <Screen header={<AppHeader title="Configuration" onBack={onBack} />}>
+    <Screen header={<AppHeader title="Configuration" />}>
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
         Choose a section to edit.
       </Text>

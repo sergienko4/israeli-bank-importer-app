@@ -71,6 +71,12 @@ function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T
       style={styles.tab}
     >
       <Animated.View style={[styles.tabInner, { transform: [{ scale: press.scale }] }]}>
+        <View
+          style={[
+            styles.indicator,
+            { backgroundColor: active ? theme.colors.primary : 'transparent', borderRadius: theme.radius.pill },
+          ]}
+        />
         <Ionicons name={iconName} size={24} color={color} />
         <Text
           numberOfLines={1}
@@ -124,5 +130,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabInner: { alignItems: 'center', gap: 3 },
+  indicator: { width: 18, height: 3, marginBottom: 1 },
   label: { fontSize: 11, letterSpacing: 0.2 },
 });

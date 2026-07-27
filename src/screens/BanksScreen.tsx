@@ -17,6 +17,7 @@ import { FieldInput } from '../components/FieldInput';
 import {
   AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Loader, Screen, Sheet,
 } from '../components/ui';
+import { addableFields } from '../config/bankSchema';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -280,9 +281,10 @@ export function BanksScreen({ onBack }: Props) {
   if (selected && section) {
     const bank = banks[selected] ?? {};
     const catalog = section.bankFields ?? [];
-    const requiredKeys = new Set<string>(manifest?.bankRequirements[selected]?.required ?? []);
+    const requirement = manifest?.bankRequirements[selected];
+    const requiredKeys = new Set<string>(requirement?.required ?? []);
     const present = presentFields(catalog, bank);
-    const missing = catalog.filter((field) => !Object.prototype.hasOwnProperty.call(bank, field.key));
+    const missing = addableFields(section, requirement, bank);
     return (
       <Screen
         header={<AppHeader title={nameOf(selected)} subtitle="Credentials & targets" onBack={() => { setSelected(null); }} />}

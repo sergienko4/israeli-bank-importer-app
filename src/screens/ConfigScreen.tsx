@@ -14,6 +14,7 @@ import {
   AppHeader, Banner, Button, Card, Divider, Entrance, ErrorView, ListRow, Loader, Screen,
 } from '../components/ui';
 import { setAtPath } from '../config/formState';
+import { editableSections } from '../config/sections';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -123,7 +124,7 @@ export function ConfigScreen({ onBack }: Props) {
     );
   }
 
-  const sections = manifest?.sections ?? [];
+  const sections = editableSections(manifest);
   return (
     <Screen header={<AppHeader title="Configuration" onBack={onBack} />}>
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>

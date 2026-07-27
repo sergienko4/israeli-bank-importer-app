@@ -1,9 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { Loader } from './src/components/ui';
 import { ConnectScreen } from './src/screens/ConnectScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 /**
  * Chooses the screen from the connection status: a spinner while restoring a
@@ -12,29 +14,30 @@ import { HomeScreen } from './src/screens/HomeScreen';
  */
 function Root() {
   const { status } = useAuth();
+  const theme = useTheme();
   if (status === 'loading') {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    );
+    return <Loader label="Restoring your connection" />;
   }
-  return status === 'connected' ? <HomeScreen /> : <ConnectScreen />;
+  return (
+    <>
+      <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
+      {status === 'connected' ? <HomeScreen /> : <ConnectScreen />}
+    </>
+  );
 }
 
 /**
- * App entry point: wraps the tree in the auth provider.
+ * App entry point: wraps the tree in the safe-area, theme, and auth providers.
  * @returns The root app element.
  */
 export default function App() {
   return (
-    <AuthProvider>
-      <StatusBar style="auto" />
-      <Root />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Root />
+        </AuthProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-});

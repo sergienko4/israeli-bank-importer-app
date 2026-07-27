@@ -1,17 +1,21 @@
-/**
- * Bottom sheet modal: a themed panel that slides up from the bottom over a
+﻿/**
+ * Bottom sheet modal: a themed panel that springs up from the bottom over a
  * fading backdrop, with a grab handle and optional title. Stays mounted during
- * the close animation so the exit is smooth. Built on the Animated API + Modal.
+ * the close animation so the exit is smooth. Built on the Animated API + Modal,
+ * and honors reduced motion by snapping open/closed.
  */
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Animated, Easing, Modal, Pressable, StyleSheet, Text, View,
+  Animated, Modal, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
 import { useReducedMotion } from '../../lib/useReducedMotion';
+import {
+  durations, easing, motionDuration, spring,
+} from '../../theme/motion';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface SheetProps {
@@ -43,6 +47,7 @@ export function Sheet({
   useEffect(() => {
     const wasVisible = previousVisible.current;
     previousVisible.current = visible;
+
     if (visible && !wasVisible) {
       setMounted(true);
       haptics.light();
@@ -50,17 +55,21 @@ export function Sheet({
         progress.setValue(1);
         return;
       }
-      Animated.timing(progress, {
-        toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true,
-      }).start();
-    } else if (!visible && wasVisible) {
+      Animated.spring(progress, { toValue: 1, useNativeDriver: true, ...spring.sheet }).start();
+      return;
+    }
+
+    if (!visible && wasVisible) {
       if (reducedMotion) {
         progress.setValue(0);
         setMounted(false);
         return;
       }
       Animated.timing(progress, {
-        toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true,
+        toValue: 0,
+        duration: motionDuration(durations.base, reducedMotion),
+        easing: easing.accelerate,
+        useNativeDriver: true,
       }).start(({ finished }) => { if (finished) { setMounted(false); } });
     }
   }, [visible, progress, reducedMotion]);

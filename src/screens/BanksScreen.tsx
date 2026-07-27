@@ -15,10 +15,12 @@ import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manife
 import { useAuth } from '../auth/AuthContext';
 import { FieldInput } from '../components/FieldInput';
 import {
-  AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Loader, Screen, Sheet,
+  AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Screen, Sheet, SkeletonList,
 } from '../components/ui';
 import { addableFields } from '../config/bankSchema';
 import { haptics } from '../lib/haptics';
+import { animateNextLayout } from '../lib/layoutAnimation';
+import { useReducedMotion } from '../lib/useReducedMotion';
 import { useTheme } from '../theme/ThemeContext';
 
 type BankConfig = Record<string, unknown>;
@@ -99,8 +101,17 @@ interface TargetsProps {
  */
 function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
   const theme = useTheme();
+  const reduced = useReducedMotion();
   const setField = (index: number, key: string, value: unknown) => {
     onChange(targets.map((target, i) => (i === index ? { ...target, [key]: value } : target)));
+  };
+  const removeTarget = (index: number) => {
+    animateNextLayout(reduced);
+    onChange(targets.filter((_, i) => i !== index));
+  };
+  const addTarget = () => {
+    animateNextLayout(reduced);
+    onChange([...targets, {}]);
   };
   return (
     <View style={styles.targets}>
@@ -115,7 +126,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
               size="sm"
               icon="trash-outline"
               fullWidth={false}
-              onPress={() => { onChange(targets.filter((_, i) => i !== index)); }}
+              onPress={() => { removeTarget(index); }}
             />
           </View>
           {fields.map((field) => (
@@ -134,7 +145,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
         size="sm"
         icon="add"
         fullWidth={false}
-        onPress={() => { onChange([...targets, {}]); }}
+        onPress={() => { addTarget(); }}
       />
     </View>
   );
@@ -147,6 +158,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
  */
 export function BanksScreen({ onBack }: Props) {
   const theme = useTheme();
+  const reduced = useReducedMotion();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
@@ -199,11 +211,13 @@ export function BanksScreen({ onBack }: Props) {
   };
 
   const addField = (id: string, bank: BankConfig, field: FieldDef) => {
+    animateNextLayout(reduced);
     setBank(id, { ...bank, [field.key]: defaultForField(field) });
     setSheetOpen(false);
   };
 
   const removeField = (id: string, bank: BankConfig, key: string) => {
+    animateNextLayout(reduced);
     const next = { ...bank };
     delete next[key];
     setBank(id, next);
@@ -262,8 +276,8 @@ export function BanksScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
-        <Loader label="Loading banks" />
+      <Screen header={<AppHeader title="Banks" onBack={onBack} />}>
+        <SkeletonList count={3} />
       </Screen>
     );
   }

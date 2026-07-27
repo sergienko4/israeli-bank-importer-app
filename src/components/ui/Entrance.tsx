@@ -1,14 +1,18 @@
-/**
+﻿/**
  * Entrance animation wrapper: fades and slides its children up on mount, with an
  * optional stagger derived from a list index. Uses the built-in Animated API
- * (native driver) so it runs smoothly without extra native dependencies.
+ * (native driver) so it runs smoothly without extra native dependencies, and
+ * collapses to an instant appearance when reduced motion is requested.
  */
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
-import { Animated, Easing } from 'react-native';
+import { Animated } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
+import {
+  durations, easing, motionDuration, staggerDelay,
+} from '../../theme/motion';
 
 interface EntranceProps {
   /** Content to animate in. */
@@ -24,7 +28,7 @@ interface EntranceProps {
 }
 
 /**
- * Animates children in with a fade + slide.
+ * Animates children in with a fade and slide transition.
  * @param props - Entrance configuration.
  * @returns The animated container element.
  */
@@ -39,11 +43,12 @@ export function Entrance({
       progress.setValue(1);
       return undefined;
     }
+
     const animation = Animated.timing(progress, {
       toValue: 1,
-      duration: 340,
-      delay: Math.min(index, 10) * 45,
-      easing: Easing.out(Easing.cubic),
+      duration: motionDuration(durations.slow, reducedMotion),
+      delay: staggerDelay(index, reducedMotion),
+      easing: easing.decelerate,
       useNativeDriver: true,
     });
     animation.start();

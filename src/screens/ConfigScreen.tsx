@@ -4,15 +4,18 @@
  * shown inline. Structured sections (banks, lists) are handled elsewhere.
  */
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator, Button, ScrollView, StyleSheet, Text, TouchableOpacity, View,
-} from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { getConfig, getManifest, saveConfig } from '../api/importerClient';
 import type { ConfigObject, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
 import { SectionForm } from '../components/SectionForm';
+import {
+  AppHeader, Banner, Button, Card, Divider, Entrance, ErrorView, ListRow, Loader, Screen,
+} from '../components/ui';
 import { setAtPath } from '../config/formState';
+import { haptics } from '../lib/haptics';
+import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
   onBack: () => void;
@@ -24,6 +27,7 @@ interface Props {
  * @returns The config editor element.
  */
 export function ConfigScreen({ onBack }: Props) {
+  const theme = useTheme();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
@@ -82,72 +86,69 @@ export function ConfigScreen({ onBack }: Props) {
     const result = await saveConfig(connection, config);
     setSaving(false);
     if (result.ok) {
+      haptics.success();
       setSelected(null);
     } else {
+      haptics.warning();
       setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
     }
   };
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+        <Loader label="Loading configuration" />
+      </Screen>
+    );
   }
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error}</Text>
-        <Button title="Retry" onPress={reload} />
-        <Button title="Back" onPress={onBack} />
-      </View>
+      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+        <ErrorView message={error} onRetry={reload} />
+      </Screen>
     );
   }
 
   if (selected) {
     return (
-      <ScrollView contentContainerStyle={styles.form}>
-        <Text style={styles.title}>{selected.label}</Text>
-        <SectionForm section={selected} config={config} onChange={update} />
-        {saveErrors ? saveErrors.map((msg, i) => (
-          <Text key={`err-${String(i)}`} style={styles.error}>{msg}</Text>
-        )) : null}
-        {saving ? <ActivityIndicator /> : (
-          <View style={styles.actions}>
-            <Button title="Save" onPress={() => { void save(); }} />
-            <Button title="Back to sections" color="#666" onPress={() => { setSelected(null); }} />
-          </View>
-        )}
-      </ScrollView>
+      <Screen
+        header={<AppHeader title={selected.label} subtitle="Edit fields and save" onBack={() => { setSelected(null); }} />}
+        footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={() => { void save(); }} />}
+      >
+        <Card>
+          <SectionForm section={selected} config={config} onChange={update} />
+        </Card>
+        {saveErrors ? <View style={styles.errors}><Banner messages={saveErrors} /></View> : null}
+      </Screen>
     );
   }
 
+  const sections = manifest?.sections ?? [];
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      <Text style={styles.title}>Configuration</Text>
-      {(manifest?.sections ?? []).map((section) => (
-        <TouchableOpacity
-          key={section.key}
-          style={styles.sectionRow}
-          onPress={() => { setSaveErrors(null); setSelected(section); }}
-        >
-          <Text style={styles.sectionLabel}>
-            {section.icon ? `${section.icon}  ` : ''}
-            {section.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-      <View style={styles.actions}>
-        <Button title="Back" color="#666" onPress={onBack} />
-      </View>
-    </ScrollView>
+    <Screen header={<AppHeader title="Configuration" onBack={onBack} />}>
+      <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
+        Choose a section to edit.
+      </Text>
+      <Card padded={false} style={styles.menu}>
+        {sections.map((section, index) => (
+          <Entrance key={section.key} index={index}>
+            <ListRow
+              title={section.label}
+              emoji={section.icon}
+              icon={section.icon ? undefined : 'cube-outline'}
+              onPress={() => { haptics.selection(); setSaveErrors(null); setSelected(section); }}
+            />
+            {index < sections.length - 1 ? <Divider style={styles.indent} /> : null}
+          </Entrance>
+        ))}
+      </Card>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  list: { padding: 20, gap: 4 },
-  form: { padding: 20 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 16 },
-  sectionRow: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  sectionLabel: { fontSize: 16, color: '#222' },
-  actions: { marginTop: 20, gap: 8 },
-  error: { color: '#b00020', marginTop: 8 },
+  hint: { marginBottom: 12, marginLeft: 4 },
+  menu: { overflow: 'hidden' },
+  indent: { marginLeft: 68 },
+  errors: { marginTop: 16 },
 });

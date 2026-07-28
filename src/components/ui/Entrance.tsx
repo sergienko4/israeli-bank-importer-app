@@ -8,6 +8,8 @@ import type { ReactNode } from 'react';
 import { Animated, Easing } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
+import { useReducedMotion } from '../../lib/useReducedMotion';
+
 interface EntranceProps {
   /** Content to animate in. */
   children: ReactNode;
@@ -29,9 +31,14 @@ interface EntranceProps {
 export function Entrance({
   children, index = 0, axis = 'y', distance = 14, style,
 }: EntranceProps) {
+  const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (reducedMotion) {
+      progress.setValue(1);
+      return undefined;
+    }
     const animation = Animated.timing(progress, {
       toValue: 1,
       duration: 340,
@@ -41,7 +48,7 @@ export function Entrance({
     });
     animation.start();
     return () => { animation.stop(); };
-  }, [progress, index]);
+  }, [progress, index, reducedMotion]);
 
   const translate = progress.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] });
   return (

@@ -12,6 +12,7 @@ import {
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
 
@@ -77,6 +78,7 @@ export function Button({
   loading = false, disabled = false, fullWidth = true, style,
 }: ButtonProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const dims = SIZES[size];
   const palette = useMemo(() => variantColors(theme, variant), [theme, variant]);
   const blocked = disabled || loading;
@@ -87,9 +89,17 @@ export function Button({
       return;
     }
     haptics.selection();
+    if (reducedMotion) {
+      scale.setValue(1);
+      return;
+    }
     Animated.spring(scale, { toValue: 0.96, speed: 50, bounciness: 0, useNativeDriver: true }).start();
   };
   const pressOut = (): void => {
+    if (reducedMotion) {
+      scale.setValue(1);
+      return;
+    }
     Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
   };
 
@@ -97,6 +107,7 @@ export function Button({
     <Animated.View style={[{ transform: [{ scale }], alignSelf: fullWidth ? 'stretch' : 'flex-start' }, style]}>
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={title}
         accessibilityState={{ disabled: blocked, busy: loading }}
         disabled={blocked}
         onPress={onPress}
@@ -105,7 +116,7 @@ export function Button({
         style={({ pressed }) => [
           styles.base,
           {
-            minHeight: dims.height,
+            minHeight: Math.max(dims.height, 44),
             paddingVertical: dims.padV,
             paddingHorizontal: theme.spacing.lg,
             backgroundColor: palette.bg,

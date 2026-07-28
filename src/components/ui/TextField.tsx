@@ -85,8 +85,8 @@ export function TextField({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-            hitSlop={8}
             onPress={() => { setRevealed((prev) => !prev); }}
+            style={styles.reveal}
           >
             <Ionicons name={revealed ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.colors.textSubtle} />
           </Pressable>
@@ -107,4 +107,5 @@ const styles = StyleSheet.create({
   field: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   leading: { marginRight: 2 },
   input: { flex: 1, fontSize: 16, padding: 0 },
+  reveal: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
 });

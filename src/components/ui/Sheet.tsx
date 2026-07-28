@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface SheetProps {
@@ -33,23 +34,36 @@ export function Sheet({
   visible, onClose, title, children,
 }: SheetProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
+  const previousVisible = useRef(false);
 
   useEffect(() => {
-    if (visible) {
+    const wasVisible = previousVisible.current;
+    previousVisible.current = visible;
+    if (visible && !wasVisible) {
       setMounted(true);
       haptics.light();
+      if (reducedMotion) {
+        progress.setValue(1);
+        return;
+      }
       Animated.timing(progress, {
         toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true,
       }).start();
-    } else if (mounted) {
+    } else if (!visible && wasVisible) {
+      if (reducedMotion) {
+        progress.setValue(0);
+        setMounted(false);
+        return;
+      }
       Animated.timing(progress, {
         toValue: 0, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: true,
       }).start(({ finished }) => { if (finished) { setMounted(false); } });
     }
-  }, [visible, mounted, progress]);
+  }, [visible, progress, reducedMotion]);
 
   if (!mounted) {
     return null;
@@ -58,7 +72,12 @@ export function Sheet({
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={onClose}>
       <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.overlay, opacity: progress }]}>
-        <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Close" onPress={onClose} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          accessibilityRole="button"
+          accessibilityLabel="Close sheet"
+          onPress={onClose}
+        />
       </Animated.View>
       <Animated.View
         style={[

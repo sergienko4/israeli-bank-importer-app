@@ -12,6 +12,21 @@ import {
 import type { FieldDef } from '../api/manifest';
 import { useTheme } from '../theme/ThemeContext';
 
+type ParsedNumberFieldText = { kind: 'valid'; value: number | undefined } | { kind: 'invalid' };
+
+/**
+ * Parses numeric config input without allowing NaN or infinite values.
+ * @param text - Raw text from the numeric input.
+ * @returns A valid parsed value, undefined for empty input, or invalid.
+ */
+export function parseNumberFieldText(text: string): ParsedNumberFieldText {
+  if (text.trim() === '') {
+    return { kind: 'valid', value: undefined };
+  }
+  const value = Number(text);
+  return Number.isFinite(value) ? { kind: 'valid', value } : { kind: 'invalid' };
+}
+
 interface Props {
   field: FieldDef;
   value: unknown;
@@ -35,6 +50,7 @@ function SelectControl({ field, value, onChange }: Props) {
           <Pressable
             key={option}
             accessibilityRole="button"
+            accessibilityLabel={`${field.label}: ${option}`}
             accessibilityState={{ selected }}
             style={({ pressed }) => [
               styles.chip,
@@ -85,7 +101,14 @@ function TextControl({ field, value, onChange }: Props) {
       placeholderTextColor={theme.colors.textSubtle}
       value={value === undefined || value === null ? '' : String(value)}
       onChangeText={(text) => {
-        onChange(isNumber ? (text.trim() === '' ? undefined : Number(text)) : text);
+        if (!isNumber) {
+          onChange(text);
+          return;
+        }
+        const parsed = parseNumberFieldText(text);
+        if (parsed.kind === 'valid') {
+          onChange(parsed.value);
+        }
       }}
       onFocus={() => { setFocused(true); }}
       onBlur={() => { setFocused(false); }}
@@ -158,11 +181,15 @@ const styles = StyleSheet.create({
   row: { marginBottom: 16 },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontSize: 14, marginBottom: 6, fontWeight: '600' },
-  remove: { padding: 2, marginBottom: 6 },
+  remove: {
+    minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+  },
   help: { fontSize: 12, marginTop: 6 },
-  input: { padding: 12, fontSize: 16 },
+  input: { minHeight: 44, padding: 12, fontSize: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { borderWidth: 1, paddingVertical: 8, paddingHorizontal: 16 },
+  chip: {
+    borderWidth: 1, minHeight: 44, minWidth: 44, paddingVertical: 8, paddingHorizontal: 16, justifyContent: 'center',
+  },
   boolRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12,
   },

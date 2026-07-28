@@ -4,6 +4,7 @@
  * string `list` fields inline. Structured object-lists are summarized (edited on
  * the web portal for now).
  */
+import { useState } from 'react';
 import {
   StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -31,6 +32,7 @@ interface ListFieldProps {
  */
 function ListField({ field, value, onChange }: ListFieldProps) {
   const theme = useTheme();
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const items = Array.isArray(value) ? (value as unknown[]) : [];
   if ((field.fields?.length ?? 0) > 0) {
     return (
@@ -52,13 +54,21 @@ function ListField({ field, value, onChange }: ListFieldProps) {
       {strings.map((entry, index) => (
         <View key={`${field.key}-${String(index)}`} style={styles.listRow}>
           <TextInput
+            accessibilityLabel={`${field.label} item ${String(index + 1)}`}
             style={[styles.listInput, {
-              borderColor: theme.colors.border, backgroundColor: theme.colors.surface, color: theme.colors.text, borderRadius: theme.radius.md,
+              borderColor: focusedIndex === index ? theme.colors.primary : theme.colors.border,
+              borderWidth: focusedIndex === index ? 2 : 1,
+              backgroundColor: theme.colors.surface,
+              color: theme.colors.text,
+              borderRadius: theme.radius.md,
+              padding: focusedIndex === index ? 11 : 12,
             }]}
             autoCapitalize="none"
             placeholderTextColor={theme.colors.textSubtle}
             value={entry}
             onChangeText={(text) => { setItem(index, text); }}
+            onFocus={() => { setFocusedIndex(index); }}
+            onBlur={() => { setFocusedIndex((current) => (current === index ? null : current)); }}
           />
           <Button
             title="Remove"
@@ -169,7 +179,7 @@ const styles = StyleSheet.create({
   help: { fontSize: 12, marginTop: 4, marginBottom: 8 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   listInput: {
-    flex: 1, borderWidth: 1, padding: 12, fontSize: 16,
+    flex: 1, minHeight: 44, fontSize: 16,
   },
   addBtn: { marginTop: 4 },
 });

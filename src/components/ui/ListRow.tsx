@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
+import { useReducedMotion } from '../../lib/useReducedMotion';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface ListRowProps {
@@ -38,6 +39,7 @@ export function ListRow({
   title, subtitle, icon, emoji, onPress, right, danger = false,
 }: ListRowProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
   const tint = danger ? theme.colors.danger : theme.colors.primary;
   const bubbleBg = danger ? theme.colors.dangerSoft : theme.colors.primarySoft;
@@ -76,9 +78,17 @@ export function ListRow({
   }
   const pressIn = (): void => {
     haptics.light();
+    if (reducedMotion) {
+      scale.setValue(1);
+      return;
+    }
     Animated.spring(scale, { toValue: 0.98, speed: 50, bounciness: 0, useNativeDriver: true }).start();
   };
   const pressOut = (): void => {
+    if (reducedMotion) {
+      scale.setValue(1);
+      return;
+    }
     Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
   };
   return (

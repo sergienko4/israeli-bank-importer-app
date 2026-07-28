@@ -6,7 +6,5 @@ coverage/
 android/
 ios/
 *.log
-# Generated lockfile (never hand-format)
-package-lock.json
 # Markdown is validated by markdownlint (.markdownlint.jsonc), not Prettier
 *.md

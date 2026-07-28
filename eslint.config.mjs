@@ -266,8 +266,8 @@ export default tseslint.config(
     },
   },
 
-  // 6. Non-TS config files (eslint.config.mjs): type-aware rules cannot run
-  //    without a TS project, so disable them here.
+  // 6. All JS/MJS/CJS files (configs like eslint.config.mjs): type-aware
+  //    rules need a TS project, so disable them here.
   {
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     ...tseslint.configs.disableTypeChecked,

@@ -7,7 +7,7 @@ import {
 } from 'react';
 
 import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
-import { authenticateBiometric, isBiometricAvailable } from '../lib/biometrics';
+import { authenticateBiometric } from '../lib/biometrics';
 import { getPushToken } from '../push/pushRegistration';
 import {
   clearConnection, type Connection, clearPassword, hasStoredPassword,
@@ -99,12 +99,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionExpired(true);
       return null;
     }
-    if (await isBiometricAvailable()) {
-      const unlocked = await authenticateBiometric('Unlock to reconnect to your importer');
-      if (!unlocked) {
-        setSessionExpired(true);
-        return null;
-      }
+    const unlock = await authenticateBiometric('Unlock to reconnect to your importer');
+    if (unlock.status === 'unsupported') {
+      await clearPassword();
+      setQuickUnlockEnabled(false);
+      setSessionExpired(true);
+      return null;
+    }
+    if (unlock.status !== 'success') {
+      setSessionExpired(true);
+      return null;
     }
     try {
       const token = await requestToken(connection.baseUrl, password);

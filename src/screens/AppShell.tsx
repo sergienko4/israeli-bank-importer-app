@@ -18,6 +18,7 @@ import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
 import { HomeScreen } from './HomeScreen';
 import { OtpPrompt } from './OtpPrompt';
+import { ReconnectBanner } from './ReconnectBanner';
 import { StatusScreen } from './StatusScreen';
 
 /** The top-level destinations. */
@@ -85,6 +86,7 @@ export function AppShell() {
       </ScreenSwitch>
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
       {pending ? <OtpPrompt request={pending} onSubmitted={dismiss} onDismiss={dismiss} /> : null}
+      <ReconnectBanner />
     </View>
   );
 }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Themed pressable button with brand variants, sizes, loading and disabled
  * states, an optional leading icon, and built-in accessibility. Replaces the
  * platform-default React Native `Button` (which renders inconsistent, all-caps
@@ -105,6 +105,7 @@ export function Button({
           styles.base,
           {
             minHeight: Math.max(dims.height, 44),
+            minWidth: 44,
             paddingVertical: dims.padV,
             paddingHorizontal: theme.spacing.lg,
             backgroundColor: palette.bg,

@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from 'react';
 import { Animated, Pressable, View } from 'react-native';
-import type { StyleProp, ViewStyle } from 'react-native';
+import type { AccessibilityRole, StyleProp, ViewStyle } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
@@ -21,6 +21,12 @@ interface CardProps {
   elevation?: Elevation;
   /** Makes the card pressable with a press micro-interaction. */
   onPress?: () => void;
+  /** Accessible name for pressable cards. */
+  accessibilityLabel?: string;
+  /** Optional accessibility hint for pressable cards. */
+  accessibilityHint?: string;
+  /** Pressable role. Defaults to `button`. */
+  accessibilityRole?: AccessibilityRole;
   /** Extra style. */
   style?: StyleProp<ViewStyle>;
 }
@@ -31,7 +37,8 @@ interface CardProps {
  * @returns The card element.
  */
 export function Card({
-  children, padded = true, elevation = 1, onPress, style,
+  children, padded = true, elevation = 1, onPress, accessibilityLabel,
+  accessibilityHint, accessibilityRole = 'button', style,
 }: CardProps) {
   const theme = useTheme();
   const press = usePressScale();
@@ -41,6 +48,7 @@ export function Card({
       borderRadius: theme.radius.lg,
       borderWidth: 1,
       borderColor: theme.colors.border,
+      minHeight: onPress ? 44 : undefined,
       padding: padded ? theme.spacing.lg : 0,
     },
     theme.shadow(elevation),
@@ -58,7 +66,9 @@ export function Card({
   return (
     <Animated.View style={{ transform: [{ scale: press.scale }] }}>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint={accessibilityHint}
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={press.onPressOut}

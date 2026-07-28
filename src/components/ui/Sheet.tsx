@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Bottom sheet modal: a themed panel that springs up from the bottom over a
  * fading backdrop, with a grab handle and optional title. Stays mounted during
  * the close animation so the exit is smooth. Built on the Animated API + Modal,

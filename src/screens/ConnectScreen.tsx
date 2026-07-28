@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Connect + login screen: a branded landing where the user enters their
  * importer URL and portal password, then connects. Errors surface in an inline
  * banner. Purely presentational over the auth context.
@@ -99,7 +99,7 @@ export function ConnectScreen() {
           <View style={styles.toggle}>
             <View style={styles.toggleText}>
               <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>Quick unlock</Text>
-              <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}> 
+              <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
                 Reconnect with Face ID / fingerprint after your session expires.
               </Text>
             </View>
@@ -129,7 +129,7 @@ export function ConnectScreen() {
 
       <View style={styles.hint}>
         <Ionicons name="shield-checkmark-outline" size={15} color={theme.colors.textSubtle} />
-        <Text style={[theme.typography.small, styles.hintText, { color: theme.colors.textSubtle }]}> 
+        <Text style={[theme.typography.small, styles.hintText, { color: theme.colors.textSubtle }]}>
           Reachable over your private network (e.g. Tailscale).
         </Text>
       </View>

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Compact status pill: a tinted rounded badge with an optional icon and a
  * label. Conveys state with color and text/icon (never color alone).
  */

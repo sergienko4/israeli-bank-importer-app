@@ -96,6 +96,7 @@ function TextControl({ field, value, onChange }: Props) {
       ]}
       keyboardType={isNumber ? 'numeric' : 'default'}
       secureTextEntry={field.kind === 'secret'}
+      accessibilityLabel={field.label}
       autoCapitalize="none"
       autoCorrect={false}
       placeholderTextColor={theme.colors.textSubtle}
@@ -151,6 +152,9 @@ export function FieldInput({ field, value, onChange, onRemove }: Props) {
           {field.help ? <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text> : null}
         </View>
         <Switch
+          accessibilityRole="switch"
+          accessibilityLabel={field.label}
+          accessibilityState={{ checked: value === true }}
           value={value === true}
           onValueChange={onChange}
           trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
@@ -191,7 +195,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, minHeight: 44, minWidth: 44, paddingVertical: 8, paddingHorizontal: 16, justifyContent: 'center',
   },
   boolRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, minHeight: 44,
   },
   boolText: { flex: 1 },
 });

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Entrance animation wrapper: fades and slides its children up on mount, with an
  * optional stagger derived from a list index. Uses the built-in Animated API
  * (native driver) so it runs smoothly without extra native dependencies, and

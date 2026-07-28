@@ -13,6 +13,7 @@ import {
   Banner, Button, Sheet, TextField,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
+import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
@@ -23,8 +24,6 @@ interface Props {
   /** Called when the user dismisses without submitting. */
   onDismiss: () => void;
 }
-
-const CODE_RE = /^\d{4,8}$/;
 
 /**
  * Renders the OTP entry sheet.
@@ -39,8 +38,8 @@ export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (): Promise<void> => {
-    const trimmed = code.trim();
-    if (!CODE_RE.test(trimmed)) {
+    const trimmed = normalizeOtpCodeInput(code);
+    if (!isValidOtpCode(trimmed)) {
       setError('Enter the 4–8 digit code from your SMS.');
       return;
     }
@@ -49,15 +48,21 @@ export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
     }
     setSubmitting(true);
     setError(null);
-    const result = await submitOtp(connection, request.id, trimmed);
-    setSubmitting(false);
-    if (result.ok) {
-      haptics.success();
-      setCode('');
-      onSubmitted();
-    } else {
+    try {
+      const result = await submitOtp(connection, request.id, trimmed);
+      if (result.ok) {
+        haptics.success();
+        setCode('');
+        onSubmitted();
+      } else {
+        haptics.warning();
+        setError(result.error ?? 'The importer rejected the code.');
+      }
+    } catch (e) {
       haptics.warning();
-      setError(result.error ?? 'The importer rejected the code.');
+      setError(e instanceof Error ? e.message : 'The importer rejected the code.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -69,7 +74,10 @@ export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
       <TextField
         label="OTP code"
         value={code}
-        onChangeText={setCode}
+        onChangeText={(text) => {
+          setCode(normalizeOtpCodeInput(text));
+          setError(null);
+        }}
         placeholder="123456"
         keyboardType="number-pad"
         icon="keypad-outline"

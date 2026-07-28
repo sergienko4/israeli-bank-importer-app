@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Import status screen: shows recent import runs (per-bank outcome + counts)
  * from the importer's redacted audit log, newest first, with pull-to-refresh.
  */

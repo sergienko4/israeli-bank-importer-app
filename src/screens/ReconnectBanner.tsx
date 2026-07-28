@@ -61,7 +61,13 @@ export function ReconnectBanner() {
           <Ionicons name="lock-closed" size={16} color={theme.colors.primary} />
         </View>
         <View style={styles.text}>
-          <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>Session expired</Text>
+          <Text
+            accessibilityRole="alert"
+            accessibilityLiveRegion="polite"
+            style={[theme.typography.bodyMedium, { color: theme.colors.text }]}
+          >
+            Session expired
+          </Text>
           <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
             {quickUnlockEnabled ? 'Unlock to reconnect securely.' : 'Reconnect to continue.'}
           </Text>

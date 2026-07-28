@@ -7,14 +7,14 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { getConfig, getStatus } from '../api/importerClient';
 import type { ConfigObject } from '../api/manifest';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
 import {
-  Button, Card, Entrance, Screen, Skeleton, StatusPill,
+  Banner, Button, Card, Entrance, Screen, Skeleton, StatusPill,
 } from '../components/ui';
 import type { PillTone } from '../components/ui';
 import { banksConfigured, latestRun, relativeTime } from '../lib/homeOverview';
@@ -87,6 +87,23 @@ export function HomeScreen({ onNavigate }: Props) {
 
   const last = latestRun(runs);
   const bankCount = config ? banksConfigured(config) : 0;
+  const confirmDisconnect = (): void => {
+    Alert.alert(
+      'Disconnect importer?',
+      'This removes the saved connection and quick unlock password from this device.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: () => {
+            haptics.medium();
+            void disconnect();
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <Screen contentStyle={styles.content}>
@@ -115,13 +132,18 @@ export function HomeScreen({ onNavigate }: Props) {
       <Text style={[theme.typography.caption, styles.section, { color: theme.colors.textSubtle }]}>OVERVIEW</Text>
 
       {failed && !loading ? (
-        <Text style={[theme.typography.small, styles.overviewNote, { color: theme.colors.textMuted }]}>
-          Couldn&apos;t refresh the overview. Open a tab to retry.
-        </Text>
+        <View style={styles.overviewNote}>
+          <Banner messages={['Couldn’t refresh the overview. Open a tab to retry.']} tone="warning" />
+        </View>
       ) : null}
 
       <Entrance index={2}>
-        <Card onPress={() => { onNavigate('status'); }} style={styles.card}>
+        <Card
+          accessibilityLabel="Open import status"
+          accessibilityHint="Shows recent importer runs and per-bank results."
+          onPress={() => { onNavigate('status'); }}
+          style={styles.card}
+        >
           <View style={styles.cardHead}>
             <View style={styles.cardTitle}>
               <View style={[styles.bubble, { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.md }]}>
@@ -155,7 +177,12 @@ export function HomeScreen({ onNavigate }: Props) {
       </Entrance>
 
       <Entrance index={3}>
-        <Card onPress={() => { onNavigate('banks'); }} style={styles.card}>
+        <Card
+          accessibilityLabel="Open bank settings"
+          accessibilityHint="Shows configured banks and bank credential settings."
+          onPress={() => { onNavigate('banks'); }}
+          style={styles.card}
+        >
           <View style={styles.cardHead}>
             <View style={styles.cardTitle}>
               <View style={[styles.bubble, { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.md }]}>
@@ -179,7 +206,7 @@ export function HomeScreen({ onNavigate }: Props) {
         title="Disconnect"
         icon="log-out-outline"
         variant="secondary"
-        onPress={() => { haptics.medium(); void disconnect(); }}
+        onPress={confirmDisconnect}
         style={styles.disconnect}
       />
     </Screen>
@@ -194,7 +221,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: { letterSpacing: 0.6 },
   section: { letterSpacing: 0.6, marginTop: 12, marginLeft: 4 },
-  overviewNote: { marginLeft: 4, marginBottom: 4 },
+  overviewNote: { marginBottom: 4 },
   card: { gap: 12 },
   cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cardTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 },

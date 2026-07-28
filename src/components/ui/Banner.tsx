@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Inline banner for validation errors, warnings, or success notices. Conveys
  * tone with a tinted background and an icon alongside one or more messages.
  */
@@ -57,11 +57,12 @@ export function Banner({ messages, tone = 'danger' }: BannerProps) {
   }
 
   const style = resolveBannerToneStyle(theme, tone);
+  const shouldAnnounce = tone === 'danger' || tone === 'warning';
   const translateY = pop.opacity.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] });
   return (
     <Animated.View
-      accessibilityRole={tone === 'danger' ? 'alert' : undefined}
-      accessibilityLiveRegion={tone === 'danger' ? 'polite' : undefined}
+      accessibilityRole={shouldAnnounce ? 'alert' : undefined}
+      accessibilityLiveRegion={shouldAnnounce ? 'polite' : undefined}
       style={[
         styles.root,
         {

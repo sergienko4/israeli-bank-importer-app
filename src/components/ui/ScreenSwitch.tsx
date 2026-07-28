@@ -102,6 +102,10 @@ export function ScreenSwitch({
             useNativeDriver: true,
           }).start(() => { back(); });
         } else {
+          if (reducedRef.current) {
+            translateX.setValue(0);
+            return;
+          }
           Animated.spring(translateX, { toValue: 0, useNativeDriver: true, ...spring.settle }).start();
         }
       },

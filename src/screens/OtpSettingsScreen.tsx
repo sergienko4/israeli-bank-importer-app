@@ -95,13 +95,19 @@ export function OtpSettingsScreen({ onBack }: Props) {
     const previous = channel;
     setChannel(next);
     setSaveError(null);
-    const result = await setOtpSettings(connection, next);
-    if (result.ok) {
-      haptics.success();
-    } else {
+    try {
+      const result = await setOtpSettings(connection, next);
+      if (result.ok) {
+        haptics.success();
+      } else {
+        setChannel(previous);
+        haptics.warning();
+        setSaveError(result.error ?? 'Could not save the OTP setting.');
+      }
+    } catch (e) {
       setChannel(previous);
       haptics.warning();
-      setSaveError(result.error ?? 'Could not save the OTP setting.');
+      setSaveError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
     }
   };
 
@@ -134,6 +140,9 @@ export function OtpSettingsScreen({ onBack }: Props) {
               icon={choice.icon}
               title={choice.title}
               subtitle={choice.subtitle}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected, selected }}
+              accessibilityHint="Selects this OTP delivery method."
               onPress={() => { void choose(choice.channel); }}
               right={selected ? (
                 <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />

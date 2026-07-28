@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Tappable list row with a leading icon bubble, a title, an optional subtitle,
  * and a trailing slot (defaults to a chevron when the row is pressable).
  */
@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import {
   Animated, Pressable, StyleSheet, Text, View,
 } from 'react-native';
+import type { AccessibilityRole, AccessibilityState } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
@@ -27,6 +28,12 @@ interface ListRowProps {
   right?: ReactNode;
   /** Tint the row for destructive intent. */
   danger?: boolean;
+  /** Accessible state for selectable rows. */
+  accessibilityState?: AccessibilityState;
+  /** Accessible role for pressable rows. Defaults to `button`. */
+  accessibilityRole?: AccessibilityRole;
+  /** Additional hint announced by screen readers. */
+  accessibilityHint?: string;
 }
 
 /**
@@ -36,6 +43,7 @@ interface ListRowProps {
  */
 export function ListRow({
   title, subtitle, icon, emoji, onPress, right, danger = false,
+  accessibilityState, accessibilityRole = 'button', accessibilityHint,
 }: ListRowProps) {
   const theme = useTheme();
   const press = usePressScale(0.98);
@@ -84,8 +92,10 @@ export function ListRow({
   return (
     <Animated.View style={{ transform: [{ scale: press.scale }] }}>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibleName}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={accessibilityState}
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={press.onPressOut}

@@ -79,6 +79,7 @@ export function TextField({
           placeholder={placeholder}
           placeholderTextColor={theme.colors.textSubtle}
           secureTextEntry={secure && !revealed}
+          accessibilityLabel={label ?? placeholder}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}

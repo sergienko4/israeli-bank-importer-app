@@ -30,6 +30,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "jest",
+    "test:coverage": "jest --coverage",
+    "lint:licenses": "npx --yes license-checker-rseidelsohn --production --excludePrivatePackages --failOn \"AGPL-1.0;AGPL-3.0\"",
     "export": "expo export --platform android --platform ios"
   },
   "private": true

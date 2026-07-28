@@ -4,10 +4,8 @@
  * {@link SectionForm}.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import {
-  Pressable, StyleSheet, Switch, Text, TextInput, View,
-} from 'react-native';
+import { type ReactElement, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { useTheme } from '../theme/ThemeContext';
@@ -23,8 +21,37 @@ export function parseNumberFieldText(text: string): ParsedNumberFieldText {
   if (text.trim() === '') {
     return { kind: 'valid', value: undefined };
   }
+
   const value = Number(text);
   return Number.isFinite(value) ? { kind: 'valid', value } : { kind: 'invalid' };
+}
+
+function stringifyTextInputValue(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  if (typeof value === 'symbol') {
+    return value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyTextInputValue(item)).join(',');
+  }
+
+  if (value instanceof Date) {
+    return value.toString();
+  }
+
+  return Object.prototype.toString.call(value);
 }
 
 interface Props {
@@ -40,7 +67,7 @@ interface Props {
  * @param props - The field, current value, and change handler.
  * @returns The select control.
  */
-function SelectControl({ field, value, onChange }: Props) {
+function SelectControl({ field, value, onChange }: Props): ReactElement {
   const theme = useTheme();
   return (
     <View style={styles.chips}>
@@ -61,9 +88,17 @@ function SelectControl({ field, value, onChange }: Props) {
                 opacity: pressed ? 0.8 : 1,
               },
             ]}
-            onPress={() => { onChange(option); }}
+            onPress={() => {
+              onChange(option);
+            }}
           >
-            <Text style={{ color: selected ? theme.colors.onPrimary : theme.colors.text, fontWeight: '500', fontSize: 14 }}>
+            <Text
+              style={{
+                color: selected ? theme.colors.onPrimary : theme.colors.text,
+                fontWeight: '500',
+                fontSize: 14,
+              }}
+            >
               {option}
             </Text>
           </Pressable>
@@ -78,7 +113,7 @@ function SelectControl({ field, value, onChange }: Props) {
  * @param props - The field, current value, and change handler.
  * @returns The input element.
  */
-function TextControl({ field, value, onChange }: Props) {
+function TextControl({ field, value, onChange }: Props): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const isNumber = field.kind === 'number';
@@ -100,7 +135,7 @@ function TextControl({ field, value, onChange }: Props) {
       autoCapitalize="none"
       autoCorrect={false}
       placeholderTextColor={theme.colors.textSubtle}
-      value={value === undefined || value === null ? '' : String(value)}
+      value={stringifyTextInputValue(value)}
       onChangeText={(text) => {
         if (!isNumber) {
           onChange(text);
@@ -111,8 +146,12 @@ function TextControl({ field, value, onChange }: Props) {
           onChange(parsed.value);
         }
       }}
-      onFocus={() => { setFocused(true); }}
-      onBlur={() => { setFocused(false); }}
+      onFocus={() => {
+        setFocused(true);
+      }}
+      onBlur={() => {
+        setFocused(false);
+      }}
     />
   );
 }
@@ -124,7 +163,7 @@ function TextControl({ field, value, onChange }: Props) {
  * @param props - The field, current value, change handler, and optional remove.
  * @returns The field row.
  */
-export function FieldInput({ field, value, onChange, onRemove }: Props) {
+export function FieldInput({ field, value, onChange, onRemove }: Props): ReactElement {
   const theme = useTheme();
   const labelText = (
     <Text style={[styles.label, { color: theme.colors.text }]}>
@@ -150,14 +189,18 @@ export function FieldInput({ field, value, onChange, onRemove }: Props) {
       <View style={styles.boolRow}>
         <View style={styles.boolText}>
           {labelText}
-          {field.help ? <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text> : null}
+          {field.help ? (
+            <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text>
+          ) : null}
         </View>
         <Pressable
           accessibilityRole="switch"
           accessibilityLabel={field.label}
           accessibilityHint={field.help}
           accessibilityState={{ checked }}
-          onPress={() => { onChange(!checked); }}
+          onPress={() => {
+            onChange(!checked);
+          }}
           style={({ pressed }) => [styles.switchTarget, { opacity: pressed ? 0.85 : 1 }]}
         >
           <View pointerEvents="none">
@@ -185,7 +228,9 @@ export function FieldInput({ field, value, onChange, onRemove }: Props) {
       ) : (
         <TextControl field={field} value={value} onChange={onChange} />
       )}
-      {field.help ? <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text> : null}
+      {field.help ? (
+        <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text>
+      ) : null}
     </View>
   );
 }
@@ -195,16 +240,30 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   label: { fontSize: 14, marginBottom: 6, fontWeight: '600' },
   remove: {
-    minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+    minHeight: 44,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   help: { fontSize: 12, marginTop: 6 },
   input: { minHeight: 44, padding: 12, fontSize: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    borderWidth: 1, minHeight: 44, minWidth: 44, paddingVertical: 8, paddingHorizontal: 16, justifyContent: 'center',
+    borderWidth: 1,
+    minHeight: 44,
+    minWidth: 44,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    justifyContent: 'center',
   },
   boolRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    gap: 12,
+    minHeight: 44,
   },
   boolText: { flex: 1 },
   switchTarget: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },

@@ -3,17 +3,13 @@
  * exposes it with the static scales via {@link useTheme}. Wrap the app in
  * {@link ThemeProvider} once; every screen and primitive reads from the hook.
  */
+import type { ReactElement, ReactNode } from 'react';
 import { createContext, useContext, useMemo } from 'react';
-import type { ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
 import type { ViewStyle } from 'react-native';
+import { useColorScheme } from 'react-native';
 
-import {
-  darkColors, lightColors, radius, spacing, typography,
-} from './tokens';
-import type {
-  Radius, Spacing, ThemeColors, Typography,
-} from './tokens';
+import type { Radius, Spacing, ThemeColors, Typography } from './tokens';
+import { darkColors, lightColors, radius, spacing, typography } from './tokens';
 
 /** Elevation levels for {@link Theme.shadow}. */
 export type Elevation = 0 | 1 | 2 | 3;
@@ -63,17 +59,20 @@ const ThemeContext = createContext<Theme | null>(null);
  * @param props - The subtree to theme.
  * @returns The provider element.
  */
-export function ThemeProvider({ children }: { children: ReactNode }) {
+export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
   const system = useColorScheme();
   const scheme: 'light' | 'dark' = system === 'dark' ? 'dark' : 'light';
-  const value = useMemo<Theme>(() => ({
-    colors: scheme === 'dark' ? darkColors : lightColors,
-    spacing,
-    radius,
-    typography,
-    scheme,
-    shadow: makeShadow(scheme),
-  }), [scheme]);
+  const value = useMemo<Theme>(
+    () => ({
+      colors: scheme === 'dark' ? darkColors : lightColors,
+      spacing,
+      radius,
+      typography,
+      scheme,
+      shadow: makeShadow(scheme),
+    }),
+    [scheme],
+  );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 

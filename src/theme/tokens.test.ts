@@ -1,7 +1,7 @@
-import type { Theme } from './ThemeContext';
-import { lightColors, darkColors, radius, spacing, typography } from './tokens';
 import { resolveBannerToneStyle } from '../components/ui/Banner';
 import { resolvePillToneStyle } from '../components/ui/StatusPill';
+import type { Theme } from './ThemeContext';
+import { darkColors, lightColors, radius, spacing, typography } from './tokens';
 
 const lightTheme: Theme = {
   colors: lightColors,

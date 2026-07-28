@@ -221,14 +221,20 @@ export function useBanksScreenModel(
     }
     setSaving(true);
     setSaveErrors(null);
-    const result = await saveConfig(connection, data.config);
-    setSaving(false);
-    if (result.ok) {
-      haptics.success();
-      setSelected(null);
-    } else {
+    try {
+      const result = await saveConfig(connection, data.config);
+      if (result.ok) {
+        haptics.success();
+        setSelected(null);
+      } else {
+        haptics.warning();
+        setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
+      }
+    } catch {
       haptics.warning();
-      setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
+      setSaveErrors(['Save failed. Check your connection and try again.']);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -236,12 +242,16 @@ export function useBanksScreenModel(
     if (!connection) {
       return;
     }
-    const result = await removeBank(connection, id);
-    if (result.ok) {
-      haptics.success();
-      reload();
-    } else {
-      data.setError(result.error ?? 'Could not remove the bank.');
+    try {
+      const result = await removeBank(connection, id);
+      if (result.ok) {
+        haptics.success();
+        reload();
+      } else {
+        data.setError(result.error ?? 'Could not remove the bank.');
+      }
+    } catch {
+      data.setError('Could not remove the bank. Check your connection and try again.');
     }
   };
 

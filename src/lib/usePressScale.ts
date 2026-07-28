@@ -1,6 +1,6 @@
 /**
  * Press micro-interaction: a spring-driven scale that depresses a pressable on
- * press-in and settles it back on release, honoring isReduced motion. Share this
+ * press-in and settles it back on release, honoring reduced motion. Share this
  * across Button, ListRow, and Card so every tappable surface feels the same.
  */
 import { useEffect, useRef } from 'react';

@@ -7,8 +7,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { AppHeader, Card, Divider, EmptyState, Entrance, ListRow, Screen } from '../components/ui';
 import { useTheme } from '../theme/ThemeContext';
-
-type BankConfig = Record<string, unknown>;
+import { type BankConfig, targetsOf } from './BanksScreenModel';
 
 interface BanksListViewProps {
   banks: Record<string, BankConfig>;
@@ -18,10 +17,6 @@ interface BanksListViewProps {
   onSelect: (id: string) => void;
   onStartAdd: (id: string) => void;
   onRemove: (id: string) => void;
-}
-
-function targetsOf(bank: BankConfig): Record<string, unknown>[] {
-  return Array.isArray(bank.targets) ? (bank.targets as Record<string, unknown>[]) : [];
 }
 
 /**

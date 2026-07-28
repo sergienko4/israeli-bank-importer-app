@@ -1,6 +1,6 @@
 /**
  * Mount entrance for small surfaces (pills, banners, empty states): a gentle
- * scale-and-fade in on first render, honoring isReduced motion by appearing
+ * scale-and-fade in on first render, honoring reduced motion by appearing
  * instantly. Returns animated values to drive an Animated.View.
  */
 import { useEffect, useRef } from 'react';

@@ -1,8 +1,13 @@
 import * as SecureStore from 'expo-secure-store';
 
 import {
-  clearConnection, clearPassword, hasStoredPassword, loadConnection,
-  loadPassword, savePassword, saveConnection,
+  clearConnection,
+  clearPassword,
+  hasStoredPassword,
+  loadConnection,
+  loadPassword,
+  saveConnection,
+  savePassword,
 } from './connectionStore';
 
 jest.mock('expo-secure-store');

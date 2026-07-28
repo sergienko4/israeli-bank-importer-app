@@ -7,6 +7,7 @@ import {
 } from 'react';
 
 import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
+import { authenticateBiometric, isBiometricAvailable } from '../lib/biometrics';
 import { getPushToken } from '../push/pushRegistration';
 import {
   clearConnection, type Connection, clearPassword, hasStoredPassword,
@@ -22,6 +23,8 @@ export interface AuthState {
   connection: Connection | null;
   /** True when a password is stored for silent re-auth (quick unlock). */
   quickUnlockEnabled: boolean;
+  /** True when the session expired and silent re-auth was unavailable/declined. */
+  sessionExpired: boolean;
   connect: (baseUrl: string, password: string, rememberPassword?: boolean) => Promise<void>;
   /** Silently re-authenticates using the stored password; null when unavailable/failed. */
   reauthenticate: () => Promise<Connection | null>;
@@ -57,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
   const [quickUnlockEnabled, setQuickUnlockEnabled] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     Promise.all([loadConnection(), hasStoredPassword()])
@@ -81,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setConnection(next);
     setQuickUnlockEnabled(rememberPassword);
+    setSessionExpired(false);
     setStatus('connected');
     void registerForPush(next);
   }, []);
@@ -91,16 +96,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const password = await loadPassword();
     if (!password) {
+      setSessionExpired(true);
       return null;
+    }
+    if (await isBiometricAvailable()) {
+      const unlocked = await authenticateBiometric('Unlock to reconnect to your importer');
+      if (!unlocked) {
+        setSessionExpired(true);
+        return null;
+      }
     }
     try {
       const token = await requestToken(connection.baseUrl, password);
       const next: Connection = { baseUrl: connection.baseUrl, token };
       await saveConnection(next);
       setConnection(next);
+      setSessionExpired(false);
       setStatus('connected');
       return next;
     } catch {
+      setSessionExpired(true);
       return null;
     }
   }, [connection]);
@@ -119,14 +134,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await clearConnection();
     setConnection(null);
     setQuickUnlockEnabled(false);
+    setSessionExpired(false);
     setStatus('disconnected');
   }, []);
 
   const value = useMemo<AuthState>(
     () => ({
-      status, connection, quickUnlockEnabled, connect, reauthenticate, disableQuickUnlock, disconnect,
+      status,
+      connection,
+      quickUnlockEnabled,
+      sessionExpired,
+      connect,
+      reauthenticate,
+      disableQuickUnlock,
+      disconnect,
     }),
-    [status, connection, quickUnlockEnabled, connect, reauthenticate, disableQuickUnlock, disconnect],
+    [status, connection, quickUnlockEnabled, sessionExpired, connect, reauthenticate, disableQuickUnlock, disconnect],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

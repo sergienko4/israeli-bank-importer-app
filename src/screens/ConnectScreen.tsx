@@ -4,13 +4,16 @@
  * banner. Purely presentational over the auth context.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  StyleSheet, Switch, Text, View,
+} from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
   Button, Card, Screen, TextField,
 } from '../components/ui';
+import { isBiometricAvailable } from '../lib/biometrics';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -23,14 +26,26 @@ export function ConnectScreen() {
   const { connect } = useAuth();
   const [baseUrl, setBaseUrl] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void isBiometricAvailable().then((available) => {
+      if (active) {
+        setBiometricAvailable(available);
+      }
+    });
+    return () => { active = false; };
+  }, []);
 
   const onConnect = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      await connect(baseUrl, password);
+      await connect(baseUrl, password, remember && biometricAvailable);
       haptics.success();
     } catch (e) {
       haptics.warning();
@@ -60,6 +75,8 @@ export function ConnectScreen() {
           onChangeText={setBaseUrl}
           placeholder="https://your-importer:8080"
           keyboardType="url"
+          autoComplete="url"
+          textContentType="URL"
         />
         <TextField
           label="Portal password"
@@ -68,7 +85,25 @@ export function ConnectScreen() {
           value={password}
           onChangeText={setPassword}
           placeholder="Your portal password"
+          autoComplete="current-password"
+          textContentType="password"
         />
+
+        {biometricAvailable ? (
+          <View style={styles.toggle}>
+            <View style={styles.toggleText}>
+              <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>Quick unlock</Text>
+              <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
+                Reconnect with Face ID / fingerprint after your session expires.
+              </Text>
+            </View>
+            <Switch
+              value={remember}
+              onValueChange={setRemember}
+              trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
+            />
+          </View>
+        ) : null}
 
         {error ? (
           <View style={[styles.banner, { backgroundColor: theme.colors.dangerSoft, borderRadius: theme.radius.md }]}>
@@ -103,6 +138,8 @@ const styles = StyleSheet.create({
   logo: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   tagline: { textAlign: 'center', maxWidth: 300 },
   card: { gap: 16 },
+  toggle: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  toggleText: { flex: 1, gap: 2 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
   bannerText: { flex: 1 },
   submit: { marginTop: 4 },

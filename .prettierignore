@@ -1,3 +1,4 @@
+# Build output and generated files
 dist/
 .expo/
 node_modules/
@@ -5,8 +6,7 @@ coverage/
 android/
 ios/
 *.log
+# Generated lockfile (never hand-format)
 package-lock.json
+# Markdown is validated by markdownlint (.markdownlint.jsonc), not Prettier
 *.md
-*.yml
-*.yaml
-.github/

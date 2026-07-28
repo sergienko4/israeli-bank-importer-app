@@ -57,6 +57,9 @@
     "export": "expo export --platform android --platform ios",
     "prepare": "husky"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "lint-staged": {
     "*.{ts,tsx}": [
       "eslint --max-warnings=0",

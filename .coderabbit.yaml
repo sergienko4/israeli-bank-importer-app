@@ -13,7 +13,7 @@ reviews:
   poem: false
   abort_on_close: true
   path_instructions:
-    - path: "src/**/*.{ts,tsx}"
+    - path: 'src/**/*.{ts,tsx}'
       instructions: |
         Expo SDK 54 / React Native / TypeScript app. Enforce:
         - Strict TypeScript: zero `any`, no `as any`/`as never`; prefer precise types.
@@ -28,19 +28,19 @@ reviews:
           deep nesting; descriptive names (no temp/data/foo).
         - Use `import type { X }` for type-only imports (consistent-type-imports).
         - Do not introduce new runtime dependencies without justification.
-    - path: "src/**/*.test.{ts,tsx}"
+    - path: 'src/**/*.test.{ts,tsx}'
       instructions: |
         - Tests are colocated with the unit under test (*.test.ts / *.test.tsx).
         - Prefer behavior-focused tests; mock only external dependencies
           (network, native modules), not pure data objects.
         - Deterministic tests only — no arbitrary sleeps; no shared mutable state.
-    - path: ".github/**"
+    - path: '.github/**'
       instructions: |
         - Conventional commit titles (feat:, fix:, refactor:, ci:, chore:, docs:).
         - Pin third-party GitHub Actions to a version/tag; Dependabot updates them.
         - Secret-dependent jobs (SonarCloud, EAS) must self-skip when the secret
           is absent so CI stays green before secrets are configured.
-    - path: "**/*.md"
+    - path: '**/*.md'
       instructions: |
         - Keep setup commands copy-paste runnable and in sync with package.json.
         - No broken links; prefer absolute URLs for cross-repo references.
@@ -48,8 +48,8 @@ reviews:
     enabled: true
     auto_incremental_review: true
     ignore_title_keywords:
-      - "chore(main): release"
-      - "WIP"
+      - 'chore(main): release'
+      - 'WIP'
     drafts: false
   finishing_touches:
     docstrings:

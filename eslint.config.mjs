@@ -164,6 +164,7 @@ export default tseslint.config(
 
       // Unused code
       'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
       'unused-imports/no-unused-imports': 'error',
       'unused-imports/no-unused-vars': [
         'error',
@@ -265,8 +266,8 @@ export default tseslint.config(
     },
   },
 
-  // 6. Non-TS config files (eslint.config.mjs, commitlint, etc.): type-aware
-  //    rules cannot run without a TS project, so disable them here.
+  // 6. Non-TS config files (eslint.config.mjs): type-aware rules cannot run
+  //    without a TS project, so disable them here.
   {
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
     ...tseslint.configs.disableTypeChecked,

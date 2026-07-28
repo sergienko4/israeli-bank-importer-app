@@ -2,14 +2,20 @@
  * Import status screen: shows recent import runs (per-bank outcome + counts)
  * from the importer's redacted audit log, newest first, with pull-to-refresh.
  */
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator, Button, ScrollView, StyleSheet, Text, View,
+  RefreshControl, StyleSheet, Text, View,
 } from 'react-native';
 
 import { getStatus } from '../api/importerClient';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
+import {
+  AppHeader, Banner, Card, Divider, EmptyState, Entrance, ErrorView, Loader, Screen, StatusPill,
+} from '../components/ui';
+import type { PillTone } from '../components/ui';
+import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
   onBack: () => void;
@@ -26,15 +32,15 @@ function formatTime(iso: string): string {
 }
 
 /**
- * Maps a bank status to a compact status glyph.
- * @param status - The per-bank status.
- * @returns A glyph representing the status.
+ * Picks the overall run tone from its success ratio.
+ * @param entry - The run entry.
+ * @returns The pill tone.
  */
-function statusIcon(status: string): string {
-  if (status === 'success') {
-    return '✓';
+function runTone(entry: RunEntry): PillTone {
+  if (entry.successfulBanks >= entry.totalBanks) {
+    return 'success';
   }
-  return status === 'failure' ? '✗' : '•';
+  return entry.successfulBanks === 0 ? 'danger' : 'warning';
 }
 
 /**
@@ -43,24 +49,41 @@ function statusIcon(status: string): string {
  * @returns The run card.
  */
 function RunCard({ entry }: { entry: RunEntry }) {
+  const theme = useTheme();
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{formatTime(entry.timestamp)}</Text>
-      <Text style={styles.summary}>
-        {String(entry.successfulBanks)}/{String(entry.totalBanks)} banks · {String(entry.totalTransactions)} txns
+    <Card style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>{formatTime(entry.timestamp)}</Text>
+        <StatusPill
+          label={`${String(entry.successfulBanks)}/${String(entry.totalBanks)}`}
+          tone={runTone(entry)}
+        />
+      </View>
+      <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
+        {String(entry.totalTransactions)} transactions imported
       </Text>
-      {entry.banks.map((bank, index) => (
-        <View key={`${bank.name}-${String(index)}`} style={styles.bankRow}>
-          <Text style={[styles.bankName, bank.status === 'failure' ? styles.fail : styles.ok]}>
-            {statusIcon(bank.status)} {bank.name}
-          </Text>
-          <Text style={styles.txns}>{String(bank.txns)} txns</Text>
-        </View>
-      ))}
+      <Divider style={styles.divider} />
+      {entry.banks.map((bank, index) => {
+        const failed = bank.status === 'failure';
+        const ok = bank.status === 'success';
+        const color = failed ? theme.colors.danger : ok ? theme.colors.success : theme.colors.textSubtle;
+        const icon = failed ? 'close-circle' : ok ? 'checkmark-circle' : 'ellipse';
+        return (
+          <View key={`${bank.name}-${String(index)}`} style={styles.bankRow}>
+            <View style={styles.bankName}>
+              <Ionicons name={icon} size={16} color={color} />
+              <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={1}>{bank.name}</Text>
+            </View>
+            <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>{String(bank.txns)} txns</Text>
+          </View>
+        );
+      })}
       {entry.banks.filter((bank) => bank.error).map((bank, index) => (
-        <Text key={`err-${String(index)}`} style={styles.errorLine}>{bank.name}: {bank.error}</Text>
+        <Text key={`err-${String(index)}`} style={[theme.typography.small, styles.errorLine, { color: theme.colors.danger }]}>
+          {bank.name}: {bank.error}
+        </Text>
       ))}
-    </View>
+    </Card>
   );
 }
 
@@ -70,10 +93,13 @@ function RunCard({ entry }: { entry: RunEntry }) {
  * @returns The status screen element.
  */
 export function StatusScreen({ onBack }: Props) {
+  const theme = useTheme();
   const { connection } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -103,51 +129,81 @@ export function StatusScreen({ onBack }: Props) {
 
   const reload = () => {
     setError(null);
+    setRefreshError(null);
     setLoading(true);
     setReloadKey((key) => key + 1);
   };
 
+  const onRefresh = async (): Promise<void> => {
+    if (!connection) {
+      return;
+    }
+    setRefreshing(true);
+    try {
+      setRuns(await getStatus(connection));
+      setError(null);
+      setRefreshError(null);
+    } catch (e) {
+      setRefreshError(e instanceof Error ? e.message : 'Failed to load status.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <Screen scroll={false} header={<AppHeader title="Import status" onBack={onBack} />}>
+        <Loader label="Loading status" />
+      </Screen>
+    );
   }
   if (error) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorLine}>{error}</Text>
-        <Button title="Retry" onPress={reload} />
-        <Button title="Back" onPress={onBack} />
-      </View>
+      <Screen scroll={false} header={<AppHeader title="Import status" onBack={onBack} />}>
+        <ErrorView message={error} onRetry={reload} />
+      </Screen>
     );
   }
 
   const ordered = [...runs].reverse();
 
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      <Text style={styles.title}>Import status</Text>
-      {ordered.length === 0 ? <Text style={styles.help}>No import runs recorded yet.</Text> : null}
-      {ordered.map((entry, index) => <RunCard key={`run-${String(index)}`} entry={entry} />)}
-      <View style={styles.actions}>
-        <Button title="Refresh" onPress={reload} />
-        <Button title="Back" color="#666" onPress={onBack} />
-      </View>
-    </ScrollView>
+    <Screen
+      header={<AppHeader title="Import status" subtitle="Recent runs" onBack={onBack} />}
+      contentStyle={styles.list}
+      refreshControl={(
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => { void onRefresh(); }}
+          tintColor={theme.colors.primary}
+          colors={[theme.colors.primary]}
+        />
+      )}
+    >
+      {refreshError ? <Banner messages={[refreshError]} tone="danger" /> : null}
+      {ordered.length === 0 ? (
+        <EmptyState
+          icon="pulse-outline"
+          title="No runs yet"
+          message="Import runs will appear here after the importer scrapes your banks. Pull down to refresh."
+        />
+      ) : (
+        ordered.map((entry, index) => (
+          <Entrance key={`run-${String(index)}`} index={index}>
+            <RunCard entry={entry} />
+          </Entrance>
+        ))
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, padding: 24 },
-  list: { padding: 20, gap: 12 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 8 },
-  help: { fontSize: 13, color: '#888' },
-  card: { borderWidth: 1, borderColor: '#eee', borderRadius: 10, padding: 14, backgroundColor: '#fafafa' },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#222' },
-  summary: { fontSize: 13, color: '#666', marginTop: 2, marginBottom: 8 },
-  bankRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  bankName: { fontSize: 15 },
-  ok: { color: '#1a7f37' },
-  fail: { color: '#b00020' },
-  txns: { fontSize: 13, color: '#666' },
-  errorLine: { color: '#b00020', marginTop: 6, fontSize: 13 },
-  actions: { marginTop: 12, gap: 8 },
+  list: { gap: 12 },
+  card: { gap: 6 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  divider: { marginVertical: 6 },
+  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
+  bankName: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
+  errorLine: { marginTop: 6 },
 });

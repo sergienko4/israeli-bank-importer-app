@@ -4,18 +4,14 @@
  * the close animation so the exit is smooth. Built on the Animated API + Modal,
  * and honors reduced motion by snapping open/closed.
  */
+import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import {
-  Animated, Modal, Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import {
-  durations, easing, motionDuration, spring,
-} from '../../theme/motion';
+import { durations, easing, motionDuration, spring } from '../../theme/motion';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface SheetProps {
@@ -34,9 +30,7 @@ interface SheetProps {
  * @param props - Sheet configuration.
  * @returns The sheet element, or null while fully closed.
  */
-export function Sheet({
-  visible, onClose, title, children,
-}: SheetProps) {
+export function Sheet({ visible, onClose, title, children }: SheetProps): ReactElement | null {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
@@ -70,7 +64,11 @@ export function Sheet({
         duration: motionDuration(durations.base, reducedMotion),
         easing: easing.accelerate,
         useNativeDriver: true,
-      }).start(({ finished }) => { if (finished) { setMounted(false); } });
+      }).start(({ finished }) => {
+        if (finished) {
+          setMounted(false);
+        }
+      });
     }
   }, [visible, progress, reducedMotion]);
 
@@ -80,7 +78,12 @@ export function Sheet({
 
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={onClose}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.overlay, opacity: progress }]}>
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: theme.colors.overlay, opacity: progress },
+        ]}
+      >
         <Pressable
           style={StyleSheet.absoluteFill}
           accessibilityRole="button"
@@ -96,13 +99,17 @@ export function Sheet({
             borderTopLeftRadius: theme.radius.xl,
             borderTopRightRadius: theme.radius.xl,
             paddingBottom: (insets.bottom || theme.spacing.md) + theme.spacing.sm,
-            transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [560, 0] }) }],
+            transform: [
+              { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [560, 0] }) },
+            ],
           },
         ]}
       >
         <View style={[styles.handle, { backgroundColor: theme.colors.borderStrong }]} />
         {title ? (
-          <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>{title}</Text>
+          <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>
+            {title}
+          </Text>
         ) : null}
         {children}
       </Animated.View>
@@ -112,10 +119,20 @@ export function Sheet({
 
 const styles = StyleSheet.create({
   sheet: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 8, maxHeight: '80%',
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    maxHeight: '80%',
   },
   handle: {
-    width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 12,
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 12,
   },
   title: { marginBottom: 12 },
 });

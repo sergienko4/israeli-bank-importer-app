@@ -4,12 +4,11 @@
  * the rest of the app.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import {
-  Pressable, StyleSheet, Text, TextInput, View,
-} from 'react-native';
+import { type ReactElement, useState } from 'react';
 import type { KeyboardTypeOptions, TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import type { Theme } from '../../theme/ThemeContext';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface TextFieldProps {
@@ -39,25 +38,140 @@ interface TextFieldProps {
   textContentType?: TextInputProps['textContentType'];
 }
 
+interface FieldLabelProps {
+  label?: string;
+}
+
+interface LeadingIconProps {
+  icon?: keyof typeof Ionicons.glyphMap;
+}
+
+interface SecureRevealButtonProps {
+  secure: boolean;
+  revealed: boolean;
+  onToggle: () => void;
+}
+
+interface FieldSupportTextProps {
+  error?: string | null;
+  help?: string;
+}
+
+function resolveBorderColor(
+  theme: Theme,
+  error: string | null | undefined,
+  focused: boolean,
+): string {
+  if (error) {
+    return theme.colors.danger;
+  }
+
+  if (focused) {
+    return theme.colors.primary;
+  }
+
+  return theme.colors.border;
+}
+
+function FieldLabel({ label }: FieldLabelProps): ReactElement | null {
+  const theme = useTheme();
+  if (!label) {
+    return null;
+  }
+
+  return (
+    <Text style={[theme.typography.caption, styles.label, { color: theme.colors.textMuted }]}>
+      {label}
+    </Text>
+  );
+}
+
+function LeadingIcon({ icon }: LeadingIconProps): ReactElement | null {
+  const theme = useTheme();
+  if (!icon) {
+    return null;
+  }
+
+  return <Ionicons name={icon} size={18} color={theme.colors.textSubtle} style={styles.leading} />;
+}
+
+function SecureRevealButton({
+  secure,
+  revealed,
+  onToggle,
+}: SecureRevealButtonProps): ReactElement | null {
+  const theme = useTheme();
+  if (!secure) {
+    return null;
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
+      onPress={onToggle}
+      style={styles.reveal}
+    >
+      <Ionicons
+        name={revealed ? 'eye-off-outline' : 'eye-outline'}
+        size={20}
+        color={theme.colors.textSubtle}
+      />
+    </Pressable>
+  );
+}
+
+function FieldSupportText({ error, help }: FieldSupportTextProps): ReactElement | null {
+  const theme = useTheme();
+  if (error) {
+    return (
+      <Text style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}>
+        {error}
+      </Text>
+    );
+  }
+
+  if (help) {
+    return (
+      <Text style={[theme.typography.small, { color: theme.colors.textSubtle, marginTop: 6 }]}>
+        {help}
+      </Text>
+    );
+  }
+
+  return null;
+}
+
 /**
  * Renders a labeled, themed text input.
  * @param props - Field configuration.
  * @returns The field element.
  */
 export function TextField({
-  label, value, onChangeText, placeholder, secure = false,
-  error, help, icon, keyboardType, autoCapitalize = 'none', autoComplete, textContentType,
-}: TextFieldProps) {
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  secure = false,
+  error,
+  help,
+  icon,
+  keyboardType,
+  autoCapitalize = 'none',
+  autoComplete,
+  textContentType,
+}: TextFieldProps): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
-  const borderColor = error ? theme.colors.danger : focused ? theme.colors.primary : theme.colors.border;
+  const borderColor = resolveBorderColor(theme, error, focused);
+  const toggleRevealed = (): void => {
+    setRevealed((prev) => !prev);
+  };
 
   return (
     <View style={styles.root}>
-      {label ? (
-        <Text style={[theme.typography.caption, styles.label, { color: theme.colors.textMuted }]}>{label}</Text>
-      ) : null}
+      <FieldLabel label={label} />
       <View
         style={[
           styles.field,
@@ -71,7 +185,7 @@ export function TextField({
           },
         ]}
       >
-        {icon ? <Ionicons name={icon} size={18} color={theme.colors.textSubtle} style={styles.leading} /> : null}
+        <LeadingIcon icon={icon} />
         <TextInput
           style={[styles.input, { color: theme.colors.text }]}
           value={value}
@@ -85,25 +199,16 @@ export function TextField({
           autoComplete={autoComplete}
           textContentType={textContentType}
           autoCorrect={false}
-          onFocus={() => { setFocused(true); }}
-          onBlur={() => { setFocused(false); }}
+          onFocus={() => {
+            setFocused(true);
+          }}
+          onBlur={() => {
+            setFocused(false);
+          }}
         />
-        {secure ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={revealed ? 'Hide password' : 'Show password'}
-            onPress={() => { setRevealed((prev) => !prev); }}
-            style={styles.reveal}
-          >
-            <Ionicons name={revealed ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.colors.textSubtle} />
-          </Pressable>
-        ) : null}
+        <SecureRevealButton secure={secure} revealed={revealed} onToggle={toggleRevealed} />
       </View>
-      {error ? (
-        <Text style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}>{error}</Text>
-      ) : help ? (
-        <Text style={[theme.typography.small, { color: theme.colors.textSubtle, marginTop: 6 }]}>{help}</Text>
-      ) : null}
+      <FieldSupportText error={error} help={help} />
     </View>
   );
 }

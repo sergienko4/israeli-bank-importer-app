@@ -9,16 +9,12 @@
  * Honors reduced motion: transitions snap into place and the swipe still works
  * but without the follow animation being required to feel responsive.
  */
+import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
-import type { ReactNode } from 'react';
-import {
-  Animated, PanResponder, StyleSheet, useWindowDimensions,
-} from 'react-native';
+import { Animated, PanResponder, StyleSheet, useWindowDimensions } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import {
-  durations, easing, motionDuration, spring,
-} from '../../theme/motion';
+import { durations, easing, motionDuration, spring } from '../../theme/motion';
 
 /** Width of the left-edge zone that starts a swipe-back gesture. */
 const EDGE_WIDTH = 32;
@@ -45,8 +41,11 @@ interface ScreenSwitchProps {
  * @returns The animated screen container.
  */
 export function ScreenSwitch({
-  screenKey, direction, onSwipeBack, children,
-}: ScreenSwitchProps) {
+  screenKey,
+  direction,
+  onSwipeBack,
+  children,
+}: ScreenSwitchProps): ReactElement {
   const reduced = useReducedMotion();
   const { width } = useWindowDimensions();
   const translateX = useRef(new Animated.Value(0)).current;
@@ -81,14 +80,22 @@ export function ScreenSwitch({
     opacity.setValue(reducedNow ? 1 : 0);
     const animation = Animated.parallel([
       Animated.timing(translateX, {
-        toValue: 0, duration: motionDuration(durations.base, reducedNow), easing: easing.standard, useNativeDriver: true,
+        toValue: 0,
+        duration: motionDuration(durations.base, reducedNow),
+        easing: easing.standard,
+        useNativeDriver: true,
       }),
       Animated.timing(opacity, {
-        toValue: 1, duration: motionDuration(durations.base, reducedNow), easing: easing.standard, useNativeDriver: true,
+        toValue: 1,
+        duration: motionDuration(durations.base, reducedNow),
+        easing: easing.standard,
+        useNativeDriver: true,
       }),
     ]);
     animation.start();
-    return () => { animation.stop(); };
+    return () => {
+      animation.stop();
+    };
   }, [screenKey, direction, translateX, opacity]);
 
   const responder = useRef(
@@ -98,7 +105,9 @@ export function ScreenSwitch({
           return false;
         }
         const startX = evt.nativeEvent.pageX - gesture.dx;
-        return startX <= EDGE_WIDTH && gesture.dx > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
+        return (
+          startX <= EDGE_WIDTH && gesture.dx > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+        );
       },
       onPanResponderMove: (_evt, gesture) => {
         if (gesture.dx > 0) {
@@ -114,13 +123,19 @@ export function ScreenSwitch({
             duration: motionDuration(durations.fast, reducedRef.current),
             easing: easing.accelerate,
             useNativeDriver: true,
-          }).start(() => { back(); });
+          }).start(() => {
+            back();
+          });
         } else {
           if (reducedRef.current) {
             translateX.setValue(0);
             return;
           }
-          Animated.spring(translateX, { toValue: 0, useNativeDriver: true, ...spring.settle }).start();
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            ...spring.settle,
+          }).start();
         }
       },
     }),

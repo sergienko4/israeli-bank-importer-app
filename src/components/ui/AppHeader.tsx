@@ -3,10 +3,8 @@
  * an optional right-hand slot, separated from the body by a hairline.
  */
 import { Ionicons } from '@expo/vector-icons';
-import type { ReactNode } from 'react';
-import {
-  Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -26,9 +24,7 @@ interface AppHeaderProps {
  * @param props - Header configuration.
  * @returns The header element.
  */
-export function AppHeader({
-  title, subtitle, onBack, right,
-}: AppHeaderProps) {
+export function AppHeader({ title, subtitle, onBack, right }: AppHeaderProps): ReactElement {
   const theme = useTheme();
   return (
     <View
@@ -57,9 +53,14 @@ export function AppHeader({
         </Pressable>
       ) : null}
       <View style={styles.titles}>
-        <Text style={[theme.typography.h2, { color: theme.colors.text }]} numberOfLines={1}>{title}</Text>
+        <Text style={[theme.typography.h2, { color: theme.colors.text }]} numberOfLines={1}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[theme.typography.small, { color: theme.colors.textMuted }]} numberOfLines={1}>
+          <Text
+            style={[theme.typography.small, { color: theme.colors.textMuted }]}
+            numberOfLines={1}
+          >
             {subtitle}
           </Text>
         ) : null}

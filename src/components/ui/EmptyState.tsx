@@ -3,9 +3,8 @@
  * and an optional call-to-action button. Used instead of blank screens.
  */
 import { Ionicons } from '@expo/vector-icons';
-import {
-  Animated, StyleSheet, Text, View,
-} from 'react-native';
+import type { ReactElement } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { useMountPop } from '../../lib/useMountPop';
 import { useTheme } from '../../theme/ThemeContext';
@@ -30,8 +29,12 @@ interface EmptyStateProps {
  * @returns The empty-state element.
  */
 export function EmptyState({
-  icon = 'file-tray-outline', title, message, actionLabel, onAction,
-}: EmptyStateProps) {
+  icon = 'file-tray-outline',
+  title,
+  message,
+  actionLabel,
+  onAction,
+}: EmptyStateProps): ReactElement {
   const theme = useTheme();
   const pop = useMountPop(0.8);
   return (
@@ -51,7 +54,9 @@ export function EmptyState({
       </Animated.View>
       <Text style={[theme.typography.h3, styles.title, { color: theme.colors.text }]}>{title}</Text>
       {message ? (
-        <Text style={[theme.typography.body, styles.message, { color: theme.colors.textMuted }]}>{message}</Text>
+        <Text style={[theme.typography.body, styles.message, { color: theme.colors.textMuted }]}>
+          {message}
+        </Text>
       ) : null}
       {actionLabel && onAction ? (
         <View style={styles.action}>
@@ -64,7 +69,13 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   root: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 8 },
-  bubble: { width: 64, height: 64, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  bubble: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
   title: { textAlign: 'center' },
   message: { textAlign: 'center', maxWidth: 280 },
   action: { marginTop: 12 },

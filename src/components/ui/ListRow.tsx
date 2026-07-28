@@ -3,11 +3,9 @@
  * and a trailing slot (defaults to a chevron when the row is pressable).
  */
 import { Ionicons } from '@expo/vector-icons';
-import type { ReactNode } from 'react';
-import {
-  Animated, Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
 import type { AccessibilityRole, AccessibilityState } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
@@ -36,15 +34,86 @@ interface ListRowProps {
   accessibilityHint?: string;
 }
 
+interface RowIconProps {
+  icon?: keyof typeof Ionicons.glyphMap;
+  emoji?: string;
+  bubbleBg: string;
+  radius: number;
+  tint: string;
+}
+
+interface RowTextsProps {
+  title: string;
+  subtitle?: string;
+  danger: boolean;
+}
+
+interface RowTrailingProps {
+  right?: ReactNode;
+  onPress?: () => void;
+  color: string;
+}
+
+function RowIcon({ icon, emoji, bubbleBg, radius, tint }: RowIconProps): ReactElement | null {
+  if (!icon && !emoji) {
+    return null;
+  }
+
+  return (
+    <View style={[styles.bubble, { backgroundColor: bubbleBg, borderRadius: radius }]}>
+      {emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
+      {!emoji && icon ? <Ionicons name={icon} size={20} color={tint} /> : null}
+    </View>
+  );
+}
+
+function RowTexts({ title, subtitle, danger }: RowTextsProps): ReactElement {
+  const theme = useTheme();
+  const titleColor = danger ? theme.colors.danger : theme.colors.text;
+
+  return (
+    <View style={styles.texts}>
+      <Text style={[theme.typography.h3, { color: titleColor }]} numberOfLines={1}>
+        {title}
+      </Text>
+      {subtitle ? (
+        <Text style={[theme.typography.small, { color: theme.colors.textMuted }]} numberOfLines={2}>
+          {subtitle}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function RowTrailing({ right, onPress, color }: RowTrailingProps): ReactElement | null {
+  if (right !== undefined && right !== null) {
+    return <>{right}</>;
+  }
+
+  if (onPress) {
+    return <Ionicons name="chevron-forward" size={20} color={color} />;
+  }
+
+  return null;
+}
+
 /**
  * Renders a themed list row.
  * @param props - Row configuration.
  * @returns The row element.
  */
 export function ListRow({
-  title, subtitle, icon, emoji, onPress, right, danger = false,
-  accessibilityState, accessibilityRole = 'button', accessibilityHint,
-}: ListRowProps) {
+  title,
+  subtitle,
+  icon,
+  emoji,
+  onPress,
+  right,
+  danger = false,
+  accessibilityState,
+  accessibilityRole = 'button',
+  accessibilityHint,
+}: ListRowProps): ReactElement {
   const theme = useTheme();
   const press = usePressScale(0.98);
   const tint = danger ? theme.colors.danger : theme.colors.primary;
@@ -53,24 +122,9 @@ export function ListRow({
 
   const content = (
     <>
-      {icon || emoji ? (
-        <View style={[styles.bubble, { backgroundColor: bubbleBg, borderRadius: theme.radius.md }]}>
-          {emoji ? (
-            <Text style={styles.emoji}>{emoji}</Text>
-          ) : icon ? (
-            <Ionicons name={icon} size={20} color={tint} />
-          ) : null}
-        </View>
-      ) : null}
-      <View style={styles.texts}>
-        <Text style={[theme.typography.h3, { color: danger ? theme.colors.danger : theme.colors.text }]} numberOfLines={1}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={[theme.typography.small, { color: theme.colors.textMuted }]} numberOfLines={2}>{subtitle}</Text>
-        ) : null}
-      </View>
-      {right ?? (onPress ? <Ionicons name="chevron-forward" size={20} color={theme.colors.textSubtle} /> : null)}
+      <RowIcon icon={icon} emoji={emoji} bubbleBg={bubbleBg} radius={theme.radius.md} tint={tint} />
+      <RowTexts title={title} subtitle={subtitle} danger={danger} />
+      <RowTrailing right={right} onPress={onPress} color={theme.colors.textSubtle} />
     </>
   );
 

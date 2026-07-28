@@ -5,6 +5,7 @@
  * practices — primary destinations stay visible rather than hidden in a menu.
  */
 import { Ionicons } from '@expo/vector-icons';
+import type { ReactElement } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -48,7 +49,7 @@ interface TabButtonProps<T extends string> {
  * @param props - The tab, its active state, and the select handler.
  * @returns The tab button element.
  */
-function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T>) {
+function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T>): ReactElement {
   const theme = useTheme();
   const press = usePressScale(0.9);
   const color = active ? theme.colors.primary : theme.colors.textSubtle;
@@ -74,7 +75,10 @@ function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T
         <View
           style={[
             styles.indicator,
-            { backgroundColor: active ? theme.colors.primary : 'transparent', borderRadius: theme.radius.pill },
+            {
+              backgroundColor: active ? theme.colors.primary : 'transparent',
+              borderRadius: theme.radius.pill,
+            },
           ]}
         />
         <Ionicons name={iconName} size={24} color={color} />
@@ -94,7 +98,7 @@ function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T
  * @param props - The tabs, the active key, and the select handler.
  * @returns The tab bar element.
  */
-export function TabBar<T extends string>({ tabs, active, onSelect }: TabBarProps<T>) {
+export function TabBar<T extends string>({ tabs, active, onSelect }: TabBarProps<T>): ReactElement {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 

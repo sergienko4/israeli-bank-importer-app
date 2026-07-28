@@ -3,11 +3,9 @@
  * optionally hosts a fixed header, a scrollable body, and a fixed footer (for
  * sticky action bars). Keeps every screen's layout consistent.
  */
-import type { ReactNode } from 'react';
-import {
-  ScrollView, StyleSheet, View,
-} from 'react-native';
+import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTheme } from '../../theme/ThemeContext';
@@ -26,7 +24,7 @@ interface ScreenProps {
   /** Extra body content style. */
   contentStyle?: StyleProp<ViewStyle>;
   /** Optional pull-to-refresh element passed to ScrollView. */
-  refreshControl?: React.ComponentProps<typeof ScrollView>['refreshControl'];
+  refreshControl?: ComponentProps<typeof ScrollView>['refreshControl'];
 }
 
 /**
@@ -35,15 +33,24 @@ interface ScreenProps {
  * @returns The screen element.
  */
 export function Screen({
-  children, header, footer, scroll = true, padded = true, contentStyle, refreshControl,
-}: ScreenProps) {
+  children,
+  header,
+  footer,
+  scroll = true,
+  padded = true,
+  contentStyle,
+  refreshControl,
+}: ScreenProps): ReactElement {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const pad = padded ? theme.spacing.lg : 0;
   const body = scroll ? (
     <ScrollView
       style={styles.flex}
-      contentContainerStyle={[{ padding: pad, paddingBottom: pad + theme.spacing.xl }, contentStyle]}
+      contentContainerStyle={[
+        { padding: pad, paddingBottom: pad + theme.spacing.xl },
+        contentStyle,
+      ]}
       keyboardShouldPersistTaps="handled"
       refreshControl={refreshControl}
     >

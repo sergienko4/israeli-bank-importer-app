@@ -5,14 +5,20 @@
  * in the web portal.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { getOtpSettings, setOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import {
-  AppHeader, Banner, Card, ErrorView, ListRow, Screen, SkeletonList,
+  AppHeader,
+  Banner,
+  Card,
+  ErrorView,
+  ListRow,
+  Screen,
+  SkeletonList,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
@@ -48,7 +54,7 @@ const CHOICES: Choice[] = [
  * @param props - Callback to return to the previous screen.
  * @returns The settings screen element.
  */
-export function OtpSettingsScreen({ onBack }: Props) {
+export function OtpSettingsScreen({ onBack }: Props): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [channel, setChannel] = useState<OtpChannel | null>(null);
@@ -62,7 +68,7 @@ export function OtpSettingsScreen({ onBack }: Props) {
       return undefined;
     }
     let active = true;
-    const run = async () => {
+    const run = async (): Promise<void> => {
       try {
         const settings = await getOtpSettings(connection);
         if (active) {
@@ -79,10 +85,12 @@ export function OtpSettingsScreen({ onBack }: Props) {
       }
     };
     void run();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [connection, reloadKey]);
 
-  const reload = () => {
+  const reload = (): void => {
     setError(null);
     setLoading(true);
     setReloadKey((key) => key + 1);
@@ -127,7 +135,11 @@ export function OtpSettingsScreen({ onBack }: Props) {
   }
 
   return (
-    <Screen header={<AppHeader title="OTP delivery" subtitle="How bank codes are collected" onBack={onBack} />}>
+    <Screen
+      header={
+        <AppHeader title="OTP delivery" subtitle="How bank codes are collected" onBack={onBack} />
+      }
+    >
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
         Choose how the importer asks you for a bank&apos;s one-time code during login.
       </Text>
@@ -143,17 +155,25 @@ export function OtpSettingsScreen({ onBack }: Props) {
               accessibilityRole="radio"
               accessibilityState={{ checked: selected, selected }}
               accessibilityHint="Selects this OTP delivery method."
-              onPress={() => { void choose(choice.channel); }}
-              right={selected ? (
-                <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />
-              ) : (
-                <View style={[styles.dot, { borderColor: theme.colors.borderStrong }]} />
-              )}
+              onPress={() => {
+                void choose(choice.channel);
+              }}
+              right={
+                selected ? (
+                  <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />
+                ) : (
+                  <View style={[styles.dot, { borderColor: theme.colors.borderStrong }]} />
+                )
+              }
             />
           );
         })}
       </Card>
-      {saveError ? <View style={styles.errors}><Banner messages={[saveError]} /></View> : null}
+      {saveError ? (
+        <View style={styles.errors}>
+          <Banner messages={[saveError]} />
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -162,7 +182,10 @@ const styles = StyleSheet.create({
   hint: { marginBottom: 12, marginLeft: 4 },
   menu: { overflow: 'hidden' },
   dot: {
-    width: 20, height: 20, borderRadius: 10, borderWidth: 2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
   },
   errors: { marginTop: 16 },
 });

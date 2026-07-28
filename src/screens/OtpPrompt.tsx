@@ -3,15 +3,13 @@
  * waiting for a bank one-time code (app OTP channel). The user types the code
  * and submits it to the importer, which resumes the blocked bank login.
  */
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
-import {
-  Banner, Button, Sheet, TextField,
-} from '../components/ui';
+import { Banner, Button, Sheet, TextField } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
 import { useTheme } from '../theme/ThemeContext';
@@ -32,9 +30,7 @@ interface Props {
  * @param props - The request plus submit/dismiss callbacks.
  * @returns The OTP prompt element.
  */
-export function OtpPrompt({
-  request, visible, onSubmitted, onDismiss,
-}: Props) {
+export function OtpPrompt({ request, visible, onSubmitted, onDismiss }: Props): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [code, setCode] = useState('');
@@ -89,8 +85,19 @@ export function OtpPrompt({
         icon="keypad-outline"
         error={error}
       />
-      {error ? <View style={styles.banner}><Banner messages={[error]} /></View> : null}
-      <Button title="Submit code" icon="checkmark" loading={submitting} onPress={() => { void submit(); }} />
+      {error ? (
+        <View style={styles.banner}>
+          <Banner messages={[error]} />
+        </View>
+      ) : null}
+      <Button
+        title="Submit code"
+        icon="checkmark"
+        loading={submitting}
+        onPress={() => {
+          void submit();
+        }}
+      />
     </Sheet>
   );
 }

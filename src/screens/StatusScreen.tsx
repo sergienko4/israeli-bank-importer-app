@@ -3,18 +3,26 @@
  * from the importer's redacted audit log, newest first, with pull-to-refresh.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import {
-  RefreshControl, StyleSheet, Text, View,
-} from 'react-native';
+import { type ReactElement, useEffect, useState } from 'react';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { getStatus } from '../api/importerClient';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
-import {
-  AppHeader, Banner, Card, Divider, EmptyState, Entrance, ErrorView, Screen, SkeletonList, StatusPill,
-} from '../components/ui';
 import type { PillTone } from '../components/ui';
+import {
+  AppHeader,
+  Banner,
+  Card,
+  Divider,
+  EmptyState,
+  Entrance,
+  ErrorView,
+  Screen,
+  SkeletonList,
+  StatusPill,
+} from '../components/ui';
+import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
@@ -40,7 +48,23 @@ function runTone(entry: RunEntry): PillTone {
   if (entry.successfulBanks >= entry.totalBanks) {
     return 'success';
   }
+
   return entry.successfulBanks === 0 ? 'danger' : 'warning';
+}
+
+function bankStatusMeta(
+  status: RunEntry['banks'][number]['status'],
+  colors: Theme['colors'],
+): { color: string; icon: keyof typeof Ionicons.glyphMap } {
+  if (status === 'failure') {
+    return { color: colors.danger, icon: 'close-circle' };
+  }
+
+  if (status === 'success') {
+    return { color: colors.success, icon: 'checkmark-circle' };
+  }
+
+  return { color: colors.textSubtle, icon: 'ellipse' };
 }
 
 /**
@@ -48,12 +72,14 @@ function runTone(entry: RunEntry): PillTone {
  * @param props - The run entry to render.
  * @returns The run card.
  */
-function RunCard({ entry }: { entry: RunEntry }) {
+function RunCard({ entry }: { entry: RunEntry }): ReactElement {
   const theme = useTheme();
   return (
     <Card style={styles.card}>
       <View style={styles.cardHeader}>
-        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>{formatTime(entry.timestamp)}</Text>
+        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>
+          {formatTime(entry.timestamp)}
+        </Text>
         <StatusPill
           label={`${String(entry.successfulBanks)}/${String(entry.totalBanks)}`}
           tone={runTone(entry)}
@@ -64,25 +90,31 @@ function RunCard({ entry }: { entry: RunEntry }) {
       </Text>
       <Divider style={styles.divider} />
       {entry.banks.map((bank, index) => {
-        const failed = bank.status === 'failure';
-        const ok = bank.status === 'success';
-        const color = failed ? theme.colors.danger : ok ? theme.colors.success : theme.colors.textSubtle;
-        const icon = failed ? 'close-circle' : ok ? 'checkmark-circle' : 'ellipse';
+        const { color, icon } = bankStatusMeta(bank.status, theme.colors);
         return (
           <View key={`${bank.name}-${String(index)}`} style={styles.bankRow}>
             <View style={styles.bankName}>
               <Ionicons name={icon} size={16} color={color} />
-              <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={1}>{bank.name}</Text>
+              <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={1}>
+                {bank.name}
+              </Text>
             </View>
-            <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>{String(bank.txns)} txns</Text>
+            <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
+              {String(bank.txns)} txns
+            </Text>
           </View>
         );
       })}
-      {entry.banks.filter((bank) => bank.error).map((bank, index) => (
-        <Text key={`err-${String(index)}`} style={[theme.typography.small, styles.errorLine, { color: theme.colors.danger }]}>
-          {bank.name}: {bank.error}
-        </Text>
-      ))}
+      {entry.banks
+        .filter((bank) => bank.error)
+        .map((bank, index) => (
+          <Text
+            key={`err-${String(index)}`}
+            style={[theme.typography.small, styles.errorLine, { color: theme.colors.danger }]}
+          >
+            {bank.name}: {bank.error}
+          </Text>
+        ))}
     </Card>
   );
 }
@@ -92,7 +124,7 @@ function RunCard({ entry }: { entry: RunEntry }) {
  * @param props - Callback to return to the home screen.
  * @returns The status screen element.
  */
-export function StatusScreen({ onBack }: Props) {
+export function StatusScreen({ onBack }: Props): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);
@@ -107,7 +139,7 @@ export function StatusScreen({ onBack }: Props) {
       return undefined;
     }
     let active = true;
-    const run = async () => {
+    const run = async (): Promise<void> => {
       try {
         const loaded = await getStatus(connection);
         if (active) {
@@ -124,10 +156,12 @@ export function StatusScreen({ onBack }: Props) {
       }
     };
     void run();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [connection, reloadKey]);
 
-  const reload = () => {
+  const reload = (): void => {
     setError(null);
     setRefreshError(null);
     setLoading(true);
@@ -171,21 +205,25 @@ export function StatusScreen({ onBack }: Props) {
     <Screen
       header={<AppHeader title="Import status" subtitle="Recent runs" onBack={onBack} />}
       contentStyle={styles.list}
-      refreshControl={(
+      refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => { void onRefresh(); }}
+          onRefresh={() => {
+            void onRefresh();
+          }}
           tintColor={theme.colors.primary}
           colors={[theme.colors.primary]}
         />
-      )}
+      }
     >
       {refreshError ? <Banner messages={[refreshError]} tone="danger" /> : null}
       {ordered.length === 0 ? (
         <EmptyState
           icon="pulse-outline"
           title="No runs yet"
-          message="Import runs will appear here after the importer scrapes your banks. Pull down to refresh."
+          message={
+            'Import runs will appear here after the importer scrapes your banks. Pull down to refresh.'
+          }
         />
       ) : (
         ordered.map((entry, index) => (
@@ -203,8 +241,12 @@ const styles = StyleSheet.create({
   card: { gap: 6 },
   cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   divider: { marginVertical: 6 },
-  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
+  bankRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
   bankName: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
   errorLine: { marginTop: 6 },
 });
-

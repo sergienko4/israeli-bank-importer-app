@@ -6,13 +6,13 @@
  * bottom, and a delivered push notification jumps to the Status tab.
  */
 import * as Notifications from 'expo-notifications';
+import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { PendingOtpRequest } from '../api/otp';
-import { ScreenSwitch, TabBar } from '../components/ui';
 import type { TabItem } from '../components/ui';
+import { ScreenSwitch, TabBar } from '../components/ui';
 import { useOtpWatcher } from '../push/useOtpWatcher';
 import { useTheme } from '../theme/ThemeContext';
 import { BanksScreen } from './BanksScreen';
@@ -38,7 +38,7 @@ const ORDER: Tab[] = TABS.map((tab) => tab.key);
  * Renders the tab shell for a connected session.
  * @returns The app shell element.
  */
-export function AppShell() {
+export function AppShell(): ReactElement {
   const theme = useTheme();
   const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
@@ -55,7 +55,9 @@ export function AppShell() {
       setDepth(0);
       setActive('status');
     });
-    return () => { sub.remove(); };
+    return () => {
+      sub.remove();
+    };
   }, []);
 
   const select = (key: Tab): void => {
@@ -68,7 +70,9 @@ export function AppShell() {
 
   const index = ORDER.indexOf(active);
   const direction = index >= prevIndex.current ? 'forward' : 'back';
-  useEffect(() => { prevIndex.current = index; }, [index]);
+  useEffect(() => {
+    prevIndex.current = index;
+  }, [index]);
 
   useEffect(() => {
     if (pending) {

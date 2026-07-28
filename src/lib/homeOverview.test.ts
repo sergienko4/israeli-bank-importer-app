@@ -50,7 +50,9 @@ describe('relativeTime', () => {
   });
 
   it('falls back to a date for a week or older', () => {
-    expect(relativeTime('2026-07-01T12:00:00Z', now)).toBe(new Date('2026-07-01T12:00:00Z').toLocaleDateString());
+    expect(relativeTime('2026-07-01T12:00:00Z', now)).toBe(
+      new Date('2026-07-01T12:00:00Z').toLocaleDateString(),
+    );
   });
 
   it('returns the raw value for an unparseable timestamp', () => {

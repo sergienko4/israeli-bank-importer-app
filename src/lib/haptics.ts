@@ -10,21 +10,35 @@ import * as Haptics from 'expo-haptics';
  * @param run - The haptic call to attempt.
  */
 function fire(run: () => Promise<void>): void {
-  void run().catch(() => { /* haptics unavailable — ignore */ });
+  void run().catch(() => {
+    /* haptics unavailable — ignore */
+  });
 }
 
 /** Semantic haptic helpers used across the app. */
 export const haptics = {
   /** Light tick for selection changes (tabs, chips, toggles). */
-  selection: (): void => { fire(() => Haptics.selectionAsync()); },
+  selection: (): void => {
+    fire(() => Haptics.selectionAsync());
+  },
   /** Light impact for taps (rows, buttons). */
-  light: (): void => { fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)); },
+  light: (): void => {
+    fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light));
+  },
   /** Medium impact for confirmations. */
-  medium: (): void => { fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)); },
+  medium: (): void => {
+    fire(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium));
+  },
   /** Success notification (save/connect succeeded). */
-  success: (): void => { fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)); },
+  success: (): void => {
+    fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success));
+  },
   /** Warning notification (validation error). */
-  warning: (): void => { fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)); },
+  warning: (): void => {
+    fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
+  },
   /** Error notification (failed action). */
-  error: (): void => { fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)); },
+  error: (): void => {
+    fire(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error));
+  },
 };

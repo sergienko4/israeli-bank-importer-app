@@ -9,7 +9,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import {
-  Button, Card, Screen, TextField,
+  Banner, Button, Card, Screen, TextField,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
@@ -70,12 +70,7 @@ export function ConnectScreen() {
           placeholder="Your portal password"
         />
 
-        {error ? (
-          <View style={[styles.banner, { backgroundColor: theme.colors.dangerSoft, borderRadius: theme.radius.md }]}>
-            <Ionicons name="alert-circle" size={18} color={theme.colors.danger} />
-            <Text style={[theme.typography.small, styles.bannerText, { color: theme.colors.danger }]}>{error}</Text>
-          </View>
-        ) : null}
+        {error ? <Banner messages={[error]} tone="danger" /> : null}
 
         <Button
           title="Connect"
@@ -103,8 +98,6 @@ const styles = StyleSheet.create({
   logo: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   tagline: { textAlign: 'center', maxWidth: 300 },
   card: { gap: 16 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 },
-  bannerText: { flex: 1 },
   submit: { marginTop: 4 },
   hint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintText: { textAlign: 'center' },

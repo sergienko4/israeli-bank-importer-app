@@ -12,7 +12,7 @@ import { getStatus } from '../api/importerClient';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
 import {
-  AppHeader, Card, Divider, EmptyState, Entrance, ErrorView, Loader, Screen, StatusPill,
+  AppHeader, Banner, Card, Divider, EmptyState, Entrance, ErrorView, Loader, Screen, StatusPill,
 } from '../components/ui';
 import type { PillTone } from '../components/ui';
 import { useTheme } from '../theme/ThemeContext';
@@ -97,6 +97,7 @@ export function StatusScreen({ onBack }: Props) {
   const { connection } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -128,6 +129,7 @@ export function StatusScreen({ onBack }: Props) {
 
   const reload = () => {
     setError(null);
+    setRefreshError(null);
     setLoading(true);
     setReloadKey((key) => key + 1);
   };
@@ -140,8 +142,9 @@ export function StatusScreen({ onBack }: Props) {
     try {
       setRuns(await getStatus(connection));
       setError(null);
+      setRefreshError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load status.');
+      setRefreshError(e instanceof Error ? e.message : 'Failed to load status.');
     } finally {
       setRefreshing(false);
     }
@@ -177,6 +180,7 @@ export function StatusScreen({ onBack }: Props) {
         />
       )}
     >
+      {refreshError ? <Banner messages={[refreshError]} tone="danger" /> : null}
       {ordered.length === 0 ? (
         <EmptyState
           icon="pulse-outline"

@@ -7,7 +7,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
-  Pressable, ScrollView, StyleSheet, Text, View,
+  Alert, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 
 import { getConfig, getManifest, removeBank, saveConfig } from '../api/importerClient';
@@ -246,6 +246,18 @@ export function BanksScreen({ onBack }: Props) {
   };
 
   const nameOf = (id: string): string => manifest?.bankRequirements[id]?.displayName ?? id;
+  const confirmRemove = (id: string): void => {
+    const name = nameOf(id);
+    Alert.alert(
+      'Delete bank?',
+      `Remove ${name} from this importer configuration?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => { void doRemove(id); } },
+      ],
+      { cancelable: true },
+    );
+  };
 
   if (loading) {
     return (
@@ -354,8 +366,7 @@ export function BanksScreen({ onBack }: Props) {
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Remove ${nameOf(id)}`}
-                      hitSlop={8}
-                      onPress={() => { void doRemove(id); }}
+                      onPress={() => { confirmRemove(id); }}
                       style={styles.iconBtn}
                     >
                       <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
@@ -394,7 +405,7 @@ const styles = StyleSheet.create({
   sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
   addLabel: { marginTop: 20 },
   addField: { marginTop: 8 },
-  iconBtn: { padding: 6 },
+  iconBtn: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
   targets: { marginTop: 20, gap: 12 },
   targetCard: { gap: 4, backgroundColor: 'transparent' },
   targetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },

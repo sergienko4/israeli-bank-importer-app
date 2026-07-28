@@ -36,6 +36,8 @@ jobs:
           fi
       - if: steps.guard.outputs.run == 'true'
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - if: steps.guard.outputs.run == 'true'
         uses: actions/setup-node@v4
         with:
@@ -54,25 +56,19 @@ jobs:
         run: |
           URL=$(eas build --platform android --profile apk --non-interactive --wait --json \
             | jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl')
-          if [ -z "$URL" ] || [ "$URL" = "null" ]; then
-            echo "::error::Could not resolve the APK artifact URL from the EAS build."
-            exit 1
-          fi
+          case "$URL" in
+            https://*) : ;;
+            *) echo "::error::Unexpected APK artifact URL"; exit 1 ;;
+          esac
           echo "url=$URL" >> "$GITHUB_OUTPUT"
       - if: steps.guard.outputs.run == 'true'
         name: Download APK
-        run: curl -fL -o israeli-bank-importer.apk "${{ steps.build.outputs.url }}"
-      - if: steps.guard.outputs.run == 'true'
-        name: Resolve release tag
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-          fi
+        env:
+          APK_URL: ${{ steps.build.outputs.url }}
+        run: curl -fL -o israeli-bank-importer.apk "$APK_URL"
       - if: steps.guard.outputs.run == 'true'
         name: Attach APK to the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ steps.tag.outputs.tag }}" israeli-bank-importer.apk --clobber
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" israeli-bank-importer.apk

@@ -43,10 +43,12 @@ updates:
           - "eslint-*"
           - "@eslint/*"
           - "typescript-eslint*"
+          - "@typescript-eslint/*"
       jest:
         patterns:
           - "jest"
           - "jest-*"
+          - "@jest/*"
           - "babel-jest"
       types:
         patterns:

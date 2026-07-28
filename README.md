@@ -54,11 +54,13 @@ Useful scripts:
 
 ## Install on Android (APK)
 
-Prebuilt Android APKs are attached to each
-[GitHub Release](https://github.com/sergienko4/israeli-bank-importer-app/releases)
-— no Play Store needed.
+Prebuilt Android APKs are attached to each **successful** release on the
+[GitHub Releases](https://github.com/sergienko4/israeli-bank-importer-app/releases)
+page once `EXPO_TOKEN` is configured — no Play Store needed.
 
-1. Open the latest release and download `israeli-bank-importer.apk`.
+1. Open the latest release and download `israeli-bank-importer.apk` (if no APK
+   asset is attached, the build is still in progress or was skipped — check back
+   or use the dev build).
 2. On your phone, allow installing from your browser or files app
    (Settings → Apps → Special access → Install unknown apps).
 3. Open the APK to install, then point the app at your importer's portal.

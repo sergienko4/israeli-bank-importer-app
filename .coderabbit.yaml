@@ -50,10 +50,6 @@ reviews:
     ignore_title_keywords:
       - "chore(main): release"
       - "WIP"
-      - "docs:"
-      - "ci:"
-      - "chore(deps):"
-      - "chore(deps-dev):"
     drafts: false
   finishing_touches:
     docstrings:

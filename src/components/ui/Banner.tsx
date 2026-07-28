@@ -24,13 +24,22 @@ interface BannerProps {
  * @param tone - The banner tone.
  * @returns Foreground, background, and icon.
  */
-function toneStyle(theme: Theme, tone: BannerTone): { fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap } {
+/**
+ * Resolves the banner tone to semantic foreground, background, and icon.
+ * @param theme - The active theme.
+ * @param tone - The banner tone.
+ * @returns Foreground, background, and icon.
+ */
+export function resolveBannerToneStyle(
+  theme: Theme,
+  tone: BannerTone,
+): { fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap } {
   const { colors } = theme;
   switch (tone) {
     case 'success':
       return { fg: colors.success, bg: colors.successSoft, icon: 'checkmark-circle' };
     case 'warning':
-      return { fg: colors.warning, bg: colors.dangerSoft, icon: 'alert-circle' };
+      return { fg: colors.warning, bg: colors.warningSoft, icon: 'alert-circle' };
     case 'info':
       return { fg: colors.primary, bg: colors.primarySoft, icon: 'information-circle' };
     default:
@@ -48,9 +57,13 @@ export function Banner({ messages, tone = 'danger' }: BannerProps) {
   if (messages.length === 0) {
     return null;
   }
-  const style = toneStyle(theme, tone);
+  const style = resolveBannerToneStyle(theme, tone);
   return (
-    <View style={[styles.root, { backgroundColor: style.bg, borderRadius: theme.radius.md }]}>
+    <View
+      accessibilityRole={tone === 'danger' ? 'alert' : undefined}
+      accessibilityLiveRegion={tone === 'danger' ? 'polite' : undefined}
+      style={[styles.root, { backgroundColor: style.bg, borderRadius: theme.radius.md }]}
+    >
       <Ionicons name={style.icon} size={18} color={style.fg} style={styles.icon} />
       <View style={styles.messages}>
         {messages.map((message, index) => (

@@ -44,6 +44,8 @@ export interface ThemeColors {
   onDanger: string;
   /** Caution / warning. */
   warning: string;
+  /** Tinted warning background. */
+  warningSoft: string;
   /** Scrim behind modals / sticky bars. */
   overlay: string;
 }
@@ -68,6 +70,7 @@ export const lightColors: ThemeColors = {
   dangerSoft: '#FCEBEB',
   onDanger: '#FFFFFF',
   warning: '#D97706',
+  warningSoft: '#FEF3C7',
   overlay: 'rgba(15, 31, 24, 0.45)',
 };
 
@@ -91,6 +94,7 @@ export const darkColors: ThemeColors = {
   dangerSoft: '#3A1D1D',
   onDanger: '#1A0B0B',
   warning: '#FBBF24',
+  warningSoft: '#3A2A0A',
   overlay: 'rgba(0, 0, 0, 0.6)',
 };
 

@@ -26,7 +26,16 @@ interface StatusPillProps {
  * @param tone - The pill tone.
  * @returns Foreground, background, and default icon.
  */
-function toneStyle(theme: Theme, tone: PillTone): { fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap } {
+/**
+ * Resolves a pill tone to semantic foreground, background, and icon.
+ * @param theme - The active theme.
+ * @param tone - The pill tone.
+ * @returns Foreground, background, and default icon.
+ */
+export function resolvePillToneStyle(
+  theme: Theme,
+  tone: PillTone,
+): { fg: string; bg: string; icon: keyof typeof Ionicons.glyphMap } {
   const { colors } = theme;
   switch (tone) {
     case 'success':
@@ -34,7 +43,7 @@ function toneStyle(theme: Theme, tone: PillTone): { fg: string; bg: string; icon
     case 'danger':
       return { fg: colors.danger, bg: colors.dangerSoft, icon: 'close-circle' };
     case 'warning':
-      return { fg: colors.warning, bg: colors.dangerSoft, icon: 'alert-circle' };
+      return { fg: colors.warning, bg: colors.warningSoft, icon: 'alert-circle' };
     default:
       return { fg: colors.textMuted, bg: colors.surfaceAlt, icon: 'ellipse' };
   }
@@ -47,7 +56,7 @@ function toneStyle(theme: Theme, tone: PillTone): { fg: string; bg: string; icon
  */
 export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps) {
   const theme = useTheme();
-  const style = toneStyle(theme, tone);
+  const style = resolvePillToneStyle(theme, tone);
   return (
     <View style={[styles.pill, { backgroundColor: style.bg, borderRadius: theme.radius.pill }]}>
       <Ionicons name={icon ?? style.icon} size={13} color={style.fg} />

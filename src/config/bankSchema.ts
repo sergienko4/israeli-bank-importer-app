@@ -53,7 +53,5 @@ export function addableFields(
   requirement: BankRequirement | undefined,
   bank: Record<string, unknown>,
 ): FieldDef[] {
-  return schemaFields(section, requirement).filter(
-    (field) => !Object.prototype.hasOwnProperty.call(bank, field.key),
-  );
+  return schemaFields(section, requirement).filter((field) => !Object.hasOwn(bank, field.key));
 }

@@ -87,7 +87,7 @@ export function bankSection(manifest: Manifest): SectionDef | undefined {
  * @returns The subset of fields present on the bank.
  */
 export function presentFields(fields: FieldDef[], bank: BankConfig): FieldDef[] {
-  return fields.filter((field) => Object.prototype.hasOwnProperty.call(bank, field.key));
+  return fields.filter((field) => Object.hasOwn(bank, field.key));
 }
 
 function templateBank(required: string[]): BankConfig {

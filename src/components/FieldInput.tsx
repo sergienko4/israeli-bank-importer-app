@@ -145,21 +145,30 @@ export function FieldInput({ field, value, onChange, onRemove }: Props) {
   ) : null;
 
   if (field.kind === 'boolean') {
+    const checked = value === true;
     return (
       <View style={styles.boolRow}>
         <View style={styles.boolText}>
           {labelText}
           {field.help ? <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text> : null}
         </View>
-        <Switch
+        <Pressable
           accessibilityRole="switch"
           accessibilityLabel={field.label}
-          accessibilityState={{ checked: value === true }}
-          value={value === true}
-          onValueChange={onChange}
-          trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
-          thumbColor="#FFFFFF"
-        />
+          accessibilityHint={field.help}
+          accessibilityState={{ checked }}
+          onPress={() => { onChange(!checked); }}
+          style={({ pressed }) => [styles.switchTarget, { opacity: pressed ? 0.85 : 1 }]}
+        >
+          <View pointerEvents="none">
+            <Switch
+              accessible={false}
+              value={checked}
+              trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </Pressable>
         {removeBtn}
       </View>
     );
@@ -198,4 +207,5 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, minHeight: 44,
   },
   boolText: { flex: 1 },
+  switchTarget: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
 });

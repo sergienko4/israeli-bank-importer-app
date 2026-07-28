@@ -49,6 +49,7 @@ export function Card({
       borderWidth: 1,
       borderColor: theme.colors.border,
       minHeight: onPress ? 44 : undefined,
+      minWidth: onPress ? 44 : undefined,
       padding: padded ? theme.spacing.lg : 0,
     },
     theme.shadow(elevation),

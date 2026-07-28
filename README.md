@@ -1,8 +1,8 @@
-# Israeli Bank Importer — Mobile Config App
+# Israeli Bank Importer â€” Mobile Config App
 
 A cross-platform **Expo / React Native** app (iOS + Android) that lets you edit
 your **self-hosted [Israeli Bank Importer](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget)**
-configuration from your phone — without SSHing into a server or hand-editing
+configuration from your phone â€” without SSHing into a server or hand-editing
 `config.json`.
 
 The app is a **thin, manifest-driven client**: it talks to *your own* importer's
@@ -11,26 +11,23 @@ leave your machine and never touch a third-party cloud.
 
 > **Companion backend:** this app configures the self-hosted
 > [**israeli-bank-scrapers-to-actual-budget**](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget)
-> importer — the server that scrapes your banks and imports into
+> importer â€” the server that scrapes your banks and imports into
 > [Actual Budget](https://actualbudget.org/). You need that importer running
 > (with its config portal enabled) to use this app.
-
-> **Status:** early scaffold. The connection/login and config-editing screens are
-> built out in phases — see the [plan](#roadmap).
 
 ## How it works
 
 ```text
- ┌────────────┐   Authorization: Bearer <token>   ┌───────────────────────────┐
- │  This app  │ ────────  private network  ─────► │  Your self-hosted importer │
- │ (phone)    │        (Tailscale / VPN)          │  portal API  /api/*        │
- └────────────┘ ◄──────  manifest + config  ───── └───────────────────────────┘
+ â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   Authorization: Bearer <token>   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+ â”‚  This app  â”‚ â”€â”€â”€â”€â”€â”€â”€â”€  private network  â”€â”€â”€â”€â”€â–º â”‚  Your self-hosted importer â”‚
+ â”‚ (phone)    â”‚        (Tailscale / VPN)          â”‚  portal API  /api/*        â”‚
+ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜ â—„â”€â”€â”€â”€â”€â”€  manifest + config  â”€â”€â”€â”€â”€ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 - The importer already exposes a **manifest-driven** portal API
   (`/api/manifest`, `/api/config`, `/api/banks/:name`, `/api/validate`).
-- The importer supports **bearer-token auth** (`POST /auth/token` →
-  `Authorization: Bearer`) for non-browser clients — this app uses it.
+- The importer supports **bearer-token auth** (`POST /auth/token` â†’
+  `Authorization: Bearer`) for non-browser clients â€” this app uses it.
 - You reach your importer over a **private tunnel** (Tailscale recommended); the
   credential-editing API is never exposed to the public internet.
 - Optionally acts as the importer's **OTP channel**: when a bank needs a
@@ -66,16 +63,16 @@ Useful scripts:
 
 Prebuilt Android APKs are attached to each **successful** release on the
 [GitHub Releases](https://github.com/sergienko4/israeli-bank-importer-app/releases)
-page once `EXPO_TOKEN` is configured — no Play Store needed.
+page once `EXPO_TOKEN` is configured â€” no Play Store needed.
 
 1. Open the latest release and download `israeli-bank-importer.apk` (if no APK
-   asset is attached, the build is still in progress or was skipped — check back
+   asset is attached, the build is still in progress or was skipped â€” check back
    or use the dev build).
 2. On your phone, allow installing from your browser or files app
-   (Settings → Apps → Special access → Install unknown apps).
+   (Settings â†’ Apps â†’ Special access â†’ Install unknown apps).
 3. Open the APK to install, then point the app at your importer's portal.
 
-> **Security note:** sideloading bypasses Play Store scanning — only install APKs
+> **Security note:** sideloading bypasses Play Store scanning â€” only install APKs
 > from this repository's Releases. The app talks only to the importer you
 > configure and keeps tokens in the device keystore (`expo-secure-store`).
 >
@@ -84,8 +81,8 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 
 ## CI / release
 
-- **CI** (`.github/workflows/ci.yml`): typecheck → lint → tests (with coverage) →
-  `expo-doctor` → `expo export`, plus documentation-quality, license-compliance,
+- **CI** (`.github/workflows/ci.yml`): typecheck â†’ lint â†’ tests (with coverage) â†’
+  `expo-doctor` â†’ `expo export`, plus documentation-quality, license-compliance,
   and (secret-gated) SonarCloud, aggregated behind a single **CI Pass** gate.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
@@ -98,25 +95,25 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 
 ## Roadmap
 
-- ✅ **Phase 1** — connect + log in (bearer token in `expo-secure-store`).
-- ✅ **Phase 2** — manifest-driven config editing + banks/targets (mirrors the web portal).
-- ✅ **Phase 3** — read-only import status from the importer's audit log.
-- ✅ **Phase 4** — native push notifications on import completion (deep-links to status).
-- ✅ **Design system** — themed tokens + reusable UI kit (Expo SDK 54).
-- ✅ **Per-bank schema fix** — the banks editor scopes to each bank's own fields.
-- ✅ **Native motion** — press micro-interactions, direction-aware navigation,
+- âœ… **Phase 1** â€” connect + log in (bearer token in `expo-secure-store`).
+- âœ… **Phase 2** â€” manifest-driven config editing + banks/targets (mirrors the web portal).
+- âœ… **Phase 3** â€” read-only import status from the importer's audit log.
+- âœ… **Phase 4** â€” native push notifications on import completion (deep-links to status).
+- âœ… **Design system** â€” themed tokens + reusable UI kit (Expo SDK 54).
+- âœ… **Per-bank schema fix** â€” the banks editor scopes to each bank's own fields.
+- âœ… **Native motion** â€” press micro-interactions, direction-aware navigation,
   spring sheets, and skeleton loaders (all reduced-motion aware).
-- ✅ **Navigation & home** — persistent bottom tab bar + glanceable home dashboard.
-- ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
-- ✅ **Seamless reconnect** — biometric quick unlock + silent re-auth on session expiry.
+- âœ… **Navigation & home** â€” persistent bottom tab bar + glanceable home dashboard.
+- âœ… **App-based OTP** â€” approve bank OTP codes in the app instead of Telegram.
+- âœ… **Seamless reconnect** â€” biometric quick unlock + silent re-auth on session expiry.
 
 ## Releasing a beta
 
-The release pipeline is already wired (`release-please` → tag → EAS build). To cut
+The release pipeline is already wired (`release-please` â†’ tag â†’ EAS build). To cut
 device builds and distribute a beta, one-time setup is needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
-   secret (Settings → Secrets and variables → Actions) — this unlocks
+   secret (Settings â†’ Secrets and variables â†’ Actions) â€” this unlocks
    `eas-build.yml`.
 2. Run **`eas init`** once locally to link the project (writes `extra.eas.projectId`
    into `app.json`); this id is also what the app uses to mint push tokens.
@@ -130,4 +127,4 @@ device builds and distribute a beta, one-time setup is needed:
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT â€” see [LICENSE](./LICENSE).

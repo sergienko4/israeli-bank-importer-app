@@ -1,0 +1,12 @@
+{
+  // Line length — prose and tables can be long.
+  "MD013": false,
+  // Inline HTML — used for details/summary and comments in templates.
+  "MD033": false,
+  // First line in a file should be a top-level heading — templates start with front matter/comments.
+  "MD041": false,
+  // Duplicate headings — issue/PR templates repeat section names.
+  "MD024": false,
+  // Allow both - and * unordered list markers.
+  "MD004": false
+}

@@ -1,0 +1,91 @@
+language: en-US
+early_access: false
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  high_level_summary_in_walkthrough: false
+  review_status: true
+  commit_status: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: true
+  poem: false
+  abort_on_close: true
+  path_instructions:
+    - path: "src/**/*.{ts,tsx}"
+      instructions: |
+        Expo SDK 57 / React Native / TypeScript app. Enforce:
+        - Strict TypeScript: zero `any`, no `as any`/`as never`; prefer precise types.
+        - Function components with hooks only; no class components.
+        - Accessibility is a correctness requirement: every interactive control has
+          an accessible name/role, touch targets >= 44x44, and images have alt/aria.
+        - Respect reduced motion: every animation must collapse to instant when
+          `useReducedMotion()` / the reduced-motion setting is on.
+        - Never log or hardcode secrets (portal bearer tokens, passwords). Tokens
+          live in expo-secure-store, never in plain AsyncStorage or logs.
+        - Keep functions small and single-responsibility; extract helpers over
+          deep nesting; descriptive names (no temp/data/foo).
+        - Use `import type { X }` for type-only imports (consistent-type-imports).
+        - Do not introduce new runtime dependencies without justification.
+    - path: "src/**/*.test.{ts,tsx}"
+      instructions: |
+        - Tests are colocated with the unit under test (*.test.ts / *.test.tsx).
+        - Prefer behavior-focused tests; mock only external dependencies
+          (network, native modules), not pure data objects.
+        - Deterministic tests only — no arbitrary sleeps; no shared mutable state.
+    - path: ".github/**"
+      instructions: |
+        - Conventional commit titles (feat:, fix:, refactor:, ci:, chore:, docs:).
+        - Pin third-party GitHub Actions to a version/tag; Dependabot updates them.
+        - Secret-dependent jobs (SonarCloud, EAS) must self-skip when the secret
+          is absent so CI stays green before secrets are configured.
+    - path: "**/*.md"
+      instructions: |
+        - Keep setup commands copy-paste runnable and in sync with package.json.
+        - No broken links; prefer absolute URLs for cross-repo references.
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    ignore_title_keywords:
+      - "chore(main): release"
+      - "WIP"
+    drafts: false
+  finishing_touches:
+    docstrings:
+      enabled: true
+    unit_tests:
+      enabled: true
+  pre_merge_checks:
+    title:
+      mode: warning
+    description:
+      mode: warning
+  tools:
+    github-checks:
+      enabled: true
+      timeout_ms: 90000
+    languagetool:
+      enabled: true
+    eslint:
+      enabled: true
+    actionlint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    gitleaks:
+      enabled: true
+chat:
+  auto_reply: true
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto

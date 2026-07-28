@@ -52,15 +52,39 @@ Useful scripts:
 | `npm run export` | Bundle the app for iOS + Android (`expo export`) |
 | `npm start` | Expo dev server |
 
+## Install on Android (APK)
+
+Prebuilt Android APKs are attached to each **successful** release on the
+[GitHub Releases](https://github.com/sergienko4/israeli-bank-importer-app/releases)
+page once `EXPO_TOKEN` is configured — no Play Store needed.
+
+1. Open the latest release and download `israeli-bank-importer.apk` (if no APK
+   asset is attached, the build is still in progress or was skipped — check back
+   or use the dev build).
+2. On your phone, allow installing from your browser or files app
+   (Settings → Apps → Special access → Install unknown apps).
+3. Open the APK to install, then point the app at your importer's portal.
+
+> **Security note:** sideloading bypasses Play Store scanning — only install APKs
+> from this repository's Releases. The app talks only to the importer you
+> configure and keeps tokens in the device keystore (`expo-secure-store`).
+>
+> **iOS:** Apple does not allow installing an `.ipa` from a web link, so iOS is
+> distributed via EAS internal distribution / TestFlight, not GitHub Releases.
+
 ## CI / release
 
-- **PR pipeline** (`.github/workflows/ci.yml`): typecheck → lint → `expo-doctor`
-  → `expo export` on every pull request.
+- **CI** (`.github/workflows/ci.yml`): typecheck → lint → tests (with coverage) →
+  `expo-doctor` → `expo export`, plus documentation-quality, license-compliance,
+  and (secret-gated) SonarCloud, aggregated behind a single **CI Pass** gate.
+- **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
+  secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
-  release, which triggers an **EAS build** (`.github/workflows/eas-build.yml`).
-  The EAS job self-skips until an `EXPO_TOKEN` repository secret is added, so CI
-  stays green without it.
+  release, which triggers the **EAS build** (`eas-build.yml`) and the **APK
+  publish** (`release-apk.yml`) that attaches the Android APK to the release.
+  Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
+  stays green without them.
 
 ## Roadmap
 
@@ -81,9 +105,11 @@ device builds and distribute a beta, one-time setup is needed:
    into `app.json`); this id is also what the app uses to mint push tokens.
 3. Add your **Apple Developer** ($99/yr) and/or **Google Play** ($25) accounts to
    EAS for signing + store submission.
-4. Merge the open **`release-please`** PR to tag a release; the tag triggers an EAS
-   build. Distribute via **TestFlight** (iOS) / **Play internal testing** (Android),
-   or run `eas build` / `eas submit` directly.
+4. Merge the open **`release-please`** PR to tag a release; the tag triggers the EAS
+   build and the **APK publish** (`release-apk.yml`) attaches the Android APK to
+   the GitHub Release. Distribute Android via the release APK, and iOS via
+   **TestFlight** / EAS internal distribution, or run `eas build` / `eas submit`
+   directly.
 
 ## License
 

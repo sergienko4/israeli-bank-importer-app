@@ -1,0 +1,74 @@
+name: Release APK
+
+# On a published GitHub Release (created when the release-please PR merges and
+# tags), build a signed Android APK with EAS and attach it to the release so
+# users can sideload it without the Play Store. Self-skips until an EXPO_TOKEN
+# repository secret exists. iOS cannot be sideloaded from a web link, so iOS
+# builds stay on EAS internal distribution / TestFlight (see eas-build.yml).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to attach the APK to (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build & attach Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping APK build. Add it in repo settings to publish APKs to Releases."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - if: steps.guard.outputs.run == 'true'
+        run: npm ci
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Build Android APK (EAS cloud)
+        id: build
+        run: |
+          URL=$(eas build --platform android --profile apk --non-interactive --wait --json \
+            | jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl')
+          case "$URL" in
+            https://*) : ;;
+            *) echo "::error::Unexpected APK artifact URL"; exit 1 ;;
+          esac
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - if: steps.guard.outputs.run == 'true'
+        name: Download APK
+        env:
+          APK_URL: ${{ steps.build.outputs.url }}
+        run: curl -fL -o israeli-bank-importer.apk "$APK_URL"
+      - if: steps.guard.outputs.run == 'true'
+        name: Attach APK to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" israeli-bank-importer.apk

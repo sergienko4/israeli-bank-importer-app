@@ -1,0 +1,83 @@
+version: 2
+# Grouped weekly Dependabot updates for the Expo / React Native app. Related
+# packages are batched into per-group PRs (bounded by open-pull-requests-limit)
+# instead of many ungrouped PRs. Covers npm dependencies and the GitHub Actions
+# used by the CI/security workflows.
+
+updates:
+  # ── npm ────────────────────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "npm"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      expo:
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "@expo/*"
+          - "jest-expo"
+      react-navigation:
+        patterns:
+          - "@react-navigation/*"
+          - "react-native-screens"
+          - "react-native-safe-area-context"
+          - "react-native-gesture-handler"
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "react-native"
+          - "react-test-renderer"
+      eslint:
+        patterns:
+          - "eslint"
+          - "eslint-*"
+          - "@eslint/*"
+          - "typescript-eslint*"
+          - "@typescript-eslint/*"
+      jest:
+        patterns:
+          - "jest"
+          - "jest-*"
+          - "@jest/*"
+          - "babel-jest"
+      types:
+        patterns:
+          - "@types/*"
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Jerusalem
+    open-pull-requests-limit: 3
+    labels: ["dependencies", "github-actions"]
+    commit-message:
+      prefix: "chore(ci)"
+      include: scope
+    groups:
+      actions-core:
+        patterns:
+          - "actions/*"
+      expo-actions:
+        patterns:
+          - "expo/*"
+      security-actions:
+        patterns:
+          - "github/codeql-action*"
+          - "ossf/*"
+          - "gitleaks/*"
+          - "SonarSource/*"
+          - "lycheeverse/*"

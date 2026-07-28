@@ -32,7 +32,7 @@ export function BanksListView({
   onSelect,
   onStartAdd,
   onRemove,
-}: BanksListViewProps): ReactElement {
+}: Readonly<BanksListViewProps>): ReactElement {
   const theme = useTheme();
 
   return (

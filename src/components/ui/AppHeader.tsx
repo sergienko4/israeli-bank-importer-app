@@ -24,7 +24,12 @@ interface AppHeaderProps {
  * @param props - Header configuration.
  * @returns The header element.
  */
-export function AppHeader({ title, subtitle, onBack, right }: AppHeaderProps): ReactElement {
+export function AppHeader({
+  title,
+  subtitle,
+  onBack,
+  right,
+}: Readonly<AppHeaderProps>): ReactElement {
   const theme = useTheme();
   return (
     <View

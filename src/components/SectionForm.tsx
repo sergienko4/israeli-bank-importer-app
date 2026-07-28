@@ -28,7 +28,7 @@ interface ListFieldProps {
  * @param props - The list field, its value, and a change handler.
  * @returns The list editor.
  */
-function ListField({ field, value, onChange }: ListFieldProps): ReactElement {
+function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactElement {
   const theme = useTheme();
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const items = Array.isArray(value) ? (value as unknown[]) : [];
@@ -116,7 +116,7 @@ interface FieldsProps {
  * @param props - The fields, their base path, the config, and a change handler.
  * @returns The rendered fields.
  */
-function Fields({ fields, basePath, config, onChange }: FieldsProps): ReactElement {
+function Fields({ fields, basePath, config, onChange }: Readonly<FieldsProps>): ReactElement {
   const theme = useTheme();
   const parent = (getAtPath(config, basePath) ?? {}) as Record<string, unknown>;
   return (
@@ -180,7 +180,11 @@ interface SectionFormProps {
  * @param props - The section, the config, and a change handler.
  * @returns The section form.
  */
-export function SectionForm({ section, config, onChange }: SectionFormProps): ReactElement {
+export function SectionForm({
+  section,
+  config,
+  onChange,
+}: Readonly<SectionFormProps>): ReactElement {
   const theme = useTheme();
   if (section.kind !== 'object') {
     return (

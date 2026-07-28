@@ -45,7 +45,7 @@ export function ScreenSwitch({
   direction,
   onSwipeBack,
   children,
-}: ScreenSwitchProps): ReactElement {
+}: Readonly<ScreenSwitchProps>): ReactElement {
   const reduced = useReducedMotion();
   const { width } = useWindowDimensions();
   const translateX = useRef(new Animated.Value(0)).current;

@@ -45,7 +45,7 @@ export function Card({
   accessibilityHint,
   accessibilityRole = 'button',
   style,
-}: CardProps): ReactElement {
+}: Readonly<CardProps>): ReactElement {
   const theme = useTheme();
   const press = usePressScale();
   const cardStyle: StyleProp<ViewStyle> = [

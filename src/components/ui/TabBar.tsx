@@ -49,7 +49,11 @@ interface TabButtonProps<T extends string> {
  * @param props - The tab, its active state, and the select handler.
  * @returns The tab button element.
  */
-function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T>): ReactElement {
+function TabButton<T extends string>({
+  tab,
+  active,
+  onSelect,
+}: Readonly<TabButtonProps<T>>): ReactElement {
   const theme = useTheme();
   const press = usePressScale(0.9);
   const color = active ? theme.colors.primary : theme.colors.textSubtle;
@@ -98,7 +102,11 @@ function TabButton<T extends string>({ tab, active, onSelect }: TabButtonProps<T
  * @param props - The tabs, the active key, and the select handler.
  * @returns The tab bar element.
  */
-export function TabBar<T extends string>({ tabs, active, onSelect }: TabBarProps<T>): ReactElement {
+export function TabBar<T extends string>({
+  tabs,
+  active,
+  onSelect,
+}: Readonly<TabBarProps<T>>): ReactElement {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 

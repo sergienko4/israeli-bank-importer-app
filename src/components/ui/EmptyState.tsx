@@ -34,7 +34,7 @@ export function EmptyState({
   message,
   actionLabel,
   onAction,
-}: EmptyStateProps): ReactElement {
+}: Readonly<EmptyStateProps>): ReactElement {
   const theme = useTheme();
   const pop = useMountPop(0.8);
   return (

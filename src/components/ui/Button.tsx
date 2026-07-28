@@ -97,7 +97,7 @@ export function Button({
   disabled = false,
   fullWidth = true,
   style,
-}: ButtonProps): ReactElement {
+}: Readonly<ButtonProps>): ReactElement {
   const theme = useTheme();
   const dims = SIZES[size];
   const palette = useMemo(() => variantColors(theme, variant), [theme, variant]);

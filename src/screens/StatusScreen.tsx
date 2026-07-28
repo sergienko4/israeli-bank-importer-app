@@ -72,7 +72,7 @@ function bankStatusMeta(
  * @param props - The run entry to render.
  * @returns The run card.
  */
-function RunCard({ entry }: { entry: RunEntry }): ReactElement {
+function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
   const theme = useTheme();
   return (
     <Card style={styles.card}>
@@ -124,7 +124,7 @@ function RunCard({ entry }: { entry: RunEntry }): ReactElement {
  * @param props - Callback to return to the home screen.
  * @returns The status screen element.
  */
-export function StatusScreen({ onBack }: Props): ReactElement {
+export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);

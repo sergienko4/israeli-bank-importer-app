@@ -62,7 +62,7 @@ function ConfigLoading(): ReactElement {
   );
 }
 
-function ConfigError({ error, onRetry }: ConfigErrorProps): ReactElement {
+function ConfigError({ error, onRetry }: Readonly<ConfigErrorProps>): ReactElement {
   return (
     <Screen scroll={false} header={<AppHeader title="Configuration" />}>
       <ErrorView message={error} onRetry={onRetry} />
@@ -78,7 +78,7 @@ function ConfigSectionEditor({
   onBack,
   onSave,
   onChange,
-}: ConfigSectionEditorProps): ReactElement {
+}: Readonly<ConfigSectionEditorProps>): ReactElement {
   return (
     <Screen
       header={<AppHeader title={selected.label} subtitle="Edit fields and save" onBack={onBack} />}
@@ -100,7 +100,7 @@ function ConfigSectionList({
   sections,
   onSelect,
   onShowOtp,
-}: ConfigSectionListProps): ReactElement {
+}: Readonly<ConfigSectionListProps>): ReactElement {
   const theme = useTheme();
 
   return (
@@ -150,7 +150,7 @@ function ConfigSectionList({
  * @param props - Optional drill-down depth reporter for the tab shell.
  * @returns The config editor element.
  */
-export function ConfigScreen({ onDepthChange }: Props): ReactElement {
+export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});

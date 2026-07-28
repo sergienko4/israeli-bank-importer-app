@@ -27,10 +27,10 @@ interface Props {
 function SelectedBankRoute({
   model,
   selected,
-}: {
+}: Readonly<{
   model: BanksScreenModel;
   selected: string;
-}): ReactElement {
+}>): ReactElement {
   const section = model.manifest ? bankSection(model.manifest) : undefined;
   if (!section) {
     return <BanksListRoute model={model} />;
@@ -78,7 +78,7 @@ function SelectedBankRoute({
   );
 }
 
-function BanksListRoute({ model }: { model: BanksScreenModel }): ReactElement {
+function BanksListRoute({ model }: Readonly<{ model: BanksScreenModel }>): ReactElement {
   const banks = banksOf(model.config);
   const configuredIds = Object.keys(banks);
   const catalog = (model.manifest?.banks ?? []).filter((id) => !configuredIds.includes(id));
@@ -96,7 +96,7 @@ function BanksListRoute({ model }: { model: BanksScreenModel }): ReactElement {
   );
 }
 
-function BanksScreenReady({ model }: { model: BanksScreenModel }): ReactElement {
+function BanksScreenReady({ model }: Readonly<{ model: BanksScreenModel }>): ReactElement {
   if (model.selected) {
     return <SelectedBankRoute model={model} selected={model.selected} />;
   }
@@ -109,7 +109,7 @@ function BanksScreenReady({ model }: { model: BanksScreenModel }): ReactElement 
  * @param props - Callback to return to the home screen.
  * @returns The banks editor element.
  */
-export function BanksScreen({ onDepthChange }: Props): ReactElement {
+export function BanksScreen({ onDepthChange }: Readonly<Props>): ReactElement {
   const model = useBanksScreenModel(onDepthChange);
 
   if (model.loading) {

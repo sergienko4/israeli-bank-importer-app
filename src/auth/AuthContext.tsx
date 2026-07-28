@@ -69,7 +69,7 @@ async function registerForPush(session: Connection): Promise<void> {
  * @param props - Children to render inside the provider.
  * @returns The provider element.
  */
-export function AuthProvider({ children }: { children: ReactNode }): ReactElement {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
   const [quickUnlockEnabled, setQuickUnlockEnabled] = useState(false);

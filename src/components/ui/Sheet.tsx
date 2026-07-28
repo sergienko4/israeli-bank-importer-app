@@ -30,7 +30,12 @@ interface SheetProps {
  * @param props - Sheet configuration.
  * @returns The sheet element, or null while fully closed.
  */
-export function Sheet({ visible, onClose, title, children }: SheetProps): ReactElement | null {
+export function Sheet({
+  visible,
+  onClose,
+  title,
+  children,
+}: Readonly<SheetProps>): ReactElement | null {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();

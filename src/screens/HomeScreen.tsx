@@ -78,7 +78,7 @@ function HomeHero(): ReactElement {
   );
 }
 
-function ConnectionCard({ baseUrl }: ConnectionCardProps): ReactElement {
+function ConnectionCard({ baseUrl }: Readonly<ConnectionCardProps>): ReactElement {
   const theme = useTheme();
 
   return (
@@ -100,7 +100,10 @@ function ConnectionCard({ baseUrl }: ConnectionCardProps): ReactElement {
   );
 }
 
-function LastImportBody({ loading, last }: Omit<LastImportCardProps, 'onOpen'>): ReactElement {
+function LastImportBody({
+  loading,
+  last,
+}: Readonly<Omit<LastImportCardProps, 'onOpen'>>): ReactElement {
   const theme = useTheme();
 
   if (loading) {
@@ -135,7 +138,7 @@ function LastImportBody({ loading, last }: Omit<LastImportCardProps, 'onOpen'>):
   );
 }
 
-function LastImportCard({ loading, last, onOpen }: LastImportCardProps): ReactElement {
+function LastImportCard({ loading, last, onOpen }: Readonly<LastImportCardProps>): ReactElement {
   const theme = useTheme();
 
   return (
@@ -166,7 +169,7 @@ function LastImportCard({ loading, last, onOpen }: LastImportCardProps): ReactEl
   );
 }
 
-function BankCountCard({ loading, bankCount, onOpen }: BankCountCardProps): ReactElement {
+function BankCountCard({ loading, bankCount, onOpen }: Readonly<BankCountCardProps>): ReactElement {
   const theme = useTheme();
 
   return (
@@ -207,7 +210,7 @@ function BankCountCard({ loading, bankCount, onOpen }: BankCountCardProps): Reac
  * @param props - Callback to switch tabs.
  * @returns The home dashboard element.
  */
-export function HomeScreen({ onNavigate }: Props): ReactElement {
+export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection, disconnect } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);

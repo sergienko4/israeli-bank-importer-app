@@ -58,7 +58,7 @@ export function BanksEditorView({
   onOpenSheet,
   onCloseSheet,
   onAddField,
-}: BanksEditorViewProps): ReactElement {
+}: Readonly<BanksEditorViewProps>): ReactElement {
   const theme = useTheme();
 
   return (

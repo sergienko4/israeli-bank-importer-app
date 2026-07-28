@@ -28,7 +28,7 @@ export function BanksTargetsEditor({
   fields,
   targets,
   onChange,
-}: BanksTargetsEditorProps): ReactElement {
+}: Readonly<BanksTargetsEditorProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
 

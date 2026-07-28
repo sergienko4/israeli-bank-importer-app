@@ -30,7 +30,12 @@ interface Props {
  * @param props - The request plus submit/dismiss callbacks.
  * @returns The OTP prompt element.
  */
-export function OtpPrompt({ request, visible, onSubmitted, onDismiss }: Props): ReactElement {
+export function OtpPrompt({
+  request,
+  visible,
+  onSubmitted,
+  onDismiss,
+}: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [code, setCode] = useState('');

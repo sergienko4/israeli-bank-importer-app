@@ -50,7 +50,11 @@ export function resolvePillToneStyle(
  * @param props - Pill configuration.
  * @returns The pill element.
  */
-export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps): ReactElement {
+export function StatusPill({
+  label,
+  tone = 'neutral',
+  icon,
+}: Readonly<StatusPillProps>): ReactElement {
   const theme = useTheme();
   const pop = useMountPop();
   const style = resolvePillToneStyle(theme, tone);

@@ -73,7 +73,7 @@ function resolveBorderColor(
   return theme.colors.border;
 }
 
-function FieldLabel({ label }: FieldLabelProps): ReactElement | null {
+function FieldLabel({ label }: Readonly<FieldLabelProps>): ReactElement | null {
   const theme = useTheme();
   if (!label) {
     return null;
@@ -86,7 +86,7 @@ function FieldLabel({ label }: FieldLabelProps): ReactElement | null {
   );
 }
 
-function LeadingIcon({ icon }: LeadingIconProps): ReactElement | null {
+function LeadingIcon({ icon }: Readonly<LeadingIconProps>): ReactElement | null {
   const theme = useTheme();
   if (!icon) {
     return null;
@@ -99,7 +99,7 @@ function SecureRevealButton({
   secure,
   revealed,
   onToggle,
-}: SecureRevealButtonProps): ReactElement | null {
+}: Readonly<SecureRevealButtonProps>): ReactElement | null {
   const theme = useTheme();
   if (!secure) {
     return null;
@@ -121,7 +121,7 @@ function SecureRevealButton({
   );
 }
 
-function FieldSupportText({ error, help }: FieldSupportTextProps): ReactElement | null {
+function FieldSupportText({ error, help }: Readonly<FieldSupportTextProps>): ReactElement | null {
   const theme = useTheme();
   if (error) {
     return (
@@ -160,7 +160,7 @@ export function TextField({
   autoCapitalize = 'none',
   autoComplete,
   textContentType,
-}: TextFieldProps): ReactElement {
+}: Readonly<TextFieldProps>): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);

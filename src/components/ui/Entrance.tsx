@@ -36,7 +36,7 @@ export function Entrance({
   axis = 'y',
   distance = 14,
   style,
-}: EntranceProps): ReactElement {
+}: Readonly<EntranceProps>): ReactElement {
   const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
 

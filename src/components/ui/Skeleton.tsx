@@ -35,7 +35,7 @@ export function Skeleton({
   height = 16,
   radius,
   style,
-}: SkeletonProps): ReactElement {
+}: Readonly<SkeletonProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.5)).current;
@@ -97,7 +97,7 @@ export function SkeletonRow(): ReactElement {
  * @param props - How many rows to render. Default 4.
  * @returns The skeleton list element.
  */
-export function SkeletonList({ count = 4 }: { count?: number }): ReactElement {
+export function SkeletonList({ count = 4 }: Readonly<{ count?: number }>): ReactElement {
   return (
     <Card padded={false} style={styles.card}>
       {Array.from({ length: count }).map((_, index) => (

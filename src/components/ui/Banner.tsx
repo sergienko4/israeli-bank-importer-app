@@ -48,7 +48,7 @@ export function resolveBannerToneStyle(
  * @param props - Banner configuration.
  * @returns The banner element, or null when there are no messages.
  */
-export function Banner({ messages, tone = 'danger' }: BannerProps): ReactElement | null {
+export function Banner({ messages, tone = 'danger' }: Readonly<BannerProps>): ReactElement | null {
   const theme = useTheme();
   const pop = useMountPop();
   if (messages.length === 0) {

@@ -67,7 +67,7 @@ interface Props {
  * @param props - The field, current value, and change handler.
  * @returns The select control.
  */
-function SelectControl({ field, value, onChange }: Props): ReactElement {
+function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   return (
     <View style={styles.chips}>
@@ -113,7 +113,7 @@ function SelectControl({ field, value, onChange }: Props): ReactElement {
  * @param props - The field, current value, and change handler.
  * @returns The input element.
  */
-function TextControl({ field, value, onChange }: Props): ReactElement {
+function TextControl({ field, value, onChange }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const isNumber = field.kind === 'number';
@@ -163,7 +163,7 @@ function TextControl({ field, value, onChange }: Props): ReactElement {
  * @param props - The field, current value, change handler, and optional remove.
  * @returns The field row.
  */
-export function FieldInput({ field, value, onChange, onRemove }: Props): ReactElement {
+export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const labelText = (
     <Text style={[styles.label, { color: theme.colors.text }]}>

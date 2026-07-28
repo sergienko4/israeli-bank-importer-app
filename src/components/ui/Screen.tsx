@@ -40,7 +40,7 @@ export function Screen({
   padded = true,
   contentStyle,
   refreshControl,
-}: ScreenProps): ReactElement {
+}: Readonly<ScreenProps>): ReactElement {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const pad = padded ? theme.spacing.lg : 0;

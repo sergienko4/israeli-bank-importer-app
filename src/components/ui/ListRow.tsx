@@ -54,7 +54,13 @@ interface RowTrailingProps {
   color: string;
 }
 
-function RowIcon({ icon, emoji, bubbleBg, radius, tint }: RowIconProps): ReactElement | null {
+function RowIcon({
+  icon,
+  emoji,
+  bubbleBg,
+  radius,
+  tint,
+}: Readonly<RowIconProps>): ReactElement | null {
   if (!icon && !emoji) {
     return null;
   }
@@ -67,7 +73,7 @@ function RowIcon({ icon, emoji, bubbleBg, radius, tint }: RowIconProps): ReactEl
   );
 }
 
-function RowTexts({ title, subtitle, danger }: RowTextsProps): ReactElement {
+function RowTexts({ title, subtitle, danger }: Readonly<RowTextsProps>): ReactElement {
   const theme = useTheme();
   const titleColor = danger ? theme.colors.danger : theme.colors.text;
 
@@ -85,7 +91,7 @@ function RowTexts({ title, subtitle, danger }: RowTextsProps): ReactElement {
   );
 }
 
-function RowTrailing({ right, onPress, color }: RowTrailingProps): ReactElement | null {
+function RowTrailing({ right, onPress, color }: Readonly<RowTrailingProps>): ReactElement | null {
   if (right !== undefined && right !== null) {
     return <>{right}</>;
   }
@@ -113,7 +119,7 @@ export function ListRow({
   accessibilityState,
   accessibilityRole = 'button',
   accessibilityHint,
-}: ListRowProps): ReactElement {
+}: Readonly<ListRowProps>): ReactElement {
   const theme = useTheme();
   const press = usePressScale(0.98);
   const tint = danger ? theme.colors.danger : theme.colors.primary;

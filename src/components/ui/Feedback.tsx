@@ -14,7 +14,7 @@ import { Button } from './Button';
  * @param props - Optional label under the spinner.
  * @returns The loader element.
  */
-export function Loader({ label }: { label?: string }): ReactElement {
+export function Loader({ label }: Readonly<{ label?: string }>): ReactElement {
   const theme = useTheme();
   return (
     <View
@@ -44,7 +44,7 @@ interface ErrorViewProps {
  * @param props - The message and optional retry handler.
  * @returns The error view element.
  */
-export function ErrorView({ message, onRetry }: ErrorViewProps): ReactElement {
+export function ErrorView({ message, onRetry }: Readonly<ErrorViewProps>): ReactElement {
   const theme = useTheme();
   return (
     <View style={styles.center} accessibilityRole="alert">

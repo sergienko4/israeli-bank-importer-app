@@ -95,7 +95,9 @@ async function tryReauth(): Promise<Session | null> {
   if (!reauthHandler) {
     return null;
   }
-  inFlightReauth ??= reauthHandler().finally(() => { inFlightReauth = null; });
+  inFlightReauth ??= reauthHandler().finally(() => {
+    inFlightReauth = null;
+  });
   return inFlightReauth;
 }
 
@@ -109,13 +111,14 @@ async function tryReauth(): Promise<Session | null> {
  * @returns The fetch Response.
  */
 async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
-  const send = (active: Session): Promise<Response> => fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
-    ...init,
-    headers: {
-      ...(init.headers as Record<string, string> | undefined),
-      authorization: `Bearer ${active.token}`,
-    },
-  });
+  const send = (active: Session): Promise<Response> =>
+    fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
+      ...init,
+      headers: {
+        ...(init.headers as Record<string, string> | undefined),
+        authorization: `Bearer ${active.token}`,
+      },
+    });
   const res = await send(session);
   if (res.status !== 401) {
     return res;

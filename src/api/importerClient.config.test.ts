@@ -1,5 +1,10 @@
 import {
-  getConfig, getManifest, getStatus, removeBank, saveConfig, type Session,
+  getConfig,
+  getManifest,
+  getStatus,
+  removeBank,
+  saveConfig,
+  type Session,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };

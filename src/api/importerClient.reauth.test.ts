@@ -1,6 +1,4 @@
-import {
-  getConfig, type Session, setReauthHandler,
-} from './importerClient';
+import { getConfig, type Session, setReauthHandler } from './importerClient';
 
 const session: Session = { baseUrl: 'http://host:8080', token: 'old' };
 const realFetch = globalThis.fetch;
@@ -31,7 +29,9 @@ afterEach(() => {
 });
 
 describe('silent re-auth on 401', () => {
-  beforeEach(() => { authHeaders = []; });
+  beforeEach(() => {
+    authHeaders = [];
+  });
 
   it('re-authenticates and retries once with the fresh token', async () => {
     let call = 0;
@@ -47,13 +47,13 @@ describe('silent re-auth on 401', () => {
   });
 
   it('propagates the 401 when no reauth handler is set', async () => {
-    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {}))) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
     setReauthHandler(null);
     await expect(getConfig(session)).rejects.toThrow('Session expired');
   });
 
   it('propagates the 401 when reauth returns null', async () => {
-    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {}))) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
     setReauthHandler(async () => null);
     await expect(getConfig(session)).rejects.toThrow('Session expired');
   });
@@ -63,7 +63,7 @@ describe('silent re-auth on 401', () => {
     globalThis.fetch = jest.fn(() => {
       call += 1;
       return Promise.resolve(fakeResponse(401, {}));
-    }) as unknown as typeof fetch;
+    });
     setReauthHandler(async () => ({ baseUrl: 'http://host:8080', token: 'fresh' }));
 
     await expect(getConfig(session)).rejects.toThrow('Session expired');

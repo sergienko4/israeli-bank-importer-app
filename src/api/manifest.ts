@@ -6,14 +6,7 @@
 
 /** The kinds of fields a manifest section can contain. */
 export type FieldKind =
-  | 'string'
-  | 'secret'
-  | 'number'
-  | 'boolean'
-  | 'select'
-  | 'date'
-  | 'group'
-  | 'list';
+  'string' | 'secret' | 'number' | 'boolean' | 'select' | 'date' | 'group' | 'list';
 
 /** A single field definition within a section. */
 export interface FieldDef {

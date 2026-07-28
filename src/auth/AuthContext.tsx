@@ -6,7 +6,7 @@ import {
   createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState,
 } from 'react';
 
-import { registerDevice, requestToken } from '../api/importerClient';
+import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
 import { getPushToken } from '../push/pushRegistration';
 import {
   clearConnection, type Connection, clearPassword, hasStoredPassword,
@@ -23,8 +23,8 @@ export interface AuthState {
   /** True when a password is stored for silent re-auth (quick unlock). */
   quickUnlockEnabled: boolean;
   connect: (baseUrl: string, password: string, rememberPassword?: boolean) => Promise<void>;
-  /** Silently re-authenticates using the stored password; false when unavailable/failed. */
-  reauthenticate: () => Promise<boolean>;
+  /** Silently re-authenticates using the stored password; null when unavailable/failed. */
+  reauthenticate: () => Promise<Connection | null>;
   /** Disables quick unlock by clearing the stored password. */
   disableQuickUnlock: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -85,13 +85,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void registerForPush(next);
   }, []);
 
-  const reauthenticate = useCallback(async (): Promise<boolean> => {
+  const reauthenticate = useCallback(async (): Promise<Connection | null> => {
     if (!connection) {
-      return false;
+      return null;
     }
     const password = await loadPassword();
     if (!password) {
-      return false;
+      return null;
     }
     try {
       const token = await requestToken(connection.baseUrl, password);
@@ -99,11 +99,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await saveConnection(next);
       setConnection(next);
       setStatus('connected');
-      return true;
+      return next;
     } catch {
-      return false;
+      return null;
     }
   }, [connection]);
+
+  useEffect(() => {
+    setReauthHandler(reauthenticate);
+    return () => { setReauthHandler(null); };
+  }, [reauthenticate]);
 
   const disableQuickUnlock = useCallback(async () => {
     await clearPassword();

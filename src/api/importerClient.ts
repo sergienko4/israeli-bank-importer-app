@@ -70,19 +70,58 @@ export interface Session {
   token: string;
 }
 
+/** Produces a fresh session (e.g. by re-authenticating), or null when it cannot. */
+export type ReauthHandler = () => Promise<Session | null>;
+
+let reauthHandler: ReauthHandler | null = null;
+let inFlightReauth: Promise<Session | null> | null = null;
+
+/**
+ * Registers (or clears) the handler used to silently re-authenticate when a
+ * request returns 401. The auth layer sets this so the client can recover from
+ * an expired token without the caller handling it.
+ * @param handler - The reauth handler, or null to clear it.
+ */
+export function setReauthHandler(handler: ReauthHandler | null): void {
+  reauthHandler = handler;
+}
+
+/**
+ * Runs the reauth handler, de-duplicating concurrent 401s so only one
+ * re-authentication is attempted at a time.
+ * @returns A fresh session, or null when reauth is unavailable or fails.
+ */
+async function tryReauth(): Promise<Session | null> {
+  if (!reauthHandler) {
+    return null;
+  }
+  inFlightReauth ??= reauthHandler().finally(() => { inFlightReauth = null; });
+  return inFlightReauth;
+}
+
 /**
  * Performs an authenticated request against the importer, attaching the bearer.
+ * On a 401 it attempts a single silent re-authentication and retries once with
+ * the refreshed token, so an expired session recovers transparently.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
  * @returns The fetch Response.
  */
 async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = {
-    ...(init.headers as Record<string, string> | undefined),
-    authorization: `Bearer ${session.token}`,
-  };
-  return fetch(`${normalizeBaseUrl(session.baseUrl)}${path}`, { ...init, headers });
+  const send = (active: Session): Promise<Response> => fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      authorization: `Bearer ${active.token}`,
+    },
+  });
+  const res = await send(session);
+  if (res.status !== 401) {
+    return res;
+  }
+  const refreshed = await tryReauth();
+  return refreshed ? send(refreshed) : res;
 }
 
 /**

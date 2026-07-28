@@ -29,7 +29,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       return undefined;
     }
     let active = true;
-    const poll = async () => {
+    const poll = async (): Promise<void> => {
       try {
         const requests = await getPendingOtp(connection);
         if (active) {
@@ -40,8 +40,8 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       }
     };
     void poll();
-    const interval = setInterval(() => { void poll(); }, POLL_INTERVAL_MS);
-    const sub = Notifications.addNotificationReceivedListener(() => { void poll(); });
+    const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
+    const sub = Notifications.addNotificationReceivedListener(() => void poll());
     return () => {
       active = false;
       clearInterval(interval);

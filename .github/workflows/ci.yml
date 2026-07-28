@@ -108,7 +108,7 @@ jobs:
           path: coverage
       - if: steps.guard.outputs.run == 'true'
         name: SonarCloud scan
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: https://sonarcloud.io

@@ -17,5 +17,5 @@ export function selectPendingOtp(
   dismissed: Set<string>,
   now: number = Date.now(),
 ): PendingOtpRequest | null {
-  return requests.find((request) => !dismissed.has(request.id) && request.deadline > now) ?? null;
+  return requests.find((request) => !dismissed.has(request.id) && request.deadline >= now) ?? null;
 }

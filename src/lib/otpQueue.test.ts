@@ -23,6 +23,19 @@ describe('selectPendingOtp', () => {
     expect(selectPendingOtp(requests, new Set(), now)?.id).toBe('b');
   });
 
+  it('keeps a request alive through its exact deadline', () => {
+    expect(selectPendingOtp([req('a', now)], new Set(), now)?.id).toBe('a');
+  });
+
+  it('keeps dismissed requests suppressed across later polls', () => {
+    const dismissed = new Set(['a']);
+    const firstPoll = [req('a', 5_000)];
+    const nextPoll = [req('a', 6_000), req('b', 6_000)];
+
+    expect(selectPendingOtp(firstPoll, dismissed, now)).toBeNull();
+    expect(selectPendingOtp(nextPoll, dismissed, now)?.id).toBe('b');
+  });
+
   it('returns null when nothing is actionable', () => {
     expect(selectPendingOtp([], new Set(), now)).toBeNull();
     expect(selectPendingOtp([req('a', 500)], new Set(), now)).toBeNull();

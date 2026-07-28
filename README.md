@@ -9,6 +9,12 @@ The app is a **thin, manifest-driven client**: it talks to *your own* importer's
 config portal API over a **private network**, so your bank credentials never
 leave your machine and never touch a third-party cloud.
 
+> **Companion backend:** this app configures the self-hosted
+> [**israeli-bank-scrapers-to-actual-budget**](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget)
+> importer — the server that scrapes your banks and imports into
+> [Actual Budget](https://actualbudget.org/). You need that importer running
+> (with its config portal enabled) to use this app.
+
 > **Status:** early scaffold. The connection/login and config-editing screens are
 > built out in phases — see the [plan](#roadmap).
 
@@ -27,6 +33,10 @@ leave your machine and never touch a third-party cloud.
   `Authorization: Bearer`) for non-browser clients — this app uses it.
 - You reach your importer over a **private tunnel** (Tailscale recommended); the
   credential-editing API is never exposed to the public internet.
+- Optionally acts as the importer's **OTP channel**: when a bank needs a
+  one-time code, the importer prompts *this app* instead of Telegram, and you
+  approve the code on your phone. See
+  [OTP delivery](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget/blob/main/docs/OTP-AUTOFORWARD.md#alternative-native-app-otp-no-telegram).
 
 ## Requirements
 
@@ -92,6 +102,13 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 - ✅ **Phase 2** — manifest-driven config editing + banks/targets (mirrors the web portal).
 - ✅ **Phase 3** — read-only import status from the importer's audit log.
 - ✅ **Phase 4** — native push notifications on import completion (deep-links to status).
+- ✅ **Design system** — themed tokens + reusable UI kit (Expo SDK 54).
+- ✅ **Per-bank schema fix** — the banks editor scopes to each bank's own fields.
+- ✅ **Native motion** — press micro-interactions, direction-aware navigation,
+  spring sheets, and skeleton loaders (all reduced-motion aware).
+- ✅ **Navigation & home** — persistent bottom tab bar + glanceable home dashboard.
+- ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
+- ✅ **Seamless reconnect** — biometric quick unlock + silent re-auth on session expiry.
 
 ## Releasing a beta
 

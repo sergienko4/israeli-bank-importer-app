@@ -1,0 +1,12 @@
+dist/
+.expo/
+node_modules/
+coverage/
+android/
+ios/
+*.log
+package-lock.json
+*.md
+*.yml
+*.yaml
+.github/

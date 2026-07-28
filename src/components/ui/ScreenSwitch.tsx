@@ -12,7 +12,7 @@
 import { useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Animated, Dimensions, PanResponder, StyleSheet,
+  Animated, PanResponder, StyleSheet, useWindowDimensions,
 } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -20,11 +20,10 @@ import {
   durations, easing, motionDuration, spring,
 } from '../../theme/motion';
 
-const { width } = Dimensions.get('window');
 /** Width of the left-edge zone that starts a swipe-back gesture. */
 const EDGE_WIDTH = 32;
-/** Horizontal travel (px) past which release completes the back navigation. */
-const SWIPE_THRESHOLD = width * 0.4;
+/** Fraction of screen width past which release completes the back navigation. */
+const SWIPE_THRESHOLD_RATIO = 0.4;
 /** Horizontal velocity past which release completes the back navigation. */
 const VELOCITY_THRESHOLD = 0.5;
 
@@ -49,14 +48,26 @@ export function ScreenSwitch({
   screenKey, direction, onSwipeBack, children,
 }: ScreenSwitchProps) {
   const reduced = useReducedMotion();
+  const { width } = useWindowDimensions();
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const firstRender = useRef(true);
 
   const onSwipeBackRef = useRef(onSwipeBack);
-  onSwipeBackRef.current = onSwipeBack;
   const reducedRef = useRef(reduced);
-  reducedRef.current = reduced;
+  const widthRef = useRef(width);
+
+  useEffect(() => {
+    onSwipeBackRef.current = onSwipeBack;
+  }, [onSwipeBack]);
+
+  useEffect(() => {
+    reducedRef.current = reduced;
+  }, [reduced]);
+
+  useEffect(() => {
+    widthRef.current = width;
+  }, [width]);
 
   useEffect(() => {
     if (firstRender.current) {
@@ -76,7 +87,7 @@ export function ScreenSwitch({
     ]);
     animation.start();
     return () => { animation.stop(); };
-  }, [screenKey, direction, reduced, translateX, opacity]);
+  }, [screenKey, direction, reduced, width, translateX, opacity]);
 
   const responder = useRef(
     PanResponder.create({
@@ -94,9 +105,10 @@ export function ScreenSwitch({
       },
       onPanResponderRelease: (_evt, gesture) => {
         const back = onSwipeBackRef.current;
-        if (back && (gesture.dx > SWIPE_THRESHOLD || gesture.vx > VELOCITY_THRESHOLD)) {
+        const swipeThreshold = widthRef.current * SWIPE_THRESHOLD_RATIO;
+        if (back && (gesture.dx > swipeThreshold || gesture.vx > VELOCITY_THRESHOLD)) {
           Animated.timing(translateX, {
-            toValue: width,
+            toValue: widthRef.current,
             duration: motionDuration(durations.fast, reducedRef.current),
             easing: easing.accelerate,
             useNativeDriver: true,

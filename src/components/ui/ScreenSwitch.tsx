@@ -74,20 +74,22 @@ export function ScreenSwitch({
       firstRender.current = false;
       return undefined;
     }
-    const start = direction === 'forward' ? width : -width * 0.35;
-    translateX.setValue(reduced ? 0 : start);
-    opacity.setValue(reduced ? 1 : 0);
+    const reducedNow = reducedRef.current;
+    const currentWidth = widthRef.current;
+    const start = direction === 'forward' ? currentWidth : -currentWidth * 0.35;
+    translateX.setValue(reducedNow ? 0 : start);
+    opacity.setValue(reducedNow ? 1 : 0);
     const animation = Animated.parallel([
       Animated.timing(translateX, {
-        toValue: 0, duration: motionDuration(durations.base, reduced), easing: easing.standard, useNativeDriver: true,
+        toValue: 0, duration: motionDuration(durations.base, reducedNow), easing: easing.standard, useNativeDriver: true,
       }),
       Animated.timing(opacity, {
-        toValue: 1, duration: motionDuration(durations.base, reduced), easing: easing.standard, useNativeDriver: true,
+        toValue: 1, duration: motionDuration(durations.base, reducedNow), easing: easing.standard, useNativeDriver: true,
       }),
     ]);
     animation.start();
     return () => { animation.stop(); };
-  }, [screenKey, direction, reduced, width, translateX, opacity]);
+  }, [screenKey, direction, translateX, opacity]);
 
   const responder = useRef(
     PanResponder.create({

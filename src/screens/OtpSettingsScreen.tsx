@@ -54,7 +54,7 @@ const CHOICES: Choice[] = [
  * @param props - Callback to return to the previous screen.
  * @returns The settings screen element.
  */
-export function OtpSettingsScreen({ onBack }: Props): ReactElement {
+export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const [channel, setChannel] = useState<OtpChannel | null>(null);

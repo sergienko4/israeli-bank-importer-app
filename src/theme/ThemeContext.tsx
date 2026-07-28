@@ -59,7 +59,7 @@ const ThemeContext = createContext<Theme | null>(null);
  * @param props - The subtree to theme.
  * @returns The provider element.
  */
-export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
+export function ThemeProvider({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   const system = useColorScheme();
   const scheme: 'light' | 'dark' = system === 'dark' ? 'dark' : 'light';
   const value = useMemo<Theme>(

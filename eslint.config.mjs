@@ -262,6 +262,8 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unnecessary-type-conversion': 'off',
       'sonarjs/no-identical-functions': 'off',
       'sonarjs/cognitive-complexity': 'off',
       'no-restricted-syntax': 'off',

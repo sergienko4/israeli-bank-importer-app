@@ -31,7 +31,10 @@ export function allowedFieldKeys(requirement: BankRequirement | undefined): Set<
  * @param requirement - The bank's advertised requirement, or undefined.
  * @returns The subset of the catalog allowed for the bank.
  */
-export function schemaFields(section: SectionDef, requirement: BankRequirement | undefined): FieldDef[] {
+export function schemaFields(
+  section: SectionDef,
+  requirement: BankRequirement | undefined,
+): FieldDef[] {
   const allowed = allowedFieldKeys(requirement);
   return (section.bankFields ?? []).filter((field) => allowed.has(field.key));
 }

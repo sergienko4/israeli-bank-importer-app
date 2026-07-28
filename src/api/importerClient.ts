@@ -5,6 +5,7 @@
  */
 
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
+import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
 
 /**
@@ -69,19 +70,58 @@ export interface Session {
   token: string;
 }
 
+/** Produces a fresh session (e.g. by re-authenticating), or null when it cannot. */
+export type ReauthHandler = () => Promise<Session | null>;
+
+let reauthHandler: ReauthHandler | null = null;
+let inFlightReauth: Promise<Session | null> | null = null;
+
+/**
+ * Registers (or clears) the handler used to silently re-authenticate when a
+ * request returns 401. The auth layer sets this so the client can recover from
+ * an expired token without the caller handling it.
+ * @param handler - The reauth handler, or null to clear it.
+ */
+export function setReauthHandler(handler: ReauthHandler | null): void {
+  reauthHandler = handler;
+}
+
+/**
+ * Runs the reauth handler, de-duplicating concurrent 401s so only one
+ * re-authentication is attempted at a time.
+ * @returns A fresh session, or null when reauth is unavailable or fails.
+ */
+async function tryReauth(): Promise<Session | null> {
+  if (!reauthHandler) {
+    return null;
+  }
+  inFlightReauth ??= reauthHandler().finally(() => { inFlightReauth = null; });
+  return inFlightReauth;
+}
+
 /**
  * Performs an authenticated request against the importer, attaching the bearer.
+ * On a 401 it attempts a single silent re-authentication and retries once with
+ * the refreshed token, so an expired session recovers transparently.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
  * @returns The fetch Response.
  */
 async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
-  const headers = {
-    ...(init.headers as Record<string, string> | undefined),
-    authorization: `Bearer ${session.token}`,
-  };
-  return fetch(`${normalizeBaseUrl(session.baseUrl)}${path}`, { ...init, headers });
+  const send = (active: Session): Promise<Response> => fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      authorization: `Bearer ${active.token}`,
+    },
+  });
+  const res = await send(session);
+  if (res.status !== 401) {
+    return res;
+  }
+  const refreshed = await tryReauth();
+  return refreshed ? send(refreshed) : res;
 }
 
 /**
@@ -199,6 +239,66 @@ export async function unregisterDevice(session: Session, token: string): Promise
     method: 'DELETE',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ token }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Reads the app-only OTP delivery settings via `GET /api/otp/settings`.
+ * @param session - The active session.
+ * @returns The OTP settings (channel).
+ * @throws Error when the request fails.
+ */
+export async function getOtpSettings(session: Session): Promise<OtpSettings> {
+  const res = await authed(session, '/api/otp/settings');
+  if (!res.ok) {
+    throw new Error(`Could not load OTP settings (${String(res.status)}).`);
+  }
+  return (await res.json()) as OtpSettings;
+}
+
+/**
+ * Sets the OTP delivery channel via `PUT /api/otp/settings`.
+ * @param session - The active session.
+ * @param channel - The channel to select (`telegram` or `app`).
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  const res = await authed(session, '/api/otp/settings', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ channel }),
+  });
+  return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Loads the pending OTP requests via `GET /api/otp/pending`.
+ * @param session - The active session.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the request fails.
+ */
+export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
+  const res = await authed(session, '/api/otp/pending');
+  if (!res.ok) {
+    throw new Error(`Could not load pending OTP requests (${String(res.status)}).`);
+  }
+  const data = (await res.json()) as { requests?: PendingOtpRequest[] };
+  return Array.isArray(data.requests) ? data.requests : [];
+}
+
+/**
+ * Submits an OTP code for a pending request via `POST /api/otp/:id`.
+ * @param session - The active session.
+ * @param id - The pending request id.
+ * @param code - The OTP code entered by the user.
+ * @returns Success or a failure carrying the importer's error.
+ */
+export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  const res = await authed(session, `/api/otp/${encodeURIComponent(id)}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code }),
   });
   return res.ok ? { ok: true } : toFailure(res);
 }

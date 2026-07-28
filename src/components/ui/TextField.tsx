@@ -33,6 +33,10 @@ interface TextFieldProps {
   keyboardType?: KeyboardTypeOptions;
   /** Auto-capitalization. Default `none`. */
   autoCapitalize?: TextInputProps['autoCapitalize'];
+  /** Autofill hint for the OS/password manager. */
+  autoComplete?: TextInputProps['autoComplete'];
+  /** iOS content type for autofill (e.g. `password`, `URL`). */
+  textContentType?: TextInputProps['textContentType'];
 }
 
 /**
@@ -42,7 +46,7 @@ interface TextFieldProps {
  */
 export function TextField({
   label, value, onChangeText, placeholder, secure = false,
-  error, help, icon, keyboardType, autoCapitalize = 'none',
+  error, help, icon, keyboardType, autoCapitalize = 'none', autoComplete, textContentType,
 }: TextFieldProps) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
@@ -75,8 +79,11 @@ export function TextField({
           placeholder={placeholder}
           placeholderTextColor={theme.colors.textSubtle}
           secureTextEntry={secure && !revealed}
+          accessibilityLabel={label ?? placeholder}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
+          textContentType={textContentType}
           autoCorrect={false}
           onFocus={() => { setFocused(true); }}
           onBlur={() => { setFocused(false); }}

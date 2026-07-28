@@ -5,14 +5,14 @@
  * controls on Android).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import {
   ActivityIndicator, Animated, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
-import { useReducedMotion } from '../../lib/useReducedMotion';
+import { usePressScale } from '../../lib/usePressScale';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
 
@@ -78,33 +78,21 @@ export function Button({
   loading = false, disabled = false, fullWidth = true, style,
 }: ButtonProps) {
   const theme = useTheme();
-  const reducedMotion = useReducedMotion();
   const dims = SIZES[size];
   const palette = useMemo(() => variantColors(theme, variant), [theme, variant]);
   const blocked = disabled || loading;
-  const scale = useRef(new Animated.Value(1)).current;
+  const press = usePressScale(0.96);
 
   const pressIn = (): void => {
     if (blocked) {
       return;
     }
     haptics.selection();
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 0.96, speed: 50, bounciness: 0, useNativeDriver: true }).start();
-  };
-  const pressOut = (): void => {
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
+    press.onPressIn();
   };
 
   return (
-    <Animated.View style={[{ transform: [{ scale }], alignSelf: fullWidth ? 'stretch' : 'flex-start' }, style]}>
+    <Animated.View style={[{ transform: [{ scale: press.scale }], alignSelf: fullWidth ? 'stretch' : 'flex-start' }, style]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={title}
@@ -112,11 +100,12 @@ export function Button({
         disabled={blocked}
         onPress={onPress}
         onPressIn={pressIn}
-        onPressOut={pressOut}
+        onPressOut={press.onPressOut}
         style={({ pressed }) => [
           styles.base,
           {
             minHeight: Math.max(dims.height, 44),
+            minWidth: 44,
             paddingVertical: dims.padV,
             paddingHorizontal: theme.spacing.lg,
             backgroundColor: palette.bg,

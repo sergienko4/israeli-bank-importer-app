@@ -1,6 +1,9 @@
 import * as SecureStore from 'expo-secure-store';
 
-import { clearConnection, loadConnection, saveConnection } from './connectionStore';
+import {
+  clearConnection, clearPassword, hasStoredPassword, loadConnection,
+  loadPassword, savePassword, saveConnection,
+} from './connectionStore';
 
 jest.mock('expo-secure-store');
 
@@ -38,5 +41,29 @@ describe('connectionStore', () => {
     await saveConnection({ baseUrl: 'http://h:8080', token: 't' });
     await clearConnection();
     await expect(loadConnection()).resolves.toBeNull();
+  });
+
+  it('round-trips a stored password', async () => {
+    await savePassword('secret');
+    await expect(loadPassword()).resolves.toBe('secret');
+    await expect(hasStoredPassword()).resolves.toBe(true);
+  });
+
+  it('reports no stored password by default', async () => {
+    await expect(hasStoredPassword()).resolves.toBe(false);
+    await expect(loadPassword()).resolves.toBeNull();
+  });
+
+  it('clears the stored password', async () => {
+    await savePassword('secret');
+    await clearPassword();
+    await expect(hasStoredPassword()).resolves.toBe(false);
+  });
+
+  it('clearConnection also clears the stored password', async () => {
+    await saveConnection({ baseUrl: 'http://h:8080', token: 't' });
+    await savePassword('secret');
+    await clearConnection();
+    await expect(hasStoredPassword()).resolves.toBe(false);
   });
 });

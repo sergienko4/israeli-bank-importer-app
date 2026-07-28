@@ -14,19 +14,22 @@ import {
   AppHeader, Banner, Button, Card, Divider, Entrance, ErrorView, ListRow, Loader, Screen,
 } from '../components/ui';
 import { setAtPath } from '../config/formState';
+import { editableSections } from '../config/sections';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
+import { OtpSettingsScreen } from './OtpSettingsScreen';
 
 interface Props {
-  onBack: () => void;
+  /** Reports drill-down depth (0 = section list, 1 = editing a section). */
+  onDepthChange?: (depth: number) => void;
 }
 
 /**
  * Renders the config editor screen.
- * @param props - Callback to return to the home screen.
+ * @param props - Optional drill-down depth reporter for the tab shell.
  * @returns The config editor element.
  */
-export function ConfigScreen({ onBack }: Props) {
+export function ConfigScreen({ onDepthChange }: Props) {
   const theme = useTheme();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
@@ -34,6 +37,7 @@ export function ConfigScreen({ onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SectionDef | null>(null);
+  const [showOtp, setShowOtp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -73,6 +77,10 @@ export function ConfigScreen({ onBack }: Props) {
     setReloadKey((key) => key + 1);
   };
 
+  useEffect(() => {
+    onDepthChange?.(selected || showOtp ? 1 : 0);
+  }, [selected, showOtp, onDepthChange]);
+
   const update = useCallback((path: string[], value: unknown) => {
     setConfig((current) => setAtPath(current, path, value));
   }, []);
@@ -96,17 +104,21 @@ export function ConfigScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Configuration" />}>
         <Loader label="Loading configuration" />
       </Screen>
     );
   }
   if (error) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Configuration" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Configuration" />}>
         <ErrorView message={error} onRetry={reload} />
       </Screen>
     );
+  }
+
+  if (showOtp) {
+    return <OtpSettingsScreen onBack={() => { setShowOtp(false); }} />;
   }
 
   if (selected) {
@@ -123,9 +135,9 @@ export function ConfigScreen({ onBack }: Props) {
     );
   }
 
-  const sections = manifest?.sections ?? [];
+  const sections = editableSections(manifest);
   return (
-    <Screen header={<AppHeader title="Configuration" onBack={onBack} />}>
+    <Screen header={<AppHeader title="Configuration" />}>
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
         Choose a section to edit.
       </Text>
@@ -142,12 +154,23 @@ export function ConfigScreen({ onBack }: Props) {
           </Entrance>
         ))}
       </Card>
+
+      <Text style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}>DEVICE</Text>
+      <Card padded={false} style={styles.menu}>
+        <ListRow
+          icon="key-outline"
+          title="OTP delivery"
+          subtitle="Collect bank codes in this app or via Telegram"
+          onPress={() => { haptics.selection(); setShowOtp(true); }}
+        />
+      </Card>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12, marginLeft: 4 },
+  sectionLabel: { letterSpacing: 0.6, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   menu: { overflow: 'hidden' },
   indent: { marginLeft: 68 },
   errors: { marginTop: 16 },

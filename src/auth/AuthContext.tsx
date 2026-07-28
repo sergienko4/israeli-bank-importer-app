@@ -6,9 +6,13 @@ import {
   createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState,
 } from 'react';
 
-import { registerDevice, requestToken } from '../api/importerClient';
+import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
+import { authenticateBiometric } from '../lib/biometrics';
 import { getPushToken } from '../push/pushRegistration';
-import { clearConnection, type Connection, loadConnection, saveConnection } from './connectionStore';
+import {
+  clearConnection, type Connection, clearPassword, hasStoredPassword,
+  loadConnection, loadPassword, savePassword, saveConnection,
+} from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
 export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
@@ -17,7 +21,15 @@ export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
 export interface AuthState {
   status: ConnectionStatus;
   connection: Connection | null;
-  connect: (baseUrl: string, password: string) => Promise<void>;
+  /** True when a password is stored for silent re-auth (quick unlock). */
+  quickUnlockEnabled: boolean;
+  /** True when the session expired and silent re-auth was unavailable/declined. */
+  sessionExpired: boolean;
+  connect: (baseUrl: string, password: string, rememberPassword?: boolean) => Promise<void>;
+  /** Silently re-authenticates using the stored password; null when unavailable/failed. */
+  reauthenticate: () => Promise<Connection | null>;
+  /** Disables quick unlock by clearing the stored password. */
+  disableQuickUnlock: () => Promise<void>;
   disconnect: () => Promise<void>;
 }
 
@@ -47,11 +59,14 @@ async function registerForPush(session: Connection): Promise<void> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
+  const [quickUnlockEnabled, setQuickUnlockEnabled] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
-    loadConnection()
-      .then((saved) => {
+    Promise.all([loadConnection(), hasStoredPassword()])
+      .then(([saved, hasPassword]) => {
         setConnection(saved);
+        setQuickUnlockEnabled(hasPassword);
         setStatus(saved ? 'connected' : 'disconnected');
       })
       .catch(() => {
@@ -59,24 +74,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  const connect = useCallback(async (baseUrl: string, password: string) => {
+  const connect = useCallback(async (baseUrl: string, password: string, rememberPassword = false) => {
     const token = await requestToken(baseUrl, password);
     const next: Connection = { baseUrl, token };
     await saveConnection(next);
+    if (rememberPassword) {
+      await savePassword(password);
+    } else {
+      await clearPassword();
+    }
     setConnection(next);
+    setQuickUnlockEnabled(rememberPassword);
+    setSessionExpired(false);
     setStatus('connected');
     void registerForPush(next);
+  }, []);
+
+  const reauthenticate = useCallback(async (): Promise<Connection | null> => {
+    if (!connection) {
+      return null;
+    }
+    const password = await loadPassword();
+    if (!password) {
+      setSessionExpired(true);
+      return null;
+    }
+    const unlock = await authenticateBiometric('Unlock to reconnect to your importer');
+    if (unlock.status === 'unsupported') {
+      await clearPassword();
+      setQuickUnlockEnabled(false);
+      setSessionExpired(true);
+      return null;
+    }
+    if (unlock.status !== 'success') {
+      setSessionExpired(true);
+      return null;
+    }
+    try {
+      const token = await requestToken(connection.baseUrl, password);
+      const next: Connection = { baseUrl: connection.baseUrl, token };
+      await saveConnection(next);
+      setConnection(next);
+      setSessionExpired(false);
+      setStatus('connected');
+      return next;
+    } catch {
+      setSessionExpired(true);
+      return null;
+    }
+  }, [connection]);
+
+  useEffect(() => {
+    setReauthHandler(reauthenticate);
+    return () => { setReauthHandler(null); };
+  }, [reauthenticate]);
+
+  const disableQuickUnlock = useCallback(async () => {
+    await clearPassword();
+    setQuickUnlockEnabled(false);
   }, []);
 
   const disconnect = useCallback(async () => {
     await clearConnection();
     setConnection(null);
+    setQuickUnlockEnabled(false);
+    setSessionExpired(false);
     setStatus('disconnected');
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ status, connection, connect, disconnect }),
-    [status, connection, connect, disconnect],
+    () => ({
+      status,
+      connection,
+      quickUnlockEnabled,
+      sessionExpired,
+      connect,
+      reauthenticate,
+      disableQuickUnlock,
+      disconnect,
+    }),
+    [status, connection, quickUnlockEnabled, sessionExpired, connect, reauthenticate, disableQuickUnlock, disconnect],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -15,16 +15,20 @@ import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manife
 import { useAuth } from '../auth/AuthContext';
 import { FieldInput } from '../components/FieldInput';
 import {
-  AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Loader, Screen, Sheet,
+  AppHeader, Banner, Button, Card, Divider, EmptyState, Entrance, ErrorView, ListRow, Screen, Sheet, SkeletonList,
 } from '../components/ui';
+import { addableFields } from '../config/bankSchema';
 import { haptics } from '../lib/haptics';
+import { animateNextLayout } from '../lib/layoutAnimation';
+import { useReducedMotion } from '../lib/useReducedMotion';
 import { useTheme } from '../theme/ThemeContext';
 
 type BankConfig = Record<string, unknown>;
 type TargetConfig = Record<string, unknown>;
 
 interface Props {
-  onBack: () => void;
+  /** Reports drill-down depth (0 = bank list, 1 = editing a bank). */
+  onDepthChange?: (depth: number) => void;
 }
 
 /**
@@ -98,8 +102,17 @@ interface TargetsProps {
  */
 function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
   const theme = useTheme();
+  const reduced = useReducedMotion();
   const setField = (index: number, key: string, value: unknown) => {
     onChange(targets.map((target, i) => (i === index ? { ...target, [key]: value } : target)));
+  };
+  const removeTarget = (index: number) => {
+    animateNextLayout(reduced);
+    onChange(targets.filter((_, i) => i !== index));
+  };
+  const addTarget = () => {
+    animateNextLayout(reduced);
+    onChange([...targets, {}]);
   };
   return (
     <View style={styles.targets}>
@@ -114,7 +127,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
               size="sm"
               icon="trash-outline"
               fullWidth={false}
-              onPress={() => { onChange(targets.filter((_, i) => i !== index)); }}
+              onPress={() => { removeTarget(index); }}
             />
           </View>
           {fields.map((field) => (
@@ -133,7 +146,7 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
         size="sm"
         icon="add"
         fullWidth={false}
-        onPress={() => { onChange([...targets, {}]); }}
+        onPress={() => { addTarget(); }}
       />
     </View>
   );
@@ -144,8 +157,9 @@ function TargetsEditor({ fields, targets, onChange }: TargetsProps) {
  * @param props - Callback to return to the home screen.
  * @returns The banks editor element.
  */
-export function BanksScreen({ onBack }: Props) {
+export function BanksScreen({ onDepthChange }: Props) {
   const theme = useTheme();
+  const reduced = useReducedMotion();
   const { connection } = useAuth();
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
@@ -186,6 +200,10 @@ export function BanksScreen({ onBack }: Props) {
     return () => { active = false; };
   }, [connection, reloadKey]);
 
+  useEffect(() => {
+    onDepthChange?.(selected ? 1 : 0);
+  }, [selected, onDepthChange]);
+
   const reload = () => {
     setError(null);
     setLoading(true);
@@ -198,11 +216,13 @@ export function BanksScreen({ onBack }: Props) {
   };
 
   const addField = (id: string, bank: BankConfig, field: FieldDef) => {
+    animateNextLayout(reduced);
     setBank(id, { ...bank, [field.key]: defaultForField(field) });
     setSheetOpen(false);
   };
 
   const removeField = (id: string, bank: BankConfig, key: string) => {
+    animateNextLayout(reduced);
     const next = { ...bank };
     delete next[key];
     setBank(id, next);
@@ -261,14 +281,14 @@ export function BanksScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
-        <Loader label="Loading banks" />
+      <Screen header={<AppHeader title="Banks" />}>
+        <SkeletonList count={3} />
       </Screen>
     );
   }
   if (error) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Banks" onBack={onBack} />}>
+      <Screen scroll={false} header={<AppHeader title="Banks" />}>
         <ErrorView message={error} onRetry={reload} />
       </Screen>
     );
@@ -280,9 +300,10 @@ export function BanksScreen({ onBack }: Props) {
   if (selected && section) {
     const bank = banks[selected] ?? {};
     const catalog = section.bankFields ?? [];
-    const requiredKeys = new Set<string>(manifest?.bankRequirements[selected]?.required ?? []);
+    const requirement = manifest?.bankRequirements[selected];
+    const requiredKeys = new Set<string>(requirement?.required ?? []);
     const present = presentFields(catalog, bank);
-    const missing = catalog.filter((field) => !Object.prototype.hasOwnProperty.call(bank, field.key));
+    const missing = addableFields(section, requirement, bank);
     return (
       <Screen
         header={<AppHeader title={nameOf(selected)} subtitle="Credentials & targets" onBack={() => { setSelected(null); }} />}
@@ -342,7 +363,7 @@ export function BanksScreen({ onBack }: Props) {
   const catalog = (manifest?.banks ?? []).filter((id) => !configuredIds.includes(id));
 
   return (
-    <Screen header={<AppHeader title="Banks" onBack={onBack} />}>
+    <Screen header={<AppHeader title="Banks" />}>
       {configuredIds.length === 0 ? (
         <Entrance>
           <EmptyState

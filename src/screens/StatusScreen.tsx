@@ -12,13 +12,13 @@ import { getStatus } from '../api/importerClient';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
 import {
-  AppHeader, Banner, Card, Divider, EmptyState, Entrance, ErrorView, Loader, Screen, StatusPill,
+  AppHeader, Banner, Card, Divider, EmptyState, Entrance, ErrorView, Screen, SkeletonList, StatusPill,
 } from '../components/ui';
 import type { PillTone } from '../components/ui';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 /**
@@ -152,8 +152,8 @@ export function StatusScreen({ onBack }: Props) {
 
   if (loading) {
     return (
-      <Screen scroll={false} header={<AppHeader title="Import status" onBack={onBack} />}>
-        <Loader label="Loading status" />
+      <Screen header={<AppHeader title="Import status" onBack={onBack} />}>
+        <SkeletonList count={3} />
       </Screen>
     );
   }
@@ -207,3 +207,4 @@ const styles = StyleSheet.create({
   bankName: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
   errorLine: { marginTop: 6 },
 });
+

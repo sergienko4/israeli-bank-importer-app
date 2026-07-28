@@ -3,14 +3,14 @@
  * and a trailing slot (defaults to a chevron when the row is pressable).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   Animated, Pressable, StyleSheet, Text, View,
 } from 'react-native';
+import type { AccessibilityRole, AccessibilityState } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
-import { useReducedMotion } from '../../lib/useReducedMotion';
+import { usePressScale } from '../../lib/usePressScale';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface ListRowProps {
@@ -28,6 +28,12 @@ interface ListRowProps {
   right?: ReactNode;
   /** Tint the row for destructive intent. */
   danger?: boolean;
+  /** Accessible state for selectable rows. */
+  accessibilityState?: AccessibilityState;
+  /** Accessible role for pressable rows. Defaults to `button`. */
+  accessibilityRole?: AccessibilityRole;
+  /** Additional hint announced by screen readers. */
+  accessibilityHint?: string;
 }
 
 /**
@@ -37,12 +43,13 @@ interface ListRowProps {
  */
 export function ListRow({
   title, subtitle, icon, emoji, onPress, right, danger = false,
+  accessibilityState, accessibilityRole = 'button', accessibilityHint,
 }: ListRowProps) {
   const theme = useTheme();
-  const reducedMotion = useReducedMotion();
-  const scale = useRef(new Animated.Value(1)).current;
+  const press = usePressScale(0.98);
   const tint = danger ? theme.colors.danger : theme.colors.primary;
   const bubbleBg = danger ? theme.colors.dangerSoft : theme.colors.primarySoft;
+  const accessibleName = subtitle ? `${title}, ${subtitle}` : title;
 
   const content = (
     <>
@@ -76,28 +83,22 @@ export function ListRow({
   if (!onPress) {
     return <View style={[styles.row, rowStyle]}>{content}</View>;
   }
+
   const pressIn = (): void => {
     haptics.light();
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 0.98, speed: 50, bounciness: 0, useNativeDriver: true }).start();
+    press.onPressIn();
   };
-  const pressOut = (): void => {
-    if (reducedMotion) {
-      scale.setValue(1);
-      return;
-    }
-    Animated.spring(scale, { toValue: 1, speed: 40, bounciness: 6, useNativeDriver: true }).start();
-  };
+
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
+    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={accessibilityRole}
+        accessibilityLabel={accessibleName}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={accessibilityState}
         onPress={onPress}
         onPressIn={pressIn}
-        onPressOut={pressOut}
+        onPressOut={press.onPressOut}
         style={({ pressed }) => [styles.row, rowStyle, { opacity: pressed ? 0.85 : 1 }]}
       >
         {content}

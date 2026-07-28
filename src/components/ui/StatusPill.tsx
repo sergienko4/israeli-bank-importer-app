@@ -1,10 +1,11 @@
 /**
  * Compact status pill: a tinted rounded badge with an optional icon and a
- * label. Conveys state with color *and* text/icon (never color alone).
+ * label. Conveys state with color and text/icon (never color alone).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text } from 'react-native';
 
+import { useMountPop } from '../../lib/useMountPop';
 import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
 
@@ -20,12 +21,6 @@ interface StatusPillProps {
   icon?: keyof typeof Ionicons.glyphMap;
 }
 
-/**
- * Resolves the pill foreground/background and a default icon for a tone.
- * @param theme - The active theme.
- * @param tone - The pill tone.
- * @returns Foreground, background, and default icon.
- */
 /**
  * Resolves a pill tone to semantic foreground, background, and icon.
  * @param theme - The active theme.
@@ -56,12 +51,23 @@ export function resolvePillToneStyle(
  */
 export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps) {
   const theme = useTheme();
+  const pop = useMountPop();
   const style = resolvePillToneStyle(theme, tone);
   return (
-    <View style={[styles.pill, { backgroundColor: style.bg, borderRadius: theme.radius.pill }]}>
+    <Animated.View
+      style={[
+        styles.pill,
+        {
+          backgroundColor: style.bg,
+          borderRadius: theme.radius.pill,
+          opacity: pop.opacity,
+          transform: [{ scale: pop.scale }],
+        },
+      ]}
+    >
       <Ionicons name={icon ?? style.icon} size={13} color={style.fg} />
       <Text style={[styles.label, { color: style.fg }]}>{label}</Text>
-    </View>
+    </Animated.View>
   );
 }
 

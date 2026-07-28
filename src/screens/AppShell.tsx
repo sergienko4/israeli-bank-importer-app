@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import type { PendingOtpRequest } from '../api/otp';
 import { ScreenSwitch, TabBar } from '../components/ui';
 import type { TabItem } from '../components/ui';
 import { useOtpWatcher } from '../push/useOtpWatcher';
@@ -42,6 +43,7 @@ export function AppShell() {
   const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
+  const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
   const prevIndex = useRef(0);
 
   useEffect(() => {
@@ -68,6 +70,12 @@ export function AppShell() {
   const direction = index >= prevIndex.current ? 'forward' : 'back';
   useEffect(() => { prevIndex.current = index; }, [index]);
 
+  useEffect(() => {
+    if (pending) {
+      setPromptRequest(pending);
+    }
+  }, [pending]);
+
   let content: ReactNode;
   if (active === 'config') {
     content = <ConfigScreen onDepthChange={setDepth} />;
@@ -85,7 +93,14 @@ export function AppShell() {
         {content}
       </ScreenSwitch>
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
-      {pending ? <OtpPrompt request={pending} onSubmitted={dismiss} onDismiss={dismiss} /> : null}
+      {promptRequest ? (
+        <OtpPrompt
+          request={promptRequest}
+          visible={pending !== null}
+          onSubmitted={dismiss}
+          onDismiss={dismiss}
+        />
+      ) : null}
       <ReconnectBanner />
     </View>
   );

@@ -19,6 +19,8 @@ import { useTheme } from '../theme/ThemeContext';
 interface Props {
   /** The pending request to answer. */
   request: PendingOtpRequest;
+  /** Whether the prompt sheet is open. */
+  visible: boolean;
   /** Called after a successful submit. */
   onSubmitted: () => void;
   /** Called when the user dismisses without submitting. */
@@ -30,7 +32,9 @@ interface Props {
  * @param props - The request plus submit/dismiss callbacks.
  * @returns The OTP prompt element.
  */
-export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
+export function OtpPrompt({
+  request, visible, onSubmitted, onDismiss,
+}: Props) {
   const theme = useTheme();
   const { connection } = useAuth();
   const [code, setCode] = useState('');
@@ -40,10 +44,12 @@ export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
   const submit = async (): Promise<void> => {
     const trimmed = normalizeOtpCodeInput(code);
     if (!isValidOtpCode(trimmed)) {
-      setError('Enter the 4–8 digit code from your SMS.');
+      setError('Enter the 4–8 digit app OTP code.');
       return;
     }
     if (!connection) {
+      haptics.warning();
+      setError('Reconnect to the importer before submitting this app OTP code.');
       return;
     }
     setSubmitting(true);
@@ -58,18 +64,18 @@ export function OtpPrompt({ request, onSubmitted, onDismiss }: Props) {
         haptics.warning();
         setError(result.error ?? 'The importer rejected the code.');
       }
-    } catch (e) {
+    } catch (error: unknown) {
       haptics.warning();
-      setError(e instanceof Error ? e.message : 'The importer rejected the code.');
+      setError(error instanceof Error ? error.message : 'The importer rejected the code.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <Sheet visible onClose={onDismiss} title={`Enter OTP for ${request.bankId}`}>
+    <Sheet visible={visible} onClose={onDismiss} title={`Enter OTP for ${request.bankId}`}>
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
-        The importer is waiting for the one-time code your bank just sent.
+        The importer is waiting for the bank one-time code delivered through the app OTP channel.
       </Text>
       <TextField
         label="OTP code"

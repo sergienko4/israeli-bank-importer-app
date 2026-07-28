@@ -19,6 +19,7 @@ import {
 import type { PillTone } from '../components/ui';
 import { banksConfigured, latestRun, relativeTime } from '../lib/homeOverview';
 import { haptics } from '../lib/haptics';
+import { isOverviewTimeout, withOverviewTimeout } from '../lib/overviewTimeout';
 import { useTheme } from '../theme/ThemeContext';
 
 /** The tabs the Home quick actions can jump to. */
@@ -52,7 +53,7 @@ export function HomeScreen({ onNavigate }: Props) {
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [config, setConfig] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!connection) {
@@ -61,19 +62,24 @@ export function HomeScreen({ onNavigate }: Props) {
     let active = true;
     const run = async () => {
       try {
-        const [loadedRuns, loadedConfig] = await Promise.all([
-          getStatus(connection),
-          getConfig(connection),
-        ]);
+        const [loadedRuns, loadedConfig] = await withOverviewTimeout(
+          Promise.all([
+            getStatus(connection),
+            getConfig(connection),
+          ]),
+        );
         if (active) {
           setRuns(loadedRuns);
           setConfig(loadedConfig);
-          setFailed(false);
+          setOverviewError(null);
         }
-      } catch {
-        // Overview is best-effort; the dedicated tabs surface real errors.
+      } catch (error: unknown) {
         if (active) {
-          setFailed(true);
+          setOverviewError(
+            isOverviewTimeout(error)
+              ? 'Overview refresh timed out. Open a tab to retry.'
+              : 'Couldn’t refresh the overview. Open a tab to retry.',
+          );
         }
       } finally {
         if (active) {
@@ -131,9 +137,9 @@ export function HomeScreen({ onNavigate }: Props) {
 
       <Text style={[theme.typography.caption, styles.section, { color: theme.colors.textSubtle }]}>OVERVIEW</Text>
 
-      {failed && !loading ? (
+      {overviewError && !loading ? (
         <View style={styles.overviewNote}>
-          <Banner messages={['Couldn’t refresh the overview. Open a tab to retry.']} tone="warning" />
+          <Banner messages={[overviewError]} tone="warning" />
         </View>
       ) : null}
 

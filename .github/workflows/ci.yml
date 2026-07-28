@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    name: Typecheck, lint, test & bundle
+    name: Typecheck, lint & bundle
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

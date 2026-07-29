@@ -54,6 +54,8 @@ jobs:
     name: Publish OTA update
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read # reads the repo to build the bundle; publishes to EAS, not GitHub
     uses: ./.github/workflows/release-ota.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}

@@ -36,6 +36,13 @@ on:
 permissions:
   contents: read
 
+# A release-triggered run and a manual re-run of the same tag would otherwise
+# race and publish the same bundle twice. Queue instead of cancelling: a publish
+# that is already talking to EAS should be allowed to finish.
+concurrency:
+  group: release-ota-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   publish-ota:
     name: Publish over-the-air update

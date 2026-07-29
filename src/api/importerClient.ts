@@ -9,6 +9,22 @@ import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
 
 /**
+ * Removes the trailing slashes a typed address often carries.
+ *
+ * Written as a scan rather than a `\/+$` replace: the address is user input,
+ * and that pattern makes the engine backtrack over a long run of slashes.
+ * @param value - The address, already trimmed of surrounding whitespace.
+ * @returns The address without any trailing slash.
+ */
+function withoutTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charAt(end - 1) === '/') {
+    end -= 1;
+  }
+  return value.slice(0, end);
+}
+
+/**
  * Normalizes a user-typed address to an origin with a scheme and no trailing
  * slash, so `host:8080`, `http://host:8080`, and `http://host:8080/` all resolve
  * to the same base.
@@ -16,7 +32,7 @@ import type { RunEntry } from './status';
  * @returns A normalized `scheme://host[:port]` base URL.
  */
 export function normalizeBaseUrl(input: string): string {
-  const trimmed = input.trim().replace(/\/+$/, '');
+  const trimmed = withoutTrailingSlashes(input.trim());
   return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 

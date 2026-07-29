@@ -75,9 +75,15 @@ jobs:
         # The value is a regular expression matched against the path as lychee
         # resolves it, which has no leading "./" even when the input glob does.
         # Writing "./CHANGELOG.md" here silently matches nothing.
+        #
+        # scorecard.dev refuses the connection from GitHub-hosted runners often
+        # enough to fail this job on unrelated pull requests. The badge it backs
+        # is published by the Scorecard workflow, which would break loudly if
+        # the service were actually gone, so a reachability probe here only adds
+        # a third party's uptime to our merge path. Retries cover the rest.
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --no-progress --exclude-loopback --accept 200,429 --exclude-path CHANGELOG.md "./**/*.md"
+          args: --no-progress --exclude-loopback --accept 200,429 --max-retries 3 --exclude-path CHANGELOG.md --exclude 'scorecard\.dev' "./**/*.md"
           fail: true
 
   licenses:
@@ -112,6 +118,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # `tsconfig.json` extends `expo/tsconfig.base`, which lives in
+      # node_modules. Without an install the scanner cannot resolve it, falls
+      # back to an empty TypeScript configuration, and analyses the app with no
+      # type information - so its findings would not reflect the real code.
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
       - if: steps.guard.outputs.run == 'true'
         name: Download coverage
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

@@ -4,6 +4,9 @@
     "slug": "israeli-bank-importer-app",
     "owner": "sergienko4",
     "version": "0.2.0",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
     "scheme": "bankimporter",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +28,6 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-secure-store", "expo-font"]
+    "plugins": ["expo-secure-store", "expo-font", "expo-updates"]
   }
 }

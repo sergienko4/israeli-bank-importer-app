@@ -21,3 +21,5 @@ export { StatusPill } from './StatusPill';
 export type { TabItem } from './TabBar';
 export { TabBar } from './TabBar';
 export { TextField } from './TextField';
+export type { TopBannerIcon } from './TopBanner';
+export { TopBanner } from './TopBanner';

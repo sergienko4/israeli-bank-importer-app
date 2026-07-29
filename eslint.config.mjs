@@ -49,6 +49,11 @@ const SONARJS_RULES = {
   'sonarjs/no-small-switch': 'error',
   'sonarjs/no-duplicated-branches': 'error',
   'sonarjs/no-nested-template-literals': 'error',
+  // Catastrophic backtracking on untrusted input, caught here rather than in
+  // the SonarCloud report a push later.
+  'sonarjs/super-linear-regex': 'error',
+  'sonarjs/slow-regex': 'error',
+  'sonarjs/prefer-read-only-props': 'error',
 };
 
 /** Curated, RN-safe Unicorn rules (recommended set minus React-hostile ones). */

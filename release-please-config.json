@@ -3,7 +3,9 @@
   "packages": {
     ".": {
       "release-type": "expo",
-      "package-name": "israeli-bank-importer-app"
+      "package-name": "israeli-bank-importer-app",
+      "bump-patch-for-minor-pre-major": true,
+      "bump-minor-pre-major": true
     }
   }
 }

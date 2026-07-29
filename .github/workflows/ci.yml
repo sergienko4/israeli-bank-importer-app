@@ -112,6 +112,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # `tsconfig.json` extends `expo/tsconfig.base`, which lives in
+      # node_modules. Without an install the scanner cannot resolve it, falls
+      # back to an empty TypeScript configuration, and analyses the app with no
+      # type information - so its findings would not reflect the real code.
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
       - if: steps.guard.outputs.run == 'true'
         name: Download coverage
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

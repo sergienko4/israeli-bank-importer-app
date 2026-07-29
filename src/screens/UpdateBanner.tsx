@@ -11,19 +11,16 @@
  * asking someone to restart while they are locked out of their session would
  * be the wrong thing to put in front of them.
  */
-import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { isEnabled, reloadAsync, useUpdates } from 'expo-updates';
 import { type ReactElement, useEffect, useState } from 'react';
-import { Linking, Platform, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Linking, Platform } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
-import { Button } from '../components/ui';
+import { TopBanner, type TopBannerIcon } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { resolveOtaState, resolveUpdatePrompt, type UpdatePrompt } from '../lib/otaUpdate';
 import { type AvailableRelease, fetchLatestRelease } from '../lib/releaseCheck';
-import { useTheme } from '../theme/ThemeContext';
 
 /** The version bundled into the running binary. */
 const RUNNING_VERSION = Constants.expoConfig?.version ?? '0.0.0';
@@ -44,7 +41,7 @@ const COPY = {
   },
 } as const satisfies Record<
   Exclude<UpdatePrompt, 'none'>,
-  { icon: keyof typeof Ionicons.glyphMap; title: string; detail: string; action: string }
+  { icon: TopBannerIcon; title: string; detail: string; action: string }
 >;
 
 /**
@@ -79,8 +76,6 @@ function useLatestRelease(): AvailableRelease | null {
  * @returns The banner element, or null when there is nothing to offer.
  */
 export function UpdateBanner(): ReactElement | null {
-  const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const { sessionExpired } = useAuth();
   const { isDownloading, isUpdatePending, isRestarting } = useUpdates();
   const release = useLatestRelease();
@@ -116,51 +111,13 @@ export function UpdateBanner(): ReactElement | null {
   };
 
   return (
-    <View style={[styles.wrap, { top: insets.top + theme.spacing.sm }]} pointerEvents="box-none">
-      <View
-        style={[
-          styles.banner,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.border,
-            borderRadius: theme.radius.lg,
-          },
-          theme.shadow(2),
-        ]}
-      >
-        <View
-          style={[
-            styles.icon,
-            { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.pill },
-          ]}
-        >
-          <Ionicons name={copy.icon} size={16} color={theme.colors.primary} />
-        </View>
-        <View style={styles.text}>
-          <Text
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={[theme.typography.bodyMedium, { color: theme.colors.text }]}
-          >
-            {copy.title}
-          </Text>
-          <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>{detail}</Text>
-        </View>
-        <Button title={copy.action} size="sm" fullWidth={false} loading={busy} onPress={onPress} />
-      </View>
-    </View>
+    <TopBanner
+      icon={copy.icon}
+      title={copy.title}
+      detail={detail}
+      actionTitle={copy.action}
+      busy={busy}
+      onPress={onPress}
+    />
   );
 }
-
-const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 12, right: 12, zIndex: 10 },
-  banner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderWidth: 1,
-  },
-  icon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  text: { flex: 1, gap: 2 },
-});

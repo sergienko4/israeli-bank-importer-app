@@ -277,4 +277,10 @@ export default tseslint.config(
       'import/no-named-as-default': 'off',
     },
   },
+
+  // 7. Repo tooling scripts run under Node, not Metro, so they need Node globals.
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 );

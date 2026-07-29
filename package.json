@@ -49,6 +49,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
+    "lint:actions": "node scripts/lint-actions.mjs",
+    "lint:lockfile": "node scripts/lint-lockfile.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "jest",

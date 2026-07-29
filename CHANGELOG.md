@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.1](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.0...israeli-bank-importer-app-v0.2.1) (2026-07-29)
+
+
+### Features
+
+* update the app without the app store ([#45](https://github.com/sergienko4/israeli-bank-importer-app/issues/45)) ([e25a4d5](https://github.com/sergienko4/israeli-bank-importer-app/commit/e25a4d5613ad4abaa1a7d7b67b2320dedde25093))
+
+
+### Bug Fixes
+
+* **ci:** exempt app.json from the format check ([#44](https://github.com/sergienko4/israeli-bank-importer-app/issues/44)) ([e64d383](https://github.com/sergienko4/israeli-bank-importer-app/commit/e64d383b9044b684ef1e21f0d8584a5e730688a2))
+* publish an installable APK with each release ([#42](https://github.com/sergienko4/israeli-bank-importer-app/issues/42)) ([66cccd5](https://github.com/sergienko4/israeli-bank-importer-app/commit/66cccd5d5b4fb778f6519a63e4d68b1848ab4621))
+
 ## [0.2.0](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.1.0...israeli-bank-importer-app-v0.2.0) (2026-07-29)
 
 

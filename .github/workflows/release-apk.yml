@@ -72,6 +72,13 @@ jobs:
         # fork builds against its own account with no edit. Idempotent.
         run: eas init --non-interactive --force
       - if: steps.guard.outputs.run == 'true'
+        name: Point the build at this account's update server
+        # `updates.url` is derived from the project id resolved above, so it is
+        # configured here rather than committed - same reason as `eas init`.
+        # Without it the binary ships with no update endpoint and could never
+        # pick up an over-the-air release.
+        run: eas update:configure --platform android --non-interactive
+      - if: steps.guard.outputs.run == 'true'
         name: Build Android APK (EAS cloud)
         id: build
         run: |

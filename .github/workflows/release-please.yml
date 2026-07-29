@@ -46,3 +46,16 @@ jobs:
     # needs this one token, and GITHUB_TOKEN reaches a reusable workflow anyway.
     secrets:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+  # Runs beside the APK build, not after it: a JavaScript-only release reaches
+  # installed apps through this job within a couple of minutes, while the APK
+  # build waits in the EAS queue for the far rarer case where native code moved.
+  ota:
+    name: Publish OTA update
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    uses: ./.github/workflows/release-ota.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

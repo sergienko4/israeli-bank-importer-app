@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { Loader } from './src/components/ui';
 import { AppShell } from './src/screens/AppShell';
 import { ConnectScreen } from './src/screens/ConnectScreen';
+import { UpdateBanner } from './src/screens/UpdateBanner';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 
 /**
@@ -22,6 +23,7 @@ function Root() {
     <>
       <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
       {status === 'connected' ? <AppShell /> : <ConnectScreen />}
+      <UpdateBanner />
     </>
   );
 }

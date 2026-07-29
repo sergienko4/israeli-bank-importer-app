@@ -118,12 +118,34 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
    (Settings → Apps → Special access → Install unknown apps).
 3. Open the APK to install, then point the app at your importer's portal.
 
+You only do this once. From then on the app updates itself — see
+[Staying up to date](#staying-up-to-date).
+
 > **Security note:** sideloading bypasses Play Store scanning — only install APKs
 > from this repository's Releases. The app talks only to the importer you
 > configure and keeps tokens in the device keystore (`expo-secure-store`).
 >
 > **iOS:** Apple does not allow installing an `.ipa` from a web link, so iOS is
 > distributed via EAS internal distribution / TestFlight, not GitHub Releases.
+
+## Staying up to date
+
+A sideloaded app gets no store to update it, so the app looks after itself.
+
+- **JavaScript changes** (most releases) ship as an
+  [EAS Update](https://docs.expo.dev/versions/v54.0.0/sdk/updates/). The app
+  checks on launch, downloads in the background, and then shows a **Restart to
+  update** banner. Nothing is swapped out mid-session — the update applies only
+  when you tap it, or on the next cold start.
+- **Native changes** (a new Expo SDK, a new native module) cannot travel that
+  way. `runtimeVersion` uses the `fingerprint` policy, so those releases publish
+  under a new runtime id that installed apps ignore. Instead the app checks the
+  GitHub Releases API once per launch and shows a **Download** banner linking to
+  the new APK.
+
+Both checks are silent when they find nothing, and every failure — offline, rate
+limited, malformed response — is treated as "no update" rather than an error the
+user cannot act on.
 
 ## CI / release
 
@@ -135,11 +157,13 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
-  release and, in that same run, calls the reusable **APK publish**
-  (`release-apk.yml`), which builds the Android APK on EAS and attaches it to the
-  release. The APK job is chained rather than triggered by the release event: the
-  tag is created with the default `GITHUB_TOKEN`, and GitHub never starts a new
-  workflow run from a `GITHUB_TOKEN` event.
+  release and, in that same run, fans out to two reusable workflows:
+  **APK publish** (`release-apk.yml`) builds the Android APK on EAS and attaches
+  it to the release, and **OTA publish** (`release-ota.yml`) pushes the bundle to
+  the EAS `production` channel so installed apps update themselves. Both jobs are
+  chained rather than triggered by the release event: the tag is created with the
+  default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
+  `GITHUB_TOKEN` event.
 - **Store builds** (`eas-build.yml`): the Android AAB + iOS build is
   **manual only** — run it from the Actions tab (`workflow_dispatch`) when you
   want to submit to a store. It needs `EXPO_TOKEN`, plus Apple Developer

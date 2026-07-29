@@ -164,6 +164,10 @@ user cannot act on.
   chained rather than triggered by the release event: the tag is created with the
   default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
   `GITHUB_TOKEN` event.
+- **Versioning**: below `1.0.0` every release is a patch — a `feat:` bumps the
+  patch and a breaking change bumps the minor, so the version stays in the `0.x`
+  lane until the app is declared stable
+  (`bump-patch-for-minor-pre-major` + `bump-minor-pre-major`).
 - **Store builds** (`eas-build.yml`): the Android AAB + iOS build is
   **manual only** — run it from the Actions tab (`workflow_dispatch`) when you
   want to submit to a store. It needs `EXPO_TOKEN`, plus Apple Developer

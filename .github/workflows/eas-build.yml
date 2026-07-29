@@ -29,16 +29,11 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.guard.outputs.run == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: steps.guard.outputs.run == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: '20'
-          cache: npm
+        uses: ./.github/actions/setup-node
       - if: steps.guard.outputs.run == 'true'
-        run: npm ci
-      - if: steps.guard.outputs.run == 'true'
-        uses: expo/expo-github-action@v9
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}

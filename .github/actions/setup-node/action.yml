@@ -1,0 +1,27 @@
+name: Setup Node and install dependencies
+description: >
+  Single source of truth for how every workflow prepares a Node environment:
+  the npm registry, the Node runtime version, and a lockfile-exact install.
+
+runs:
+  using: composite
+  steps:
+    # Contributors behind a corporate npm mirror keep their own `registry=` in
+    # ~/.npmrc, which is why this repo intentionally ships no .npmrc. CI has
+    # unrestricted egress and must therefore use the same public registry that
+    # package-lock.json resolves against - enforced by scripts/lint-lockfile.mjs.
+    # Writing to $GITHUB_ENV exports it to every later step in the calling job,
+    # so `npx` and `eas` pick it up too, not just the `npm ci` below.
+    - name: Pin the npm registry for this job
+      shell: bash
+      run: echo 'NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' >> "$GITHUB_ENV"
+
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        # Matches the `engines.node` floor declared in package.json.
+        node-version: '22'
+        cache: npm
+
+    - name: Install dependencies
+      shell: bash
+      run: npm ci

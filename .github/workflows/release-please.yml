@@ -7,15 +7,19 @@ on:
   push:
     branches: [main]
 
+# Least privilege: the workflow token is read-only by default and the single job
+# below opts in to the writes release-please actually performs.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release tag and commit the CHANGELOG
+      pull-requests: write # open and update the release PR
     steps:
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

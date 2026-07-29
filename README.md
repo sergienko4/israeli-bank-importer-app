@@ -1,5 +1,9 @@
 # Israeli Bank Importer — Mobile Config App
 
+[![CI](https://github.com/sergienko4/israeli-bank-importer-app/actions/workflows/ci.yml/badge.svg)](https://github.com/sergienko4/israeli-bank-importer-app/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sergienko4/israeli-bank-importer-app/badge)](https://scorecard.dev/viewer/?uri=github.com/sergienko4/israeli-bank-importer-app)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A cross-platform **Expo / React Native** app (iOS + Android) that lets you edit
 your **self-hosted [Israeli Bank Importer](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget)**
 configuration from your phone — without SSHing into a server or hand-editing
@@ -57,6 +61,8 @@ Useful scripts:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | Strict, type-aware ESLint (`--max-warnings=0`) |
 | `npm run lint:fix` | ESLint with autofix |
+| `npm run lint:actions` | Verify every GitHub Action is pinned to a commit SHA (`-- --fix` to pin) |
+| `npm run lint:lockfile` | Verify every lockfile resolution points at the public npm registry |
 | `npm run format` | Format the repo with Prettier |
 | `npm run format:check` | Verify Prettier formatting |
 | `npm test` | Jest unit tests |
@@ -73,10 +79,31 @@ with **Prettier** for formatting. **Husky** Git hooks run automatically after
 - **pre-commit** — `lint-staged` runs ESLint (`--max-warnings=0`) + Prettier on staged files.
 - **commit-msg** — [commitlint](https://commitlint.js.org/) enforces
   [Conventional Commits](https://www.conventionalcommits.org/).
-- **pre-push** — `npm run typecheck` + `npm test`.
+- **pre-push** — `npm run lint:actions` + `npm run lint:lockfile` +
+  `npm run typecheck` + `npm test`.
 
 Reproduce the CI gates locally with `npm run lint`, `npm run format:check`,
 `npm run typecheck`, and `npm test`.
+
+Pure logic (OTP codes, config key paths, `showWhen` visibility, per-bank schema
+scoping) is additionally covered by [fast-check](https://fast-check.dev/)
+property-based tests in `src/**/*.property.test.ts`, which assert invariants over
+generated inputs rather than hand-picked examples.
+
+### Working behind a corporate npm mirror
+
+This repo intentionally ships **no `.npmrc`**, so your own `registry=` setting in
+`~/.npmrc` keeps working. `package-lock.json` always resolves against the public
+`https://registry.npmjs.org/` (enforced by `npm run lint:lockfile`), and CI pins
+that same registry in `.github/actions/setup-node`.
+
+Some mirrors lag upstream and will 404 on freshly published versions. When that
+happens, install straight from the lockfile's own hosts instead of letting npm
+rewrite them to the mirror:
+
+```bash
+npm ci --replace-registry-host=never
+```
 
 ## Install on Android (APK)
 

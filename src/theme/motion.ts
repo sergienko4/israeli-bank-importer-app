@@ -4,8 +4,8 @@
  * Screens and primitives read these instead of hard-coding durations. Pair with
  * {@link ../lib/useReducedMotion} to collapse motion when the OS asks for it.
  */
-import { Easing } from 'react-native';
 import type { EasingFunction } from 'react-native';
+import { Easing } from 'react-native';
 
 /** Animation durations in milliseconds. */
 export const durations = {

@@ -50,8 +50,8 @@ export async function authenticateBiometric(reason: string): Promise<BiometricAu
     if (!hasHardware) {
       return { status: 'unsupported' };
     }
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    if (!enrolled) {
+    const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+    if (!isEnrolled) {
       return { status: 'unsupported' };
     }
     const result = await LocalAuthentication.authenticateAsync({ promptMessage: reason });

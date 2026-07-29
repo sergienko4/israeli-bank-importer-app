@@ -20,29 +20,29 @@ export interface PressScale {
 }
 
 /**
- * Provides a spring-animated press scale. No-ops (stays at 1) under reduced
+ * Provides a spring-animated press scale. No-ops (stays at 1) under isReduced
  * motion so the surface still responds without movement.
  * @param to - The scale to settle at while held. Defaults to the motion token.
  * @returns The animated scale value and press handlers.
  */
 export function usePressScale(to: number = defaultPressScale): PressScale {
-  const reduced = useReducedMotion();
+  const isReduced = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (reduced) {
+    if (isReduced) {
       scale.setValue(1);
     }
-  }, [reduced, scale]);
+  }, [isReduced, scale]);
 
   const onPressIn = (): void => {
-    if (reduced) {
+    if (isReduced) {
       return;
     }
     Animated.spring(scale, { toValue: to, useNativeDriver: true, ...spring.press }).start();
   };
   const onPressOut = (): void => {
-    if (reduced) {
+    if (isReduced) {
       return;
     }
     Animated.spring(scale, { toValue: 1, useNativeDriver: true, ...spring.settle }).start();

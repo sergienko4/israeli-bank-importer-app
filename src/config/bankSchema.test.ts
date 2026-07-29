@@ -9,11 +9,14 @@ const catalog: FieldDef[] = [
 ];
 
 const section: SectionDef = {
-  key: 'banks', label: 'Banks', kind: 'bankMap', bankFields: catalog,
+  key: 'banks',
+  label: 'Banks',
+  kind: 'bankMap',
+  bankFields: catalog,
 };
 
 describe('bank schema scoping', () => {
-  it('never offers another bank\'s fields (regression: global-catalog leak)', () => {
+  it("never offers another bank's fields (regression: global-catalog leak)", () => {
     // A bank that logs in with username + password must not be offered a
     // card-number field that belongs to a different bank.
     const requirement: BankRequirement = { required: ['username', 'password'] };
@@ -26,8 +29,11 @@ describe('bank schema scoping', () => {
     expect(addable).not.toContain('nationalId');
   });
 
-  it('offers a bank\'s own advertised optional fields', () => {
-    const requirement: BankRequirement = { required: ['username', 'password'], optional: ['nationalId'] };
+  it("offers a bank's own advertised optional fields", () => {
+    const requirement: BankRequirement = {
+      required: ['username', 'password'],
+      optional: ['nationalId'],
+    };
     const bank = { username: '', password: '' };
 
     expect(addableFields(section, requirement, bank).map((f) => f.key)).toEqual(['nationalId']);
@@ -58,9 +64,16 @@ describe('bank schema scoping', () => {
     expect([...allowedFieldKeys(requirement)].sort()).toEqual(['a', 'b', 'c']);
   });
 
-  it('preserves the catalog order of a bank\'s schema fields', () => {
-    const requirement: BankRequirement = { required: ['password'], optional: ['username', 'nationalId'] };
+  it("preserves the catalog order of a bank's schema fields", () => {
+    const requirement: BankRequirement = {
+      required: ['password'],
+      optional: ['username', 'nationalId'],
+    };
 
-    expect(schemaFields(section, requirement).map((f) => f.key)).toEqual(['username', 'password', 'nationalId']);
+    expect(schemaFields(section, requirement).map((f) => f.key)).toEqual([
+      'username',
+      'password',
+      'nationalId',
+    ]);
   });
 });

@@ -4,17 +4,15 @@
  * string `list` fields inline. Structured object-lists are summarized (edited on
  * the web portal for now).
  */
-import { useState } from 'react';
-import {
-  StyleSheet, Text, TextInput, View,
-} from 'react-native';
+import { type ReactElement, useState } from 'react';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { ConfigObject, FieldDef, SectionDef } from '../api/manifest';
 import { getAtPath } from '../config/formState';
 import { isFieldVisible } from '../config/visibility';
 import { useTheme } from '../theme/ThemeContext';
-import { Button } from './ui';
 import { FieldInput } from './FieldInput';
+import { Button } from './ui';
 
 /** Change handler: replaces the value at a config key path. */
 type ChangeAt = (path: string[], value: unknown) => void;
@@ -30,7 +28,7 @@ interface ListFieldProps {
  * @param props - The list field, its value, and a change handler.
  * @returns The list editor.
  */
-function ListField({ field, value, onChange }: ListFieldProps) {
+function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactElement {
   const theme = useTheme();
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const items = Array.isArray(value) ? (value as unknown[]) : [];
@@ -45,7 +43,7 @@ function ListField({ field, value, onChange }: ListFieldProps) {
     );
   }
   const strings = items.map((item) => String(item));
-  const setItem = (index: number, text: string) => {
+  const setItem = (index: number, text: string): void => {
     onChange(strings.map((existing, i) => (i === index ? text : existing)));
   };
   return (
@@ -55,20 +53,29 @@ function ListField({ field, value, onChange }: ListFieldProps) {
         <View key={`${field.key}-${String(index)}`} style={styles.listRow}>
           <TextInput
             accessibilityLabel={`${field.label} item ${String(index + 1)}`}
-            style={[styles.listInput, {
-              borderColor: focusedIndex === index ? theme.colors.primary : theme.colors.border,
-              borderWidth: focusedIndex === index ? 2 : 1,
-              backgroundColor: theme.colors.surface,
-              color: theme.colors.text,
-              borderRadius: theme.radius.md,
-              padding: focusedIndex === index ? 11 : 12,
-            }]}
+            style={[
+              styles.listInput,
+              {
+                borderColor: focusedIndex === index ? theme.colors.primary : theme.colors.border,
+                borderWidth: focusedIndex === index ? 2 : 1,
+                backgroundColor: theme.colors.surface,
+                color: theme.colors.text,
+                borderRadius: theme.radius.md,
+                padding: focusedIndex === index ? 11 : 12,
+              },
+            ]}
             autoCapitalize="none"
             placeholderTextColor={theme.colors.textSubtle}
             value={entry}
-            onChangeText={(text) => { setItem(index, text); }}
-            onFocus={() => { setFocusedIndex(index); }}
-            onBlur={() => { setFocusedIndex((current) => (current === index ? null : current)); }}
+            onChangeText={(text) => {
+              setItem(index, text);
+            }}
+            onFocus={() => {
+              setFocusedIndex(index);
+            }}
+            onBlur={() => {
+              setFocusedIndex((current) => (current === index ? null : current));
+            }}
           />
           <Button
             title="Remove"
@@ -76,7 +83,9 @@ function ListField({ field, value, onChange }: ListFieldProps) {
             size="sm"
             icon="trash-outline"
             fullWidth={false}
-            onPress={() => { onChange(strings.filter((_, i) => i !== index)); }}
+            onPress={() => {
+              onChange(strings.filter((_, i) => i !== index));
+            }}
           />
         </View>
       ))}
@@ -86,7 +95,9 @@ function ListField({ field, value, onChange }: ListFieldProps) {
         size="sm"
         icon="add"
         fullWidth={false}
-        onPress={() => { onChange([...strings, '']); }}
+        onPress={() => {
+          onChange([...strings, '']);
+        }}
         style={styles.addBtn}
       />
     </View>
@@ -105,9 +116,7 @@ interface FieldsProps {
  * @param props - The fields, their base path, the config, and a change handler.
  * @returns The rendered fields.
  */
-function Fields({
-  fields, basePath, config, onChange,
-}: FieldsProps) {
+function Fields({ fields, basePath, config, onChange }: Readonly<FieldsProps>): ReactElement {
   const theme = useTheme();
   const parent = (getAtPath(config, basePath) ?? {}) as Record<string, unknown>;
   return (
@@ -119,9 +128,17 @@ function Fields({
         const path = [...basePath, field.key];
         if (field.kind === 'group') {
           return (
-            <View key={field.key} style={[styles.group, { borderLeftColor: theme.colors.primarySoft }]}>
+            <View
+              key={field.key}
+              style={[styles.group, { borderLeftColor: theme.colors.primarySoft }]}
+            >
               <Text style={[styles.groupLabel, { color: theme.colors.text }]}>{field.label}</Text>
-              <Fields fields={field.fields ?? []} basePath={path} config={config} onChange={onChange} />
+              <Fields
+                fields={field.fields ?? []}
+                basePath={path}
+                config={config}
+                onChange={onChange}
+              />
             </View>
           );
         }
@@ -131,7 +148,9 @@ function Fields({
               key={field.key}
               field={field}
               value={parent[field.key]}
-              onChange={(next) => { onChange(path, next); }}
+              onChange={(next) => {
+                onChange(path, next);
+              }}
             />
           );
         }
@@ -140,7 +159,9 @@ function Fields({
             key={field.key}
             field={field}
             value={parent[field.key]}
-            onChange={(next) => { onChange(path, next); }}
+            onChange={(next) => {
+              onChange(path, next);
+            }}
           />
         );
       })}
@@ -159,7 +180,11 @@ interface SectionFormProps {
  * @param props - The section, the config, and a change handler.
  * @returns The section form.
  */
-export function SectionForm({ section, config, onChange }: SectionFormProps) {
+export function SectionForm({
+  section,
+  config,
+  onChange,
+}: Readonly<SectionFormProps>): ReactElement {
   const theme = useTheme();
   if (section.kind !== 'object') {
     return (
@@ -168,18 +193,29 @@ export function SectionForm({ section, config, onChange }: SectionFormProps) {
       </Text>
     );
   }
-  return <Fields fields={section.fields ?? []} basePath={[section.key]} config={config} onChange={onChange} />;
+  return (
+    <Fields
+      fields={section.fields ?? []}
+      basePath={[section.key]}
+      config={config}
+      onChange={onChange}
+    />
+  );
 }
 
 const styles = StyleSheet.create({
   group: {
-    marginBottom: 16, paddingLeft: 12, borderLeftWidth: 3,
+    marginBottom: 16,
+    paddingLeft: 12,
+    borderLeftWidth: 3,
   },
   groupLabel: { fontSize: 15, fontWeight: '600', marginBottom: 10 },
   help: { fontSize: 12, marginTop: 4, marginBottom: 8 },
   listRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   listInput: {
-    flex: 1, minHeight: 44, fontSize: 16,
+    flex: 1,
+    minHeight: 44,
+    fontSize: 16,
   },
   addBtn: { marginTop: 4 },
 });

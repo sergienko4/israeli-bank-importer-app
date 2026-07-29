@@ -5,7 +5,7 @@
  * instead of leaving the user staring at failed requests.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,12 +18,10 @@ import { useTheme } from '../theme/ThemeContext';
  * Renders the session-expired reconnect banner (nothing when the session is ok).
  * @returns The banner element, or null when not needed.
  */
-export function ReconnectBanner() {
+export function ReconnectBanner(): ReactElement | null {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const {
-    sessionExpired, quickUnlockEnabled, reauthenticate, disconnect,
-  } = useAuth();
+  const { sessionExpired, quickUnlockEnabled, reauthenticate, disconnect } = useAuth();
   const [busy, setBusy] = useState(false);
 
   if (!sessionExpired) {
@@ -57,7 +55,12 @@ export function ReconnectBanner() {
           theme.shadow(2),
         ]}
       >
-        <View style={[styles.icon, { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.pill }]}>
+        <View
+          style={[
+            styles.icon,
+            { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.pill },
+          ]}
+        >
           <Ionicons name="lock-closed" size={16} color={theme.colors.primary} />
         </View>
         <View style={styles.text}>
@@ -77,7 +80,9 @@ export function ReconnectBanner() {
           size="sm"
           fullWidth={false}
           loading={busy}
-          onPress={() => { void onReconnect(); }}
+          onPress={() => {
+            void onReconnect();
+          }}
         />
       </View>
     </View>
@@ -85,11 +90,13 @@ export function ReconnectBanner() {
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    position: 'absolute', left: 12, right: 12, zIndex: 10,
-  },
+  wrap: { position: 'absolute', left: 12, right: 12, zIndex: 10 },
   banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderWidth: 1,
   },
   icon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   text: { flex: 1, gap: 2 },

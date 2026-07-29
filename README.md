@@ -37,7 +37,7 @@ leave your machine and never touch a third-party cloud.
 
 ## Requirements
 
-- **Node.js 20+** and the [Expo](https://docs.expo.dev/) toolchain (`npx expo`).
+- **Node.js 22+** and the [Expo](https://docs.expo.dev/) toolchain (`npx expo`).
 - A **running importer** (v1.40.0+) with the config portal enabled, a portal
   password set, and reachable from your phone over a private network.
 - For device builds: an **Expo account** (`EXPO_TOKEN`) and, to publish, Apple
@@ -55,9 +55,28 @@ Useful scripts:
 | Script | What it does |
 | --- | --- |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint (Expo config) |
+| `npm run lint` | Strict, type-aware ESLint (`--max-warnings=0`) |
+| `npm run lint:fix` | ESLint with autofix |
+| `npm run format` | Format the repo with Prettier |
+| `npm run format:check` | Verify Prettier formatting |
+| `npm test` | Jest unit tests |
 | `npm run export` | Bundle the app for iOS + Android (`expo export`) |
 | `npm start` | Expo dev server |
+
+### Code quality
+
+The repo enforces a strict, **type-aware ESLint** config (SonarJS, Unicorn,
+JSDoc-on-exports, import sorting, complexity/size caps, no `eslint-disable`/`any`)
+with **Prettier** for formatting. **Husky** Git hooks run automatically after
+`npm install` (via the `prepare` script):
+
+- **pre-commit** — `lint-staged` runs ESLint (`--max-warnings=0`) + Prettier on staged files.
+- **commit-msg** — [commitlint](https://commitlint.js.org/) enforces
+  [Conventional Commits](https://www.conventionalcommits.org/).
+- **pre-push** — `npm run typecheck` + `npm test`.
+
+Reproduce the CI gates locally with `npm run lint`, `npm run format:check`,
+`npm run typecheck`, and `npm test`.
 
 ## Install on Android (APK)
 
@@ -81,9 +100,10 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 
 ## CI / release
 
-- **CI** (`.github/workflows/ci.yml`): typecheck → lint → tests (with coverage) →
-  `expo-doctor` → `expo export`, plus documentation-quality, license-compliance,
-  and (secret-gated) SonarCloud, aggregated behind a single **CI Pass** gate.
+- **CI** (`.github/workflows/ci.yml`): typecheck → lint → format check → tests
+  (with coverage) → `expo-doctor` → `expo export`, plus documentation-quality,
+  license-compliance, and (secret-gated) SonarCloud, aggregated behind a single
+  **CI Pass** gate.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)

@@ -46,7 +46,11 @@ describe('registerDevice', () => {
 
   it('reports a failure body', async () => {
     stubFetch(400, { error: 'bad' });
-    await expect(registerDevice(session, 't')).resolves.toEqual({ ok: false, error: 'bad', errors: undefined });
+    await expect(registerDevice(session, 't')).resolves.toEqual({
+      ok: false,
+      error: 'bad',
+      errors: undefined,
+    });
   });
 });
 

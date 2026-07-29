@@ -5,16 +5,14 @@
  * controls on Android).
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo } from 'react';
-import {
-  ActivityIndicator, Animated, Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import { type ReactElement, useMemo } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
-import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
+import { useTheme } from '../../theme/ThemeContext';
 
 /** Visual weight of the button. */
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -48,7 +46,10 @@ interface ButtonProps {
  * @param variant - The button variant.
  * @returns The background, border, and foreground colors.
  */
-function variantColors(theme: Theme, variant: ButtonVariant): { bg: string; border: string; fg: string } {
+function variantColors(
+  theme: Theme,
+  variant: ButtonVariant,
+): { bg: string; border: string; fg: string } {
   const { colors } = theme;
   switch (variant) {
     case 'secondary':
@@ -62,11 +63,24 @@ function variantColors(theme: Theme, variant: ButtonVariant): { bg: string; bord
   }
 }
 
-const SIZES: Record<ButtonSize, { padV: number; fontSize: number; iconSize: number; height: number }> = {
+const SIZES: Record<
+  ButtonSize,
+  { padV: number; fontSize: number; iconSize: number; height: number }
+> = {
   sm: { padV: 8, fontSize: 14, iconSize: 16, height: 38 },
   md: { padV: 12, fontSize: 15, iconSize: 18, height: 48 },
   lg: { padV: 15, fontSize: 16, iconSize: 20, height: 54 },
 };
+
+function resolvePressedOpacity(blocked: boolean, pressed: boolean): number {
+  if (blocked) {
+    return 0.5;
+  }
+  if (pressed) {
+    return 0.9;
+  }
+  return 1;
+}
 
 /**
  * Renders a themed button.
@@ -74,9 +88,16 @@ const SIZES: Record<ButtonSize, { padV: number; fontSize: number; iconSize: numb
  * @returns The button element.
  */
 export function Button({
-  title, onPress, variant = 'primary', size = 'md', icon,
-  loading = false, disabled = false, fullWidth = true, style,
-}: ButtonProps) {
+  title,
+  onPress,
+  variant = 'primary',
+  size = 'md',
+  icon,
+  loading = false,
+  disabled = false,
+  fullWidth = true,
+  style,
+}: Readonly<ButtonProps>): ReactElement {
   const theme = useTheme();
   const dims = SIZES[size];
   const palette = useMemo(() => variantColors(theme, variant), [theme, variant]);
@@ -92,7 +113,12 @@ export function Button({
   };
 
   return (
-    <Animated.View style={[{ transform: [{ scale: press.scale }], alignSelf: fullWidth ? 'stretch' : 'flex-start' }, style]}>
+    <Animated.View
+      style={[
+        { transform: [{ scale: press.scale }], alignSelf: fullWidth ? 'stretch' : 'flex-start' },
+        style,
+      ]}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={title}
@@ -111,7 +137,7 @@ export function Button({
             backgroundColor: palette.bg,
             borderColor: palette.border,
             borderRadius: theme.radius.md,
-            opacity: blocked ? 0.5 : pressed ? 0.9 : 1,
+            opacity: resolvePressedOpacity(blocked, pressed),
           },
         ]}
       >
@@ -120,7 +146,9 @@ export function Button({
         ) : (
           <View style={styles.content}>
             {icon ? <Ionicons name={icon} size={dims.iconSize} color={palette.fg} /> : null}
-            <Text style={[styles.label, { color: palette.fg, fontSize: dims.fontSize }]}>{title}</Text>
+            <Text style={[styles.label, { color: palette.fg, fontSize: dims.fontSize }]}>
+              {title}
+            </Text>
           </View>
         )}
       </Pressable>

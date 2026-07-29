@@ -3,14 +3,14 @@
  * hairline border, padding, and a subtle (light-mode) shadow. When given an
  * `onPress` it becomes a pressable card with the shared press micro-interaction.
  */
-import type { ReactNode } from 'react';
-import { Animated, Pressable, View } from 'react-native';
+import type { ReactElement, ReactNode } from 'react';
 import type { AccessibilityRole, StyleProp, ViewStyle } from 'react-native';
+import { Animated, Pressable, View } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
-import { useTheme } from '../../theme/ThemeContext';
 import type { Elevation } from '../../theme/ThemeContext';
+import { useTheme } from '../../theme/ThemeContext';
 
 interface CardProps {
   /** Card content. */
@@ -37,9 +37,15 @@ interface CardProps {
  * @returns The card element.
  */
 export function Card({
-  children, padded = true, elevation = 1, onPress, accessibilityLabel,
-  accessibilityHint, accessibilityRole = 'button', style,
-}: CardProps) {
+  children,
+  padded = true,
+  elevation = 1,
+  onPress,
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole = 'button',
+  style,
+}: Readonly<CardProps>): ReactElement {
   const theme = useTheme();
   const press = usePressScale();
   const cardStyle: StyleProp<ViewStyle> = [

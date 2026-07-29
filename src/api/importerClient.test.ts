@@ -22,7 +22,7 @@ const realFetch = globalThis.fetch;
  * @param body - JSON body the stub returns.
  */
 function stubFetch(status: number, body: unknown): void {
-  globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(status, body))) as unknown as typeof fetch;
+  globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(status, body)));
 }
 
 afterEach(() => {

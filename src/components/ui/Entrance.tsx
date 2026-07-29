@@ -4,15 +4,13 @@
  * (native driver) so it runs smoothly without extra native dependencies, and
  * collapses to an instant appearance when reduced motion is requested.
  */
+import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
-import type { ReactNode } from 'react';
-import { Animated } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { Animated } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
-import {
-  durations, easing, motionDuration, staggerDelay,
-} from '../../theme/motion';
+import { durations, easing, motionDuration, staggerDelay } from '../../theme/motion';
 
 interface EntranceProps {
   /** Content to animate in. */
@@ -33,8 +31,12 @@ interface EntranceProps {
  * @returns The animated container element.
  */
 export function Entrance({
-  children, index = 0, axis = 'y', distance = 14, style,
-}: EntranceProps) {
+  children,
+  index = 0,
+  axis = 'y',
+  distance = 14,
+  style,
+}: Readonly<EntranceProps>): ReactElement {
   const reducedMotion = useReducedMotion();
   const progress = useRef(new Animated.Value(0)).current;
 
@@ -52,7 +54,9 @@ export function Entrance({
       useNativeDriver: true,
     });
     animation.start();
-    return () => { animation.stop(); };
+    return () => {
+      animation.stop();
+    };
   }, [progress, index, reducedMotion]);
 
   const translate = progress.interpolate({ inputRange: [0, 1], outputRange: [distance, 0] });

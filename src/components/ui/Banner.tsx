@@ -3,13 +3,12 @@
  * tone with a tinted background and an icon alongside one or more messages.
  */
 import { Ionicons } from '@expo/vector-icons';
-import {
-  Animated, StyleSheet, Text, View,
-} from 'react-native';
+import type { ReactElement } from 'react';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { useMountPop } from '../../lib/useMountPop';
-import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
+import { useTheme } from '../../theme/ThemeContext';
 
 /** Banner tone. */
 export type BannerTone = 'danger' | 'success' | 'warning' | 'info';
@@ -49,7 +48,7 @@ export function resolveBannerToneStyle(
  * @param props - Banner configuration.
  * @returns The banner element, or null when there are no messages.
  */
-export function Banner({ messages, tone = 'danger' }: BannerProps) {
+export function Banner({ messages, tone = 'danger' }: Readonly<BannerProps>): ReactElement | null {
   const theme = useTheme();
   const pop = useMountPop();
   if (messages.length === 0) {
@@ -76,7 +75,12 @@ export function Banner({ messages, tone = 'danger' }: BannerProps) {
       <Ionicons name={style.icon} size={18} color={style.fg} style={styles.icon} />
       <View style={styles.messages}>
         {messages.map((message, index) => (
-          <Text key={`${message}-${String(index)}`} style={[theme.typography.small, { color: style.fg }]}>{message}</Text>
+          <Text
+            key={`${message}-${String(index)}`}
+            style={[theme.typography.small, { color: style.fg }]}
+          >
+            {message}
+          </Text>
         ))}
       </View>
     </Animated.View>

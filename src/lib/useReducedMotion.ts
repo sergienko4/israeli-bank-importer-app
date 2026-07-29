@@ -6,24 +6,29 @@ import { AccessibilityInfo } from 'react-native';
  * @returns True when non-essential animations should complete instantly.
  */
 export function useReducedMotion(): boolean {
-  const [reducedMotion, setReducedMotion] = useState(false);
+  const [isReducedMotion, setIsReducedMotion] = useState(false);
 
   useEffect(() => {
-    let active = true;
+    let isActive = true;
     void AccessibilityInfo.isReduceMotionEnabled()
       .then((enabled) => {
-        if (active) {
-          setReducedMotion(enabled);
+        if (isActive) {
+          setIsReducedMotion(enabled);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Best-effort: ignore failures reading the Reduce Motion preference.
+      });
 
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReducedMotion);
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setIsReducedMotion,
+    );
     return () => {
-      active = false;
+      isActive = false;
       subscription.remove();
     };
   }, []);
 
-  return reducedMotion;
+  return isReducedMotion;
 }

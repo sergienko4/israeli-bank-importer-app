@@ -1,8 +1,9 @@
 /**
  * Hairline separator drawn in the theme border color.
  */
-import { View } from 'react-native';
+import type { ReactElement } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
+import { View } from 'react-native';
 
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -11,7 +12,7 @@ import { useTheme } from '../../theme/ThemeContext';
  * @param props - Optional style override.
  * @returns The divider element.
  */
-export function Divider({ style }: { style?: StyleProp<ViewStyle> }) {
+export function Divider({ style }: Readonly<{ style?: StyleProp<ViewStyle> }>): ReactElement {
   const theme = useTheme();
   return <View style={[{ height: 1, backgroundColor: theme.colors.border }, style]} />;
 }

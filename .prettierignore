@@ -1,0 +1,10 @@
+# Build output and generated files
+dist/
+.expo/
+node_modules/
+coverage/
+android/
+ios/
+*.log
+# Markdown is validated by markdownlint (.markdownlint.jsonc), not Prettier
+*.md

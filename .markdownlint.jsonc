@@ -8,5 +8,5 @@
   // Duplicate headings — issue/PR templates repeat section names.
   "MD024": false,
   // Allow both - and * unordered list markers.
-  "MD004": false
+  "MD004": false,
 }

@@ -3,11 +3,12 @@
  * label. Conveys state with color and text/icon (never color alone).
  */
 import { Ionicons } from '@expo/vector-icons';
+import type { ReactElement } from 'react';
 import { Animated, StyleSheet, Text } from 'react-native';
 
 import { useMountPop } from '../../lib/useMountPop';
-import { useTheme } from '../../theme/ThemeContext';
 import type { Theme } from '../../theme/ThemeContext';
+import { useTheme } from '../../theme/ThemeContext';
 
 /** Semantic tone of the pill. */
 export type PillTone = 'success' | 'danger' | 'warning' | 'neutral';
@@ -49,7 +50,11 @@ export function resolvePillToneStyle(
  * @param props - Pill configuration.
  * @returns The pill element.
  */
-export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps) {
+export function StatusPill({
+  label,
+  tone = 'neutral',
+  icon,
+}: Readonly<StatusPillProps>): ReactElement {
   const theme = useTheme();
   const pop = useMountPop();
   const style = resolvePillToneStyle(theme, tone);
@@ -73,7 +78,12 @@ export function StatusPill({ label, tone = 'neutral', icon }: StatusPillProps) {
 
 const styles = StyleSheet.create({
   pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
   },
   label: { fontSize: 12, fontWeight: '600' },
 });

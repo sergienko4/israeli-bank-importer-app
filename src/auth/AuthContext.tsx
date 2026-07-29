@@ -3,15 +3,28 @@
  * it from the secure store on launch, and exposes connect/disconnect actions.
  */
 import {
-  createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState,
+  createContext,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
 } from 'react';
 
 import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
 import { authenticateBiometric } from '../lib/biometrics';
 import { getPushToken } from '../push/pushRegistration';
 import {
-  clearConnection, type Connection, clearPassword, hasStoredPassword,
-  loadConnection, loadPassword, savePassword, saveConnection,
+  clearConnection,
+  clearPassword,
+  type Connection,
+  hasStoredPassword,
+  loadConnection,
+  loadPassword,
+  saveConnection,
+  savePassword,
 } from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
@@ -56,7 +69,7 @@ async function registerForPush(session: Connection): Promise<void> {
  * @param props - Children to render inside the provider.
  * @returns The provider element.
  */
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
   const [quickUnlockEnabled, setQuickUnlockEnabled] = useState(false);
@@ -74,21 +87,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
   }, []);
 
-  const connect = useCallback(async (baseUrl: string, password: string, rememberPassword = false) => {
-    const token = await requestToken(baseUrl, password);
-    const next: Connection = { baseUrl, token };
-    await saveConnection(next);
-    if (rememberPassword) {
-      await savePassword(password);
-    } else {
-      await clearPassword();
-    }
-    setConnection(next);
-    setQuickUnlockEnabled(rememberPassword);
-    setSessionExpired(false);
-    setStatus('connected');
-    void registerForPush(next);
-  }, []);
+  const connect = useCallback(
+    async (baseUrl: string, password: string, rememberPassword = false) => {
+      const token = await requestToken(baseUrl, password);
+      const next: Connection = { baseUrl, token };
+      await saveConnection(next);
+      await (rememberPassword ? savePassword(password) : clearPassword());
+      setConnection(next);
+      setQuickUnlockEnabled(rememberPassword);
+      setSessionExpired(false);
+      setStatus('connected');
+      void registerForPush(next);
+    },
+    [],
+  );
 
   const reauthenticate = useCallback(async (): Promise<Connection | null> => {
     if (!connection) {
@@ -126,7 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setReauthHandler(reauthenticate);
-    return () => { setReauthHandler(null); };
+    return () => {
+      setReauthHandler(null);
+    };
   }, [reauthenticate]);
 
   const disableQuickUnlock = useCallback(async () => {
@@ -153,7 +167,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       disableQuickUnlock,
       disconnect,
     }),
-    [status, connection, quickUnlockEnabled, sessionExpired, connect, reauthenticate, disableQuickUnlock, disconnect],
+    [
+      status,
+      connection,
+      quickUnlockEnabled,
+      sessionExpired,
+      connect,
+      reauthenticate,
+      disableQuickUnlock,
+      disconnect,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,5 +1,9 @@
 import {
-  getOtpSettings, getPendingOtp, type Session, setOtpSettings, submitOtp,
+  getOtpSettings,
+  getPendingOtp,
+  type Session,
+  setOtpSettings,
+  submitOtp,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
@@ -61,7 +65,11 @@ describe('setOtpSettings', () => {
 
   it('reports a failure body', async () => {
     stubFetch(400, { error: 'bad' });
-    await expect(setOtpSettings(session, 'telegram')).resolves.toEqual({ ok: false, error: 'bad', errors: undefined });
+    await expect(setOtpSettings(session, 'telegram')).resolves.toEqual({
+      ok: false,
+      error: 'bad',
+      errors: undefined,
+    });
   });
 });
 
@@ -95,6 +103,10 @@ describe('submitOtp', () => {
 
   it('reports a failure body', async () => {
     stubFetch(404, { error: 'gone' });
-    await expect(submitOtp(session, 'r1', '123456')).resolves.toEqual({ ok: false, error: 'gone', errors: undefined });
+    await expect(submitOtp(session, 'r1', '123456')).resolves.toEqual({
+      ok: false,
+      error: 'gone',
+      errors: undefined,
+    });
   });
 });

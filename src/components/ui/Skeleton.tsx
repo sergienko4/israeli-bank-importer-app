@@ -3,9 +3,10 @@
  * helpers, so screens show their layout while data loads instead of a bare
  * spinner. Honors reduced motion by holding a steady dim instead of pulsing.
  */
+import type { ReactElement } from 'react';
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
 import type { DimensionValue, StyleProp, ViewStyle } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { durations } from '../../theme/motion';
@@ -30,8 +31,11 @@ interface SkeletonProps {
  * @returns The skeleton block element.
  */
 export function Skeleton({
-  width = '100%', height = 16, radius, style,
-}: SkeletonProps) {
+  width = '100%',
+  height = 16,
+  radius,
+  style,
+}: Readonly<SkeletonProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
   const pulse = useRef(new Animated.Value(0.5)).current;
@@ -41,12 +45,16 @@ export function Skeleton({
       pulse.setValue(0.7);
       return undefined;
     }
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1, duration: durations.slow, useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 0.5, duration: durations.slow, useNativeDriver: true }),
-    ]));
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: durations.slow, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.5, duration: durations.slow, useNativeDriver: true }),
+      ]),
+    );
     loop.start();
-    return () => { loop.stop(); };
+    return () => {
+      loop.stop();
+    };
   }, [pulse, reduced]);
 
   return (
@@ -71,7 +79,7 @@ export function Skeleton({
  * Renders a list-row-shaped skeleton: a leading bubble and two text lines.
  * @returns The skeleton row element.
  */
-export function SkeletonRow() {
+export function SkeletonRow(): ReactElement {
   const theme = useTheme();
   return (
     <View style={styles.row}>
@@ -89,7 +97,7 @@ export function SkeletonRow() {
  * @param props - How many rows to render. Default 4.
  * @returns The skeleton list element.
  */
-export function SkeletonList({ count = 4 }: { count?: number }) {
+export function SkeletonList({ count = 4 }: Readonly<{ count?: number }>): ReactElement {
   return (
     <Card padded={false} style={styles.card}>
       {Array.from({ length: count }).map((_, index) => (
@@ -105,7 +113,10 @@ export function SkeletonList({ count = 4 }: { count?: number }) {
 const styles = StyleSheet.create({
   card: { overflow: 'hidden' },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
   },
   texts: { flex: 1, gap: 8 },
   indent: { marginLeft: 68 },

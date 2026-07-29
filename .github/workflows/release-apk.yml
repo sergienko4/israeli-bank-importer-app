@@ -17,6 +17,12 @@ on:
         description: 'Release tag to attach the APK to'
         required: true
         type: string
+    secrets:
+      EXPO_TOKEN:
+        # Optional so a fork without an Expo account still gets a green run:
+        # the guard step below turns an absent token into a skip, not a failure.
+        description: 'Expo access token used to run the EAS build'
+        required: false
   workflow_dispatch:
     inputs:
       tag:

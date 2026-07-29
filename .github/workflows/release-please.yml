@@ -42,4 +42,7 @@ jobs:
     uses: ./.github/workflows/release-apk.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets: inherit
+    # Passed explicitly rather than with `secrets: inherit`: the callee only
+    # needs this one token, and GITHUB_TOKEN reaches a reusable workflow anyway.
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

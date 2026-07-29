@@ -41,7 +41,7 @@
     "lint-staged": "^17.1.1",
     "prettier": "^3.9.6",
     "react-test-renderer": "19.1.0",
-    "typescript": "~5.9.2",
+    "typescript": "~7.0.2",
     "typescript-eslint": "^8.65.0"
   },
   "overrides": {

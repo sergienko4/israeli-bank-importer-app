@@ -76,6 +76,28 @@ simply has not been amended with the per-major ranges yet. `npm audit` is
 therefore not wired into the CI gate. Re-check this note when the advisory is
 updated.
 
+### Review policy
+
+This project has a single maintainer, so a required-approval rule cannot be
+satisfied: there is no second human to approve, and bot or AI approvals do not
+count toward it. Enabling one would either block every merge or have to exempt
+administrators, which removes the control it is meant to add. OpenSSF Scorecard
+flags this as a `Code-Review` finding; the finding is accepted rather than
+worked around.
+
+Change review is instead enforced by what runs on every pull request, none of
+which a maintainer can wave through:
+
+- CodeQL (`security-and-quality`) and Gitleaks on each pull request.
+- Type-check, strict lint at `--max-warnings=0`, Prettier, and the full Jest
+  suite with coverage.
+- The two supply-chain guards above, `lint:actions` and `lint:lockfile`, which
+  also run locally on `pre-push`.
+
+If a second maintainer joins, enable
+`required_pull_request_reviews` with `required_approving_review_count: 1` and
+`enforce_admins: true`, and delete this section.
+
 ## Response
 
 We aim to acknowledge reports within a few days and to address confirmed issues

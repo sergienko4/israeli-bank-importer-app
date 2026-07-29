@@ -23,8 +23,23 @@ const DOWNLOAD_URL_PREFIX = `https://github.com/${REPO_SLUG}/releases/download/`
 
 const REQUEST_TIMEOUT_MS = 8_000;
 
-/** Matches the trailing `major.minor.patch` of a tag or a version string. */
-const VERSION_PATTERN = /(\d+)\.(\d+)\.(\d+)$/;
+/**
+ * Matches a bare `major.minor.patch`. Anchored at both ends and bounded, so a
+ * tag padded with a long run of digits cannot force the engine to backtrack.
+ */
+const VERSION_PATTERN = /^(\d{1,9})\.(\d{1,9})\.(\d{1,9})$/;
+
+/** Anything that cannot be part of a version number, such as a `v` or a dash. */
+const NON_VERSION_CHARACTER = /[^\d.]/;
+
+/**
+ * Drops whatever a release tag carries in front of the number.
+ * @param value - A tag such as `israeli-bank-importer-app-v0.3.0`, or `0.3.0`.
+ * @returns The trailing run of digits and dots, empty when the tag has none.
+ */
+function trailingNumber(value: string): string {
+  return value.split(NON_VERSION_CHARACTER).pop() ?? '';
+}
 
 /** A newer installable build published on GitHub Releases. */
 export interface AvailableRelease {
@@ -40,7 +55,7 @@ export interface AvailableRelease {
  * @returns The major, minor, and patch numbers, or null when absent.
  */
 function parseVersion(value: string): [number, number, number] | null {
-  const match = VERSION_PATTERN.exec(value);
+  const match = VERSION_PATTERN.exec(trailingNumber(value));
   if (match === null) {
     return null;
   }
@@ -53,7 +68,7 @@ function parseVersion(value: string): [number, number, number] | null {
  * @returns The bare version, or null when the value carries none.
  */
 export function normalizeVersion(value: string): string | null {
-  const match = VERSION_PATTERN.exec(value);
+  const match = VERSION_PATTERN.exec(trailingNumber(value));
   return match === null ? null : match[0];
 }
 

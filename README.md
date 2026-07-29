@@ -152,7 +152,9 @@ user cannot act on.
 - **CI** (`.github/workflows/ci.yml`): typecheck → lint → format check → tests
   (with coverage) → `expo-doctor` → `expo export`, plus documentation-quality,
   license-compliance, and (secret-gated) SonarCloud, aggregated behind a single
-  **CI Pass** gate.
+  **CI Pass** gate. The documentation gate only resolves links _into_ the repo;
+  external links are probed weekly by `link-check.yml`, so a third party's
+  downtime cannot block a merge.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)

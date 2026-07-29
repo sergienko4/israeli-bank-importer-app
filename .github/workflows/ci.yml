@@ -67,23 +67,26 @@ jobs:
             !node_modules
             !CHANGELOG.md
       - name: Check links
-        # CHANGELOG.md is excluded for the same reason as above. Every entry
-        # release-please writes points at a tag comparison URL, and the tag it
-        # names is only created once the release pull request merges, so the
-        # link is guaranteed to 404 while the gate is checking it.
+        # Offline on purpose: only links into the repository are verified here.
+        # A relative link breaks because someone moved a file, which is exactly
+        # what a pull request gate should catch. An external link breaks because
+        # a third party had a bad minute - scorecard.dev refused the connection,
+        # fast-check.dev timed out, actualbudget.org reset the connection - none
+        # of which the pull request caused or can fix. Excluding hosts one at a
+        # time was losing coverage with every incident, so the reachability
+        # probe moved to link-check.yml, which runs weekly: link rot is a
+        # function of time, not of the change under review.
         #
-        # The value is a regular expression matched against the path as lychee
-        # resolves it, which has no leading "./" even when the input glob does.
-        # Writing "./CHANGELOG.md" here silently matches nothing.
-        #
-        # scorecard.dev refuses the connection from GitHub-hosted runners often
-        # enough to fail this job on unrelated pull requests. The badge it backs
-        # is published by the Scorecard workflow, which would break loudly if
-        # the service were actually gone, so a reachability probe here only adds
-        # a third party's uptime to our merge path. Retries cover the rest.
+        # CHANGELOG.md is excluded because every entry release-please writes
+        # points at a tag comparison URL, and the tag it names is only created
+        # once the release pull request merges, so the link is guaranteed to be
+        # missing while the gate is checking it. The value is a regular
+        # expression matched against the path as lychee resolves it, which has
+        # no leading "./" even when the input glob does. Writing
+        # "./CHANGELOG.md" here silently matches nothing.
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --no-progress --exclude-loopback --accept 200,429 --max-retries 3 --exclude-path CHANGELOG.md --exclude 'scorecard\.dev' "./**/*.md"
+          args: --offline --no-progress --exclude-path CHANGELOG.md "./**/*.md"
           fail: true
 
   licenses:

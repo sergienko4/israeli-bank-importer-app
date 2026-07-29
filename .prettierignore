@@ -8,3 +8,7 @@ ios/
 *.log
 # Markdown is validated by markdownlint (.markdownlint.jsonc), not Prettier
 *.md
+# release-please owns this file's serialization (release-type: expo). It parses
+# and re-stringifies app.json on every release, which expands short arrays that
+# Prettier collapses. Checking it makes every release PR fail format:check.
+app.json

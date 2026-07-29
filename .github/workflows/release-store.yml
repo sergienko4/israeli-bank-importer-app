@@ -40,11 +40,13 @@ on:
 permissions:
   contents: read
 
-# A release-triggered run and a manual run of the same tag would otherwise queue
-# the same build twice. Queue instead of cancelling: a run that is already
-# registering a build with EAS should be allowed to finish.
+# A release-triggered run and a manual run of the same target would otherwise
+# queue the same build twice. `workflow_dispatch` carries no tag, so manual runs
+# fall back to the ref they were started from and serialize per branch. Queue
+# instead of cancelling: a run that is already registering a build with EAS
+# should be allowed to finish.
 concurrency:
-  group: release-store-${{ inputs.tag }}
+  group: release-store-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:

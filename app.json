@@ -2,6 +2,7 @@
   "expo": {
     "name": "Israeli Bank Importer",
     "slug": "israeli-bank-importer-app",
+    "owner": "sergienko4",
     "version": "0.1.0",
     "scheme": "bankimporter",
     "orientation": "portrait",

@@ -1,7 +1,8 @@
 name: release-please
 
 # Maintains a version + CHANGELOG PR from Conventional Commits. Merging that PR
-# tags a GitHub release (v<version>), which the EAS Build workflow reacts to.
+# tags a GitHub release, and this same run then builds the Android APK and
+# attaches it to that release.
 
 on:
   push:
@@ -18,8 +19,30 @@ jobs:
     permissions:
       contents: write # create the release tag and commit the CHANGELOG
       pull-requests: write # open and update the release PR
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # Attaching the APK has to happen inside this run. release-please publishes
+  # the release with the default GITHUB_TOKEN, and GitHub does not start new
+  # workflow runs from GITHUB_TOKEN events, so a `release: published` listener
+  # in another workflow would never fire.
+  apk:
+    name: Attach Android APK
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write # `gh release upload` attaches the APK asset
+    uses: ./.github/workflows/release-apk.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    # Passed explicitly rather than with `secrets: inherit`: the callee only
+    # needs this one token, and GITHUB_TOKEN reaches a reusable workflow anyway.
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

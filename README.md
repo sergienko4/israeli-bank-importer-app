@@ -135,9 +135,18 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
-  release, which triggers the **EAS build** (`eas-build.yml`) and the **APK
-  publish** (`release-apk.yml`) that attaches the Android APK to the release.
-  Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
+  release and, in that same run, calls the reusable **APK publish**
+  (`release-apk.yml`), which builds the Android APK on EAS and attaches it to the
+  release. The APK job is chained rather than triggered by the release event: the
+  tag is created with the default `GITHUB_TOKEN`, and GitHub never starts a new
+  workflow run from a `GITHUB_TOKEN` event.
+- **Store builds** (`eas-build.yml`): the Android AAB + iOS build is
+  **manual only** — run it from the Actions tab (`workflow_dispatch`) when you
+  want to submit to a store. It needs `EXPO_TOKEN`, plus Apple Developer
+  credentials on the EAS account for iOS (an App Store Connect API key, or an
+  Apple ID with a distribution certificate and provisioning profile) and a
+  Google Play service-account key for Play submission.
+- Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
   stays green without them.
 
 ## Roadmap
@@ -156,21 +165,22 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 
 ## Releasing a beta
 
-The release pipeline is already wired (`release-please` → tag → EAS build). To cut
-device builds and distribute a beta, one-time setup is needed:
+The release pipeline is already wired (`release-please` → tag → APK attached to
+the release). To cut device builds and distribute a beta, one-time setup is
+needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
-   secret (Settings → Secrets and variables → Actions) — this unlocks
-   `eas-build.yml`.
-2. Run **`eas init`** once locally to link the project (writes `extra.eas.projectId`
-   into `app.json`); this id is also what the app uses to mint push tokens.
+   secret (Settings → Secrets and variables → Actions) — this unlocks the APK
+   publish and `eas-build.yml`.
+2. Set **`expo.owner`** in `app.json` to your Expo account. CI links the EAS
+   project from that plus the slug, so no generated id is checked in. Running
+   `eas init` locally is optional and only useful for local `eas build` runs.
 3. Add your **Apple Developer** ($99/yr) and/or **Google Play** ($25) accounts to
    EAS for signing + store submission.
-4. Merge the open **`release-please`** PR to tag a release; the tag triggers the EAS
-   build and the **APK publish** (`release-apk.yml`) attaches the Android APK to
-   the GitHub Release. Distribute Android via the release APK, and iOS via
-   **TestFlight** / EAS internal distribution, or run `eas build` / `eas submit`
-   directly.
+4. Merge the open **`release-please`** PR to tag a release; the same run attaches
+   the Android APK to the GitHub Release. For iOS, run the **EAS Build** workflow
+   manually from the Actions tab (or `eas build` / `eas submit` locally) and
+   distribute via **TestFlight** / EAS internal distribution.
 
 ## License
 

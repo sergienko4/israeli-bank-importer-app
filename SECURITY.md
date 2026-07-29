@@ -74,7 +74,13 @@ the maintainer's v1 and v2 backports. The versions installed here — `1.1.17`,
 `fix: backport GHSA-mh99-v99m-4gvg`, so they are patched; the advisory metadata
 simply has not been amended with the per-major ranges yet. `npm audit` is
 therefore not wired into the CI gate. The matching Dependabot alert is dismissed
-on the same evidence. Re-check this note when the advisory is updated.
+on the same evidence.
+
+The same advisory reaches OpenSSF Scorecard's `Vulnerabilities` check through
+OSV, so the exception is recorded once more, in machine-readable form, in
+[`osv-scanner.toml`](osv-scanner.toml). That entry carries an `ignoreUntil`
+date: when it lapses the finding returns on its own, which is the intended
+prompt to re-read the advisory rather than renew the exception by habit.
 
 ### Review policy
 

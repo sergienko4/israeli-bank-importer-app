@@ -1,12 +1,12 @@
 name: EAS Build
 
-# Release DAG tail: on a release tag (created when the release-please PR merges),
-# build the app with EAS. Self-skips until an EXPO_TOKEN repository secret exists,
-# so the workflow stays green before EAS is configured.
+# Manual store-track build (Android AAB + iOS). Kept manual on purpose: the
+# release tag is created with the default GITHUB_TOKEN, which by design never
+# starts a new workflow run, and an iOS store build needs Apple Developer
+# credentials that are not wired up yet. Sideloadable APKs are built
+# automatically on every release by release-please.yml instead.
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:

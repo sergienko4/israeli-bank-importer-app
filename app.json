@@ -3,7 +3,7 @@
     "name": "Israeli Bank Importer",
     "slug": "israeli-bank-importer-app",
     "owner": "sergienko4",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "scheme": "bankimporter",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

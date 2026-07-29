@@ -52,9 +52,8 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         name: TEMP diagnostic - link EAS project
         run: |
-          eas whoami
-          eas init --non-interactive || true
-          cat app.json
+          eas init --non-interactive --force
+          node -e "console.log('PROJECT_ID=' + require('./app.json').expo.extra.eas.projectId)"
       - if: steps.guard.outputs.run == 'true'
         name: Build Android APK (EAS cloud)
         id: build

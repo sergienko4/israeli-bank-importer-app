@@ -2,7 +2,7 @@ name: Release APK
 
 # Builds an Android APK with EAS and attaches it to a GitHub Release so users can
 # sideload it without the Play Store. iOS cannot be sideloaded from a web link,
-# so iOS stays on EAS internal distribution / TestFlight (see eas-build.yml).
+# so iOS stays on EAS internal distribution / TestFlight (see release-store.yml).
 #
 # This is a reusable workflow rather than a `release: published` listener.
 # release-please tags and publishes with the default GITHUB_TOKEN, and GitHub

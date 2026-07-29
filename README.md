@@ -152,28 +152,34 @@ user cannot act on.
 - **CI** (`.github/workflows/ci.yml`): typecheck → lint → format check → tests
   (with coverage) → `expo-doctor` → `expo export`, plus documentation-quality,
   license-compliance, and (secret-gated) SonarCloud, aggregated behind a single
-  **CI Pass** gate.
+  **CI Pass** gate. The documentation gate only resolves links that point back
+  into the repository; external links are probed weekly by `link-check.yml`, so
+  a third party's downtime cannot block a merge.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
-  release and, in that same run, fans out to two reusable workflows:
+  release and, in that same run, fans out to three reusable workflows:
   **APK publish** (`release-apk.yml`) builds the Android APK on EAS and attaches
-  it to the release, and **OTA publish** (`release-ota.yml`) pushes the bundle to
-  the EAS `production` channel so installed apps update themselves. Both jobs are
-  chained rather than triggered by the release event: the tag is created with the
-  default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
+  it to the release, **OTA publish** (`release-ota.yml`) pushes the bundle to
+  the EAS `production` channel so installed apps update themselves, and
+  **store build** (`release-store.yml`) queues the store-track binary. All three
+  are chained rather than triggered by the release event: the tag is created with
+  the default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
   `GITHUB_TOKEN` event.
 - **Versioning**: below `1.0.0` every release is a patch — a `feat:` bumps the
   patch and a breaking change bumps the minor, so the version stays in the `0.x`
   lane until the app is declared stable
   (`bump-patch-for-minor-pre-major` + `bump-minor-pre-major`).
-- **Store builds** (`eas-build.yml`): the Android AAB + iOS build is
-  **manual only** — run it from the Actions tab (`workflow_dispatch`) when you
-  want to submit to a store. It needs `EXPO_TOKEN`, plus Apple Developer
-  credentials on the EAS account for iOS (an App Store Connect API key, or an
-  Apple ID with a distribution certificate and provisioning profile) and a
-  Google Play service-account key for Play submission.
+- **Store builds** (`release-store.yml`): queued automatically by the release
+  DAG and also runnable on demand from the Actions tab. It builds the Android
+  App Bundle only until Apple Developer credentials are on the EAS account —
+  set the **`STORE_BUILD_PLATFORM`** repository variable to `all` (or `ios`)
+  once they are, and a manual run can pick the platform directly. Submission
+  additionally needs an App Store Connect API key (or an Apple ID with a
+  distribution certificate and provisioning profile) and a Google Play
+  service-account key. The build is queued rather than awaited: the binary is
+  collected from EAS, not from GitHub.
 - Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
   stays green without them.
 
@@ -199,16 +205,17 @@ needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
    secret (Settings → Secrets and variables → Actions) — this unlocks the APK
-   publish and `eas-build.yml`.
+   publish, the OTA publish, and the store build.
 2. Set **`expo.owner`** in `app.json` to your Expo account. CI links the EAS
    project from that plus the slug, so no generated id is checked in. Running
    `eas init` locally is optional and only useful for local `eas build` runs.
 3. Add your **Apple Developer** ($99/yr) and/or **Google Play** ($25) accounts to
    EAS for signing + store submission.
 4. Merge the open **`release-please`** PR to tag a release; the same run attaches
-   the Android APK to the GitHub Release. For iOS, run the **EAS Build** workflow
-   manually from the Actions tab (or `eas build` / `eas submit` locally) and
-   distribute via **TestFlight** / EAS internal distribution.
+   the Android APK to the GitHub Release, publishes the over-the-air update, and
+   queues the store build. Once Apple credentials are in place, set
+   `STORE_BUILD_PLATFORM` to `all` so iOS is queued too and distribute via
+   **TestFlight** / EAS internal distribution.
 
 ## License
 

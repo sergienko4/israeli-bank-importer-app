@@ -1,0 +1,45 @@
+name: Link check
+
+# Reachability probe for the external links in the documentation, split out of
+# the pull-request gate on purpose. Link rot is a function of time, not of the
+# change under review, so checking it on every pull request only added other
+# people's uptime to our merge path: scorecard.dev refused connections from
+# GitHub-hosted runners, fast-check.dev timed out, actualbudget.org reset the
+# connection - each one failing a pull request that had touched none of them.
+#
+# Relative links stay on the pull-request gate, where a broken one really is
+# caused by the change (see the offline lychee step in ci.yml).
+
+on:
+  schedule:
+    # Mondays, early UTC: a fresh report waits at the start of the week.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    name: Check documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check links
+        # CHANGELOG.md is excluded because release-please fills it with tag
+        # comparison URLs, and the newest of those points at a tag that only
+        # exists once the pending release merges. The value is a regular
+        # expression matched against the path as lychee resolves it, which has
+        # no leading "./" even when the input glob does.
+        #
+        # scorecard.dev is excluded because it refuses connections from
+        # GitHub-hosted runners as a matter of course rather than as a blip, so
+        # including it would report a broken link every single week and teach us
+        # to ignore this job. The badge it backs is published by the Scorecard
+        # workflow, which fails loudly if the service is genuinely gone.
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --no-progress --exclude-loopback --accept 200,429 --max-retries 5 --retry-wait-time 10 --exclude-path CHANGELOG.md --exclude 'scorecard\.dev' "./**/*.md"
+          fail: true

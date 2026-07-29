@@ -1,5 +1,15 @@
-# Keep Husky hooks and shell scripts LF so they run under sh on every platform.
+# Check every text file out with LF on every platform, including Windows.
+# Prettier is configured `endOfLine: lf`, so a CRLF working tree makes
+# `npm run format:check` fail on every file it touches. Git detects binary
+# content on its own, so the assets are left alone.
+* text=auto eol=lf
+
+# Husky hooks and shell scripts are covered by the rule above; they are listed
+# explicitly because running them under sh depends on it.
 .husky/pre-commit text eol=lf
 .husky/commit-msg text eol=lf
 .husky/pre-push text eol=lf
 *.sh text eol=lf
+
+# Generated, and large enough that a diff is noise rather than review material.
+package-lock.json linguist-generated=true

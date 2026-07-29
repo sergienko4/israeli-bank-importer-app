@@ -18,17 +18,17 @@ export type TopBannerIcon = keyof typeof Ionicons.glyphMap;
 
 interface TopBannerProps {
   /** Icon shown in the tinted pill. */
-  icon: TopBannerIcon;
+  readonly icon: TopBannerIcon;
   /** Headline. Announced when the banner appears. */
-  title: string;
+  readonly title: string;
   /** Supporting line under the headline. */
-  detail: string;
+  readonly detail: string;
   /** Label of the single action. */
-  actionTitle: string;
+  readonly actionTitle: string;
   /** Whether the action is running. Default `false`. */
-  busy?: boolean;
+  readonly busy?: boolean;
   /** Called when the action is tapped. */
-  onPress: () => void;
+  readonly onPress: () => void;
 }
 
 /**

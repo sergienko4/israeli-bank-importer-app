@@ -1,0 +1,12 @@
+# OSV / OpenSSF Scorecard vulnerability exceptions.
+#
+# Read by the OSV scanner and by the Scorecard `Vulnerabilities` check. It has
+# to sit next to the manifest it applies to, so it belongs at the repository
+# root beside package-lock.json.
+#
+# Every entry needs a dated expiry so an exception cannot outlive its evidence.
+
+[[IgnoredVulns]]
+id = "GHSA-mh99-v99m-4gvg"
+ignoreUntil = 2026-10-29
+reason = "Advisory range is wrong for the installed tree. It declares one flat range, <= 5.0.7, which semver-wise also swallows the maintainer's v1 and v2 backports. brace-expansion 1.1.17 and 2.1.3 each carry the upstream backport commit, and 5.0.8 is already outside the range. See SECURITY.md, 'Known npm audit deviation'. Alias CVE-2026-14257 is covered by this entry."

@@ -71,9 +71,13 @@ jobs:
         # release-please writes points at a tag comparison URL, and the tag it
         # names is only created once the release pull request merges, so the
         # link is guaranteed to 404 while the gate is checking it.
+        #
+        # The value is a regular expression matched against the path as lychee
+        # resolves it, which has no leading "./" even when the input glob does.
+        # Writing "./CHANGELOG.md" here silently matches nothing.
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --no-progress --exclude-loopback --accept 200,429 --exclude-path ./CHANGELOG.md "./**/*.md"
+          args: --no-progress --exclude-loopback --accept 200,429 --exclude-path CHANGELOG.md "./**/*.md"
           fail: true
 
   licenses:

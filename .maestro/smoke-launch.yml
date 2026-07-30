@@ -1,0 +1,14 @@
+# Cold-launch smoke test: proves the bundle loads and renders past the auth
+# gate's loading state. This is the flow that catches a release which crashes on
+# startup, which no unit test in this repo can see.
+#
+# `clearState` forces the unconnected path, so the run never depends on a
+# credential or on a reachable importer.
+appId: com.sergienko4.israelibankimporter
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Bank Importer'
+- assertVisible: 'Importer URL'
+- assertVisible: 'Portal password'
+- assertVisible: 'Connect'

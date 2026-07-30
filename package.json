@@ -39,6 +39,7 @@
     "jest": "~29.7.0",
     "jest-expo": "~54.0.0",
     "lint-staged": "^17.2.0",
+    "markdownlint-cli2": "0.23.1",
     "prettier": "^3.9.6",
     "react-test-renderer": "19.1.9",
     "sonarqube-scanner": "^5.0.0",
@@ -62,6 +63,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "lint:actions": "node scripts/lint-actions.mjs",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\" \"!CHANGELOG.md\"",
     "lint:lockfile": "node scripts/lint-lockfile.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -83,6 +85,9 @@
     ],
     "*.{js,mjs,cjs,json}": [
       "prettier --write"
+    ],
+    "!(CHANGELOG).md": [
+      "markdownlint-cli2 --fix"
     ]
   },
   "private": true

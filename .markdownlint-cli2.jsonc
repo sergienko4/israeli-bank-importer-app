@@ -1,0 +1,6 @@
+{
+  // Rules live in .markdownlint.jsonc; this file only carries CLI options.
+  // Ignored files are absent from a CI checkout but present locally, so
+  // without this the pre-commit hook reports failures CI never sees.
+  "gitignore": true,
+}

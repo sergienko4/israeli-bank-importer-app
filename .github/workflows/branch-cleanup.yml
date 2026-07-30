@@ -1,0 +1,51 @@
+name: Branch cleanup
+
+# Deletes the EAS update branch that preview-update.yml created, once its git
+# branch is gone. Without this every merged branch keeps publishing storage and
+# clutters `eas branch:list` forever.
+#
+# `delete` events only ever run the workflow file as it exists on the default
+# branch, so this takes effect after it lands on `main`.
+
+on: delete
+
+permissions:
+  contents: read
+
+jobs:
+  delete-update-branch:
+    name: Delete the update branch
+    if: github.event.ref_type == 'branch' && github.event.ref != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping the update-branch delete."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Delete the update branch
+        env:
+          BRANCH: ${{ github.event.ref }}
+        # A branch that never published an update has nothing to delete, and
+        # that is a normal outcome rather than a failed cleanup.
+        run: |
+          eas branch:delete "$BRANCH" --non-interactive \
+            || echo "::notice::No EAS update branch named $BRANCH"

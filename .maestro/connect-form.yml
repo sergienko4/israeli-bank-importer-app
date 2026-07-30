@@ -1,0 +1,13 @@
+# Proves the connect form is interactive: the keyboard reaches the field and the
+# controlled TextField state round-trips. A bundle that renders but has a broken
+# JS bridge passes the launch smoke test and fails here.
+#
+# The value is a placeholder host that is never contacted; the flow stops before
+# Connect is pressed, so it needs no importer and no password.
+appId: com.sergienko4.israelibankimporter
+---
+- launchApp:
+    clearState: true
+- tapOn: 'Importer URL'
+- inputText: 'https://importer.example:8080'
+- assertVisible: 'https://importer.example:8080'

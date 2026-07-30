@@ -1,0 +1,52 @@
+name: Development build
+
+# Builds a development client on demand, so a contributor can get an installable
+# build without a local Android toolchain.
+#
+# Manual trigger only: a development build is wanted occasionally, not on every
+# push, and each one costs EAS build minutes.
+#
+# Android only. No Apple credentials are configured for this project yet, so an
+# iOS job would fail at the credentials step.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-development-client:
+    name: Build Android development client
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping the development build."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Point the build at this account's update server
+        run: eas update:configure --platform android --non-interactive
+      - if: steps.guard.outputs.run == 'true'
+        name: Queue the build on EAS
+        # Queued rather than awaited: the artifact is collected from the EAS
+        # dashboard, so holding a runner open for the whole build buys nothing.
+        run: eas build --platform android --profile development --non-interactive --no-wait

@@ -1,0 +1,65 @@
+name: Preview update
+
+# Publishes every working branch to its own EAS update branch, so a development
+# client can load a change without a new build. `main` is excluded: what ships to
+# users is the `production` channel, published by release-ota.yml on a tag.
+#
+# This runs on GitHub's hosted runners rather than as an EAS workflow. Publishing
+# an update only uploads the JavaScript bundle to EAS, so nothing here needs EAS
+# compute, and GitHub-hosted runners are free for public repositories with no
+# queue in front of them.
+
+on:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+# A branch that is pushed twice in a row should end up on the newer bundle. The
+# older run has nothing worth finishing, so cancel it rather than queue it.
+concurrency:
+  group: preview-update-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish-preview:
+    name: Publish preview update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping the preview update. Add it in repo settings to publish previews."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Point the bundle at this account's update server
+        run: eas update:configure --platform android --non-interactive
+      - if: steps.guard.outputs.run == 'true'
+        name: Publish to a branch-named update branch
+        env:
+          BRANCH: ${{ github.ref_name }}
+          # Read through the environment, never interpolated into the script: a
+          # commit message is attacker-controlled text on a public repository.
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          MESSAGE=$(printf '%s' "$HEAD_MESSAGE" | head -n 1)
+          eas update --branch "$BRANCH" --message "${MESSAGE:-$GITHUB_SHA}" \
+            --platform android --non-interactive

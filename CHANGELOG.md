@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.1...israeli-bank-importer-app-v0.2.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* **ui:** resolve Sonar S4782 and guard against it ([#52](https://github.com/sergienko4/israeli-bank-importer-app/issues/52)) ([1f6b1a6](https://github.com/sergienko4/israeli-bank-importer-app/commit/1f6b1a6aa3482362d156d54831e8d68809a1f406))
+
 ## [0.2.1](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.0...israeli-bank-importer-app-v0.2.1) (2026-07-29)
 
 

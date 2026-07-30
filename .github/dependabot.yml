@@ -20,19 +20,26 @@ updates:
       include: scope
     # Upgrades that the registry offers but this app cannot take. Each entry
     # records what blocks it, so the list can be re-tested rather than
-    # re-argued at the next Expo SDK upgrade.
+    # re-argued at the next Expo SDK upgrade. Every entry is scoped to the
+    # incompatible upgrade path only, so patch releases - which is how these
+    # projects ship security fixes - still reach the review queue.
     ignore:
       # Expo SDK 54 builds against react 19.1.0 and react-native 0.81.5.
-      # Newer releases belong to a later SDK, and `npx expo install --check`
-      # rejects them, so the React line moves when the SDK moves.
+      # Newer minor lines belong to a later SDK, and `npx expo install
+      # --check` rejects them, so the React line moves when the SDK moves.
       - dependency-name: react
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       - dependency-name: react-native
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       - dependency-name: react-test-renderer
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       - dependency-name: '@types/react'
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       # eslint-config-expo is published per SDK - its dist-tags are literally
       # sdk-51, canary-sdk-55, canary-sdk-56 - so 10.x is the SDK 54 line and
       # 'latest' tracks whichever SDK shipped most recently.
       - dependency-name: eslint-config-expo
+        update-types: ['version-update:semver-major']
       # ESLint 10 removed context.getFilename(). Every published
       # eslint-config-expo, 57.0.1 included, still nests an
       # eslint-plugin-react that calls it, and the lint run dies on the first

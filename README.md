@@ -161,22 +161,24 @@ user cannot act on.
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
-  release and, in that same run, calls **APK publish** (`release-apk.yml`), which
-  builds the Android APK on EAS and attaches it to the release. That job is
+  release and, in that same run, fans out to **APK publish**
+  (`release-apk.yml`), which builds the Android APK on EAS and attaches it to the
+  release, and **OTA publish** (`release-ota.yml`), which pushes the bundle to
+  the EAS `production` channel so installed apps update themselves. Both are
   chained rather than triggered by the release event: the tag is created with the
   default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
   `GITHUB_TOKEN` event.
-- **EAS Workflows** (`.eas/workflows/`): everything that only touches EAS runs on
-  EAS infrastructure, so a single owner is responsible for each job.
-  `deploy-production.yml` publishes the over-the-air update on the release tag,
-  `preview-update.yml` publishes an update per working branch,
-  `branch-cleanup.yml` deletes that update branch when the git branch goes away,
-  and `development-builds.yml` builds a development client on demand. The APK
-  stays in GitHub Actions because attaching a release asset is a GitHub operation
-  that EAS Workflows has no job type for.
+- **Preview updates**: `preview-update.yml` publishes every non-`main` branch to
+  its own EAS update branch, and `branch-cleanup.yml` deletes that update branch
+  when the git branch goes away. `development-build.yml` queues a development
+  client on demand from the Actions tab.
+- **Everything runs in GitHub Actions.** Publishing an update only uploads a
+  JavaScript bundle, so it needs no EAS compute — and a GitHub-hosted runner
+  does it in about two minutes instead of waiting out the EAS free-plan queue.
+  Only `eas build` itself runs on EAS builders.
 - **E2E**: `.maestro/` holds two flows and `eas.json` has an `e2e-test` build
-  profile, but nothing runs them automatically — EAS rejects `maestro` jobs on a
-  free plan. Run them by hand until the account is upgraded.
+  profile, but nothing runs them automatically — hosted Maestro runs need a paid
+  EAS plan. Run them by hand until the account is upgraded.
 - **Versioning**: below `1.0.0` every release is a patch — a `feat:` bumps the
   patch and a breaking change bumps the minor, so the version stays in the `0.x`
   lane until the app is declared stable
@@ -209,16 +211,13 @@ needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
    secret (Settings → Secrets and variables → Actions) — this unlocks the APK
-   publish.
+   publish, the over-the-air updates, and the development build.
 2. Set **`expo.owner`** and **`extra.eas.projectId`** in `app.json` to your Expo
    account and project (`eas init` writes the id for you). The id is not a
    secret — the app sends it to `u.expo.dev` on every update check.
-3. Connect the GitHub repository on the project's **GitHub settings** page at
-   `expo.dev`. Nothing under `.eas/workflows/` fires on a push or a tag until
-   that link exists — the workflows stay runnable only from `eas workflow:run`.
-4. Merge the open **`release-please`** PR to tag a release. The GitHub Actions run
-   attaches the Android APK to the GitHub Release, and EAS runs
-   `deploy-production.yml` on the same tag to publish the over-the-air update.
+3. Merge the open **`release-please`** PR to tag a release. The same run attaches
+   the Android APK to the GitHub Release and publishes the over-the-air update to
+   the `production` channel.
 
 ## License
 

@@ -20,71 +20,49 @@ Hooks run automatically: **pre-commit** (`lint-staged`), **commit-msg**
 `lint:lockfile`, `lint`, `lint:md`, `format:check`, `typecheck`, `test`).
 Requires **Node.js 22+**. Every exported symbol needs a JSDoc block.
 
-`lint-staged` has no glob for `.eas/**` or `.maestro/**`, so the pre-commit hook
-will not format those files; `format:check` in the pre-push hook is what catches
-them.
+`lint-staged` has no glob for `.maestro/**`, so the pre-commit hook will not
+format those files; `format:check` in the pre-push hook is what catches them.
 
 ## CI ownership
 
-Each job has exactly one owner. Do not add a second workflow that produces the
-same artifact — two systems firing on one release tag means a double build and
-two updates racing to the same channel.
+Every job runs in GitHub Actions. Each job has exactly one owner — do not add a
+second workflow that produces the same artifact, because two systems firing on
+one release tag means a double build and two updates racing to the same channel.
 
-| Owner | Scope |
-| --- | --- |
-| `.github/workflows/` | Anything that reads or writes GitHub: quality gates, security scanning, release-please, and attaching the APK to the GitHub Release. |
-| `.eas/workflows/` | Anything that only touches EAS: updates, builds, and update-branch cleanup. |
+EAS Workflows (`.eas/workflows/`) was tried and removed. Publishing an update
+only uploads a JavaScript bundle, so it needs no EAS compute, and on the free
+plan every EAS job waits for a worker — an observed update job sat over an hour
+before starting. The same publish from a GitHub-hosted runner takes about two
+minutes and costs nothing: standard runners are free for public repositories.
+Do not move a job back to EAS Workflows without a paid plan and a reason that
+survives that comparison.
 
-The APK job is the deliberate exception: it lives in GitHub Actions because
-uploading a release asset is a GitHub operation, and EAS Workflows has no job
-type for it. It is the only GitHub Actions workflow that still needs
-`EXPO_TOKEN`.
+What still runs on EAS infrastructure is the part that genuinely needs it:
+`eas build` compiles on EAS builders, so `release-apk.yml` and
+`development-build.yml` queue there and are subject to that queue. Everything
+else — `release-ota.yml`, `preview-update.yml`, `branch-cleanup.yml` — only
+talks to the EAS API from the runner.
 
-Releases are distributed as that APK. Nothing here builds or submits a store
-binary, and nothing should be added that does without agreeing the distribution
-channel first.
+Every workflow that touches EAS starts with the same `EXPO_TOKEN` guard step, so
+a fork without an Expo account gets a green skip instead of a red run. Keep that
+shape when adding one.
 
-Validate any change under `.eas/workflows/` against the real (server-side)
-schema before committing:
-
-```powershell
-npx --yes eas-cli@latest workflow:validate .eas/workflows/<file>.yml
-```
-
-A schema-valid file can still fail at run time. `eas workflow:run <file>` runs it
-on EAS without pushing, which is the only way to catch a job whose parameters
-resolve to nothing.
-
-That CLI escape hatch ignores `on:`, so a manual run of a tag-triggered workflow
-would publish anyway. Any job with a production side effect carries
-`if: ${{ github.event_name == 'push' }}`; a manual run then reports `SKIPPED`
-instead of shipping.
-
-Every job also names its `environment`. A job that omits it reads the production
-environment, which would hand production secrets to a preview or development
-build.
-
-Every job here waits for an EAS worker, and on the free plan that queue is long
-— an observed update job sat 30 minutes without starting. Publishing an update
-from a GitHub runner took about two minutes, so expect the release update to
-land well after the APK. That is queue latency, not a broken workflow: check
-`eas workflow:view <runId> --json` for `errors` before assuming a job is stuck.
-
-Every `on:` trigger in `.eas/workflows/` depends on the GitHub repository being
-connected to the EAS project through the Expo GitHub App. That link is in place:
-a push to this repository starts the preview job and reports it back as a commit
-status on the pull request. A green `eas workflow:run` on its own would not have
-proved that — it bypasses `on:` entirely.
+Releases are distributed as the APK attached to the GitHub Release. Nothing here
+builds or submits a store binary, and nothing should be added that does without
+agreeing the distribution channel first.
 
 The EAS project id is committed in `app.json`. It is not a secret — the app
 sends it to `u.expo.dev` on every launch — and `owner` already pins the repo to
 one Expo account, so nothing is gained by resolving it at build time. A fork
 changes both fields together.
 
+`updates.url` is deliberately not committed: each workflow derives it from that
+id with `eas update:configure`, so the endpoint cannot drift away from the
+project it points at.
+
 ## E2E has flows but no runner
 
 `.maestro/` holds two flows and `eas.json` has an `e2e-test` build profile, but
-nothing runs them automatically: the EAS `maestro` job type rejects validation
-with "requires a paid plan". Run them by hand against a device or emulator, or
-add the workflow once the account is on a paid plan. Do not commit a workflow
-that cannot pass `eas workflow:validate`.
+nothing runs them automatically: hosted Maestro runs are an EAS paid-plan
+feature. Run them by hand against a device or emulator until the account is
+upgraded.

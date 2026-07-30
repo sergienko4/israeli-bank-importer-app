@@ -1,0 +1,25 @@
+# Publishes an EAS Update for every push to a working branch so the change can
+# be opened in a development build without checking out the code.
+#
+# `main` is excluded on purpose. Production updates are published by the
+# release pipeline against the release tag, so previewing `main` as well would
+# publish the same JavaScript twice and burn EAS worker time on every merge,
+# including Dependabot bumps.
+#
+# No `concurrency` block: the schema requires `group` to equal a constant it
+# does not document, and every candidate value was rejected by
+# `eas workflow:validate`.
+name: Publish preview update
+
+on:
+  push:
+    branches: ['*', '!main']
+
+jobs:
+  publish_preview_update:
+    name: Publish preview update
+    type: update
+    params:
+      # The fallback is required, not cosmetic: a run started with
+      # `eas workflow:run` has no ref, and EAS rejects the job without it.
+      branch: ${{ github.ref_name || 'manual' }}

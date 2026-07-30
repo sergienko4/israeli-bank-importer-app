@@ -17,5 +17,6 @@ jobs:
   delete_update_branch:
     name: Delete update branch
     type: branch-delete
+    environment: preview
     params:
       branch_name: ${{ github.ref_name }}

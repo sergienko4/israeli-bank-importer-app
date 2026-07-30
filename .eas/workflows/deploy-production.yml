@@ -20,6 +20,10 @@ jobs:
   publish_production_update:
     name: Publish production update
     type: update
+    # `eas workflow:run` ignores `on:` and reports `workflow_dispatch`, so
+    # without this a manual run would publish to the production channel.
+    if: ${{ github.event_name == 'push' }}
+    environment: production
     params:
       channel: production
       # The fallback is required, not cosmetic: a run started with

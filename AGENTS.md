@@ -54,6 +54,15 @@ A schema-valid file can still fail at run time. `eas workflow:run <file>` runs i
 on EAS without pushing, which is the only way to catch a job whose parameters
 resolve to nothing.
 
+That CLI escape hatch ignores `on:`, so a manual run of a tag-triggered workflow
+would publish anyway. Any job with a production side effect carries
+`if: ${{ github.event_name == 'push' }}`; a manual run then reports `SKIPPED`
+instead of shipping.
+
+Every job also names its `environment`. A job that omits it reads the production
+environment, which would hand production secrets to a preview or development
+build.
+
 Every job here waits for an EAS worker, and on the free plan that queue is long
 — an observed update job sat 30 minutes without starting. Publishing an update
 from a GitHub runner took about two minutes, so expect the release update to
@@ -61,9 +70,10 @@ land well after the APK. That is queue latency, not a broken workflow: check
 `eas workflow:view <runId> --json` for `errors` before assuming a job is stuck.
 
 Every `on:` trigger in `.eas/workflows/` depends on the GitHub repository being
-connected to the EAS project through the Expo GitHub App. Until that link
-exists, those workflows only run from `eas workflow:run`, and a green CLI run
-says nothing about whether a push would have triggered them.
+connected to the EAS project through the Expo GitHub App. That link is in place:
+a push to this repository starts the preview job and reports it back as a commit
+status on the pull request. A green `eas workflow:run` on its own would not have
+proved that — it bypasses `on:` entirely.
 
 The EAS project id is committed in `app.json`. It is not a secret — the app
 sends it to `u.expo.dev` on every launch — and `owner` already pins the repo to

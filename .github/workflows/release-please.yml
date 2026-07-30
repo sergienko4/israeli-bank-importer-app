@@ -1,8 +1,12 @@
 name: release-please
 
 # Maintains a version + CHANGELOG PR from Conventional Commits. Merging that PR
-# tags a GitHub release, and this same run then produces everything that release
-# ships: the sideloadable APK, the over-the-air update, and the store build.
+# tags a GitHub release, and this same run attaches the sideloadable APK.
+#
+# The over-the-air update is not published here. It is owned by
+# .eas/workflows/deploy-production.yml, which EAS triggers on the same release
+# tag. Only the APK stays in GitHub Actions, because attaching a release asset
+# is a GitHub operation that EAS Workflows has no job type for.
 
 on:
   push:
@@ -44,36 +48,5 @@ jobs:
       tag: ${{ needs.release-please.outputs.tag_name }}
     # Passed explicitly rather than with `secrets: inherit`: the callee only
     # needs this one token, and GITHUB_TOKEN reaches a reusable workflow anyway.
-    secrets:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-  # Runs beside the APK build, not after it: a JavaScript-only release reaches
-  # installed apps through this job within a couple of minutes, while the APK
-  # build waits in the EAS queue for the far rarer case where native code moved.
-  ota:
-    name: Publish OTA update
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    permissions:
-      contents: read # reads the repo to build the bundle; publishes to EAS, not GitHub
-    uses: ./.github/workflows/release-ota.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
-    secrets:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-  # The third branch of the fan-out, so one run accounts for every artifact a
-  # release produces. Store binaries are collected from EAS and submitted from
-  # there, so this job registers the build and returns rather than waiting out
-  # the EAS queue.
-  store:
-    name: Store build
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    permissions:
-      contents: read # queues a build on EAS; writes nothing back to GitHub
-    uses: ./.github/workflows/release-store.yml
-    with:
-      tag: ${{ needs.release-please.outputs.tag_name }}
     secrets:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

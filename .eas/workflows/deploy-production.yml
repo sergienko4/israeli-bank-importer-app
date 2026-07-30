@@ -1,0 +1,27 @@
+# Publishes the production OTA update when release-please pushes a release tag.
+#
+# Triggered on the tag rather than on pushes to `main`, so the update tracks the
+# release cadence instead of firing on every merge, including Dependabot bumps.
+#
+# Publishing unconditionally is safe because app.json sets
+# `runtimeVersion.policy: fingerprint`. A release that changed native code
+# publishes under a runtime hash that no installed binary matches, so the update
+# stays inert until users install the matching APK from the GitHub Release.
+#
+# There is no fingerprint/get-build gate here: nothing consumes a production
+# store build, so the gate's build arm would produce an artifact no one installs.
+name: Deploy production update
+
+on:
+  push:
+    tags: ['israeli-bank-importer-app-v*']
+
+jobs:
+  publish_production_update:
+    name: Publish production update
+    type: update
+    params:
+      channel: production
+      # The fallback is required, not cosmetic: a run started with
+      # `eas workflow:run` has no ref, and EAS rejects the job without it.
+      message: ${{ github.ref_name || 'manual' }}

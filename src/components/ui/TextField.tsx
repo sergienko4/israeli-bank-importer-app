@@ -31,11 +31,11 @@ interface TextFieldProps {
   /** Keyboard type. */
   keyboardType?: KeyboardTypeOptions;
   /** Auto-capitalization. Default `none`. */
-  autoCapitalize?: TextInputProps['autoCapitalize'];
+  autoCapitalize?: NonNullable<TextInputProps['autoCapitalize']>;
   /** Autofill hint for the OS/password manager. */
-  autoComplete?: TextInputProps['autoComplete'];
+  autoComplete?: NonNullable<TextInputProps['autoComplete']>;
   /** iOS content type for autofill (e.g. `password`, `URL`). */
-  textContentType?: TextInputProps['textContentType'];
+  textContentType?: NonNullable<TextInputProps['textContentType']>;
 }
 
 interface FieldLabelProps {

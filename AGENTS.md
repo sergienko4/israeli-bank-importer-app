@@ -17,11 +17,12 @@ hooks are enforced. Before committing, keep these green:
 
 Hooks run automatically: **pre-commit** (`lint-staged`), **commit-msg**
 (commitlint / Conventional Commits), **pre-push** (`lint:actions`,
-`lint:lockfile`, `lint`, `lint:md`, `typecheck`, `test`). Requires
-**Node.js 22+**. Every exported symbol needs a JSDoc block.
+`lint:lockfile`, `lint`, `lint:md`, `format:check`, `typecheck`, `test`).
+Requires **Node.js 22+**. Every exported symbol needs a JSDoc block.
 
 `lint-staged` has no glob for `.eas/**` or `.maestro/**`, so the pre-commit hook
-will not format those files. Run `npm run format:check` before committing them.
+will not format those files; `format:check` in the pre-push hook is what catches
+them.
 
 ## CI ownership
 

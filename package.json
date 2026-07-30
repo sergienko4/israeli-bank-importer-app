@@ -16,7 +16,7 @@
     "expo-updates": "~29.0.19",
     "react": "19.1.9",
     "react-native": "0.81.6",
-    "react-native-safe-area-context": "~5.6.0"
+    "react-native-safe-area-context": "~5.8.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",

@@ -12,10 +12,12 @@ hooks are enforced. Before committing, keep these green:
 
 - `npm run lint` - strict ESLint, `--max-warnings=0`, **no** `eslint-disable`/`any`/non-null `!`.
 - `npm run format:check` - Prettier.
+- `npm run lint:md` - markdownlint, same globs and pinned version as the CI job.
 - `npm run typecheck` and `npm test`.
 
 Hooks run automatically: **pre-commit** (`lint-staged`), **commit-msg**
-(commitlint / Conventional Commits), **pre-push** (typecheck + tests). Requires
+(commitlint / Conventional Commits), **pre-push** (`lint:actions`,
+`lint:lockfile`, `lint`, `lint:md`, `typecheck`, `test`). Requires
 **Node.js 22+**. Every exported symbol needs a JSDoc block.
 
 `lint-staged` has no glob for `.eas/**` or `.maestro/**`, so the pre-commit hook
@@ -75,4 +77,3 @@ nothing runs them automatically: the EAS `maestro` job type rejects validation
 with "requires a paid plan". Run them by hand against a device or emulator, or
 add the workflow once the account is on a paid plan. Do not commit a workflow
 that cannot pass `eas workflow:validate`.
-

@@ -1,0 +1,21 @@
+# Deletes the EAS Update branch that preview-update.yml created, once the git
+# branch it mirrors is deleted. Without this, every merged PR leaves an update
+# branch behind on EAS forever.
+#
+# `main` is excluded to match preview-update.yml: no update branch is ever
+# created for it, so there is nothing to clean up.
+#
+# EAS reads this file from the default branch's HEAD, not from the ref being
+# deleted, so it has no effect until it is merged to `main`.
+name: Delete update branch
+
+on:
+  ref_delete:
+    branches: ['*', '!main']
+
+jobs:
+  delete_update_branch:
+    name: Delete update branch
+    type: branch-delete
+    params:
+      branch_name: ${{ github.ref_name }}

@@ -42,6 +42,9 @@ const SONARJS_RULES = {
   'sonarjs/no-identical-expressions': 'error',
   'sonarjs/no-collapsible-if': 'error',
   'sonarjs/no-redundant-boolean': 'error',
+  // S4782: `?:` already implies `| undefined`. Caught here instead of in the
+  // SonarCloud report a push later.
+  'sonarjs/no-redundant-optional': 'error',
   'sonarjs/no-unused-collection': 'error',
   'sonarjs/no-useless-catch': 'error',
   'sonarjs/prefer-immediate-return': 'error',

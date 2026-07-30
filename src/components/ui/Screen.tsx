@@ -24,7 +24,7 @@ interface ScreenProps {
   /** Extra body content style. */
   contentStyle?: StyleProp<ViewStyle>;
   /** Optional pull-to-refresh element passed to ScrollView. */
-  refreshControl?: ComponentProps<typeof ScrollView>['refreshControl'];
+  refreshControl?: NonNullable<ComponentProps<typeof ScrollView>['refreshControl']>;
 }
 
 /**

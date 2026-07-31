@@ -79,4 +79,6 @@ jobs:
         name: Publish to the production channel
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-        run: eas update --channel production --message "$RELEASE_TAG" --non-interactive
+        run: |
+          eas update --channel production --message "$RELEASE_TAG" \
+            --environment production --non-interactive

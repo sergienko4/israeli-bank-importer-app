@@ -71,6 +71,20 @@ async function registerForPush(session: Session): Promise<void> {
 }
 
 /**
+ * Removes the secrets an older version left behind, without letting a failed
+ * delete hide a connection that is still perfectly good.
+ */
+async function cleanUpLegacySecrets(): Promise<void> {
+  try {
+    await migrateLegacySecrets();
+  } catch {
+    // Best-effort: the v1 keys are unusable either way, and refusing to load
+    // the current connection over them would send a signed-in user back to the
+    // browser for nothing.
+  }
+}
+
+/**
  * Provides connection state + actions, restoring any saved connection on mount.
  * @param props - Children to render inside the provider.
  * @returns The provider element.
@@ -82,7 +96,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
   const inFlight = useRef<Promise<Session | null> | null>(null);
 
   useEffect(() => {
-    migrateLegacySecrets()
+    cleanUpLegacySecrets()
       .then(loadConnection)
       .then((saved) => {
         setConnection(saved);

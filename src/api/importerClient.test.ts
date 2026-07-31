@@ -45,38 +45,19 @@ describe('normalizeBaseUrl', () => {
   it.each([
     'http://localhost:8080',
     'http://127.0.0.1:8080',
-    'http://10.0.0.4:8080',
-    'http://172.16.0.1:8080',
-    'http://172.31.255.255:8080',
     'http://192.168.1.5:8080',
-    'http://100.64.0.0:8080',
-    'http://100.101.102.103:8080',
-    'http://100.127.255.255:8080',
-    'http://[::1]:8080',
-  ])('allows plain http for %s', (address) => {
-    expect(normalizeBaseUrl(address)).toBe(address);
-  });
-
-  it.each([
+    'http://100.64.0.1:8080',
     'http://example.com',
     'http://8.8.8.8',
-    'http://100.63.255.255:8080',
-    'http://100.128.0.1:8080',
-    'http://172.15.0.1:8080',
-    'http://172.32.0.1:8080',
-    'http://192.169.1.5:8080',
-    'http://010.0.0.1:8080',
-    'http://0177.0.0.1:8080',
+    'http://[::1]:8080',
   ])('refuses plain http for %s', (address) => {
     expect(() => normalizeBaseUrl(address)).toThrow(
-      'Use https:// for addresses outside your home network.',
+      'Use https:// — a plain http:// address cannot be reached.',
     );
   });
 
-  it('classifies the host, not the path', () => {
-    expect(() => normalizeBaseUrl('http://example.com/127.0.0.1')).toThrow(
-      'Use https:// for addresses outside your home network.',
-    );
+  it('refuses plain http whatever the case of the scheme', () => {
+    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Use https://');
   });
 });
 

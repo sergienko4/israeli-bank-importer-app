@@ -78,7 +78,7 @@ export function ConnectScreen(): ReactElement {
           title="Sign in"
           icon="arrow-forward"
           loading={busy}
-          disabled={!baseUrl}
+          disabled={!baseUrl.trim()}
           onPress={() => {
             void onConnect();
           }}

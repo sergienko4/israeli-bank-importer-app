@@ -4,7 +4,7 @@
  * spinner. Honors reduced motion by holding a steady dim instead of pulsing.
  */
 import type { ReactElement } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import type { DimensionValue, StyleProp, ViewStyle } from 'react-native';
 import { Animated, StyleSheet, View } from 'react-native';
 
@@ -38,7 +38,7 @@ export function Skeleton({
 }: Readonly<SkeletonProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
-  const pulse = useRef(new Animated.Value(0.5)).current;
+  const [pulse] = useState(() => new Animated.Value(0.5));
 
   useEffect(() => {
     if (reduced) {

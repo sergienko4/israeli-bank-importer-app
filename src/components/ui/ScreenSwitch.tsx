@@ -10,7 +10,7 @@
  * but without the follow animation being required to feel responsive.
  */
 import type { ReactElement, ReactNode } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, StyleSheet, useWindowDimensions } from 'react-native';
 
 import { useReducedMotion } from '../../lib/useReducedMotion';
@@ -48,8 +48,8 @@ export function ScreenSwitch({
 }: Readonly<ScreenSwitchProps>): ReactElement {
   const reduced = useReducedMotion();
   const { width } = useWindowDimensions();
-  const translateX = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
+  const [translateX] = useState(() => new Animated.Value(0));
+  const [opacity] = useState(() => new Animated.Value(1));
   const firstRender = useRef(true);
 
   const onSwipeBackRef = useRef(onSwipeBack);
@@ -98,7 +98,7 @@ export function ScreenSwitch({
     };
   }, [screenKey, direction, translateX, opacity]);
 
-  const responder = useRef(
+  const [responder] = useState(() =>
     PanResponder.create({
       onMoveShouldSetPanResponder: (evt, gesture) => {
         if (!onSwipeBackRef.current) {
@@ -139,7 +139,7 @@ export function ScreenSwitch({
         }
       },
     }),
-  ).current;
+  );
 
   return (
     <Animated.View

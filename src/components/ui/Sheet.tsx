@@ -40,7 +40,7 @@ export function Sheet({
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
-  const progress = useRef(new Animated.Value(0)).current;
+  const [progress] = useState(() => new Animated.Value(0));
   const previousVisible = useRef(false);
 
   useEffect(() => {

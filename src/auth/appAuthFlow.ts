@@ -2,8 +2,8 @@
  * Browser sign-in against the importer's portal.
  *
  * The app never sees the portal password. It sends the user to the portal in
- * the system browser, where they satisfy whatever the portal requires — Google,
- * a password, or both — and the portal hands back a one-time code on the app's
+ * the system browser, where they satisfy whatever the portal requires Ã¢â‚¬â€ Google,
+ * a password, or both Ã¢â‚¬â€ and the portal hands back a one-time code on the app's
  * own scheme. The code is only useful together with the PKCE verifier this
  * module keeps in memory, so a malicious app that intercepts the redirect gains
  * nothing.
@@ -56,14 +56,20 @@ function authorizeUrl(baseUrl: string, challenge: string, state: string): string
  * Opens the portal in the system browser and waits for it to hand back.
  *
  * Only the redirect variant of the result carries a URL, so its presence is
- * what distinguishes a completed sign-in from a closed browser.
+ * what distinguishes a completed sign-in from a closed browser. That URL
+ * arrives from the operating system rather than from this app, so its target is
+ * checked before anything reads a parameter out of it.
  * @param url - The authorization URL.
  * @returns The redirect URL the browser returned.
- * @throws Error when the user backed out or the browser could not complete.
+ * @throws Error when the user backed out, the browser could not complete, or
+ *   the URL handed back was not this app's redirect.
  */
 async function awaitRedirect(url: string): Promise<string> {
   const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI);
   if ('url' in result) {
+    if (!result.url.startsWith(REDIRECT_URI)) {
+      throw new Error('Sign-in could not be verified.');
+    }
     return result.url;
   }
   const wasClosed =

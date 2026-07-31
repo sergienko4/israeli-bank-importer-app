@@ -188,6 +188,17 @@ describe('signIn when the browser does not complete', () => {
 });
 
 describe('signIn when the redirect is not ours', () => {
+  it('refuses a redirect that is not the app scheme, state notwithstanding', async () => {
+    mockBrowser.result = {
+      type: 'success',
+      get url(): string {
+        return `https://evil.example/?code=the-code&state=${openedState()}`;
+      },
+    };
+    await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+    expect(fetchCalls).toHaveLength(0);
+  });
+
   it('refuses a mismatched state without touching the network', async () => {
     mockBrowser.result = { type: 'success', url: `${REDIRECT_URI}?code=x&state=not-ours` };
     await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');

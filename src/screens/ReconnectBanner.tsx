@@ -29,6 +29,8 @@ export function ReconnectBanner(): ReactElement | null {
     try {
       const result = await reauthenticate();
       haptics[result ? 'success' : 'warning']();
+    } catch {
+      haptics.warning();
     } finally {
       setBusy(false);
     }

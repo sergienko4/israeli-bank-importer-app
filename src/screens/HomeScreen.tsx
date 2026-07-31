@@ -263,7 +263,13 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
         style: 'destructive',
         onPress: () => {
           haptics.medium();
-          void disconnect();
+          void disconnect().catch(() => {
+            haptics.warning();
+            Alert.alert(
+              'Could not disconnect',
+              'The saved connection is still on this device. Try again.',
+            );
+          });
         },
       },
     ]);

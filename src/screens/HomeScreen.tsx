@@ -256,21 +256,17 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
   const last = latestRun(runs);
   const bankCount = config ? banksConfigured(config) : 0;
   const confirmDisconnect = (): void => {
-    Alert.alert(
-      'Disconnect importer?',
-      'This removes the saved connection and quick unlock password from this device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: () => {
-            haptics.medium();
-            void disconnect();
-          },
+    Alert.alert('Disconnect importer?', 'This removes the saved connection from this device.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Disconnect',
+        style: 'destructive',
+        onPress: () => {
+          haptics.medium();
+          void disconnect();
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (

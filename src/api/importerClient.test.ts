@@ -1,4 +1,4 @@
-import { checkAuthorized, normalizeBaseUrl, requestToken } from './importerClient';
+import { checkAuthorized, normalizeBaseUrl } from './importerClient';
 
 /**
  * Builds a minimal fake fetch Response for tests.
@@ -75,28 +75,6 @@ describe('normalizeBaseUrl', () => {
     expect(() => normalizeBaseUrl('http://example.com/127.0.0.1')).toThrow(
       'Use https:// for addresses outside your home network.',
     );
-  });
-});
-
-describe('requestToken', () => {
-  it('returns the token on a 200 response', async () => {
-    stubFetch(200, { token: 'abc123' });
-    await expect(requestToken('host:8080', 'pw')).resolves.toBe('abc123');
-  });
-
-  it('throws a friendly message on 401', async () => {
-    stubFetch(401, { error: 'Invalid password' });
-    await expect(requestToken('host:8080', 'bad')).rejects.toThrow('Incorrect portal password.');
-  });
-
-  it('throws on a server error status', async () => {
-    stubFetch(500, {});
-    await expect(requestToken('host:8080', 'pw')).rejects.toThrow('500');
-  });
-
-  it('throws when the body carries no token', async () => {
-    stubFetch(200, {});
-    await expect(requestToken('host:8080', 'pw')).rejects.toThrow('Unexpected response');
   });
 });
 

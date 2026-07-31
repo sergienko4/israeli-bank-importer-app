@@ -1,43 +1,69 @@
 /**
- * Persists the importer connection (base URL + bearer token) in the device
- * secure store (iOS Keychain / Android Keystore) — never plain storage — so a
- * returning user stays connected without re-entering their password. When the
- * user opts into quick unlock, the portal password is stored under a separate
- * secure key so the app can silently re-authenticate after the 12h token
- * expires (see {@link savePassword}); access to it is gated by biometrics.
+ * Persists the importer connection in the device secure store (iOS Keychain /
+ * Android Keystore) — never plain storage — so a returning user stays connected
+ * without signing in through the browser again.
+ *
+ * What is stored is a refresh token, not a password. The distinction matters:
+ * a refresh token only works against one importer, it rotates on every use, and
+ * the user can end it from the portal's session list. A password could do all
+ * of that and more, forever, and could not be revoked without changing it.
+ *
+ * Earlier versions did store the portal password. {@link migrateLegacySecrets}
+ * removes it on first launch after the upgrade, so an old install does not keep
+ * a credential the app no longer has any use for.
  */
 import * as SecureStore from 'expo-secure-store';
 
 const KEY = 'importer.connection.v1';
 const PASSWORD_KEY = 'importer.password.v1';
+const CONNECTION_KEY = 'importer.connection.v2';
 
 /** A saved importer connection. */
 export interface Connection {
   baseUrl: string;
-  token: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
 }
 
 /**
  * Saves the connection to the secure store.
- * @param connection - The base URL + bearer token to persist.
+ * @param connection - The address and tokens to persist.
  */
 export async function saveConnection(connection: Connection): Promise<void> {
-  await SecureStore.setItemAsync(KEY, JSON.stringify(connection));
+  await SecureStore.setItemAsync(CONNECTION_KEY, JSON.stringify(connection));
+}
+
+/**
+ * Reports whether a parsed entry carries every field the app relies on.
+ * @param parsed - The parsed entry.
+ * @returns True when the entry is a complete connection.
+ */
+function isComplete(parsed: Partial<Connection>): boolean {
+  return (
+    typeof parsed.baseUrl === 'string' &&
+    typeof parsed.accessToken === 'string' &&
+    typeof parsed.refreshToken === 'string' &&
+    typeof parsed.expiresAt === 'number'
+  );
 }
 
 /**
  * Loads the stored connection.
- * @returns The saved connection, or null when none is stored or it is corrupt.
+ *
+ * A partial or corrupt entry reads as "not connected" rather than crashing
+ * launch, which also covers the v1 entry an upgrade leaves behind.
+ * @returns The saved connection, or null when none is usable.
  */
 export async function loadConnection(): Promise<Connection | null> {
-  const raw = await SecureStore.getItemAsync(KEY);
+  const raw = await SecureStore.getItemAsync(CONNECTION_KEY);
   if (!raw) {
     return null;
   }
   try {
     const parsed = JSON.parse(raw) as Partial<Connection>;
-    if (typeof parsed.baseUrl === 'string' && typeof parsed.token === 'string') {
-      return { baseUrl: parsed.baseUrl, token: parsed.token };
+    if (isComplete(parsed)) {
+      return parsed as Connection;
     }
   } catch {
     // A corrupt entry is treated as "no connection" rather than crashing launch.
@@ -45,38 +71,20 @@ export async function loadConnection(): Promise<Connection | null> {
   return null;
 }
 
-/** Clears the stored connection and any stored password (used on disconnect). */
+/** Clears the stored connection, including anything an older version left. */
 export async function clearConnection(): Promise<void> {
-  await SecureStore.deleteItemAsync(KEY);
-  await clearPassword();
+  await SecureStore.deleteItemAsync(CONNECTION_KEY);
+  await migrateLegacySecrets();
 }
 
 /**
- * Stores the portal password for quick unlock (secure store only; callers gate
- * access with biometrics). Enables silent re-auth after token expiry.
- * @param password - The portal password to persist.
+ * Removes secrets written by versions that used password authentication.
+ *
+ * Runs at launch and is safe to run repeatedly: deleting a key that is not
+ * there is not an error. Leaving the old password in the keychain would keep a
+ * credential on the device that nothing can use and nobody can revoke.
  */
-export async function savePassword(password: string): Promise<void> {
-  await SecureStore.setItemAsync(PASSWORD_KEY, password);
-}
-
-/**
- * Loads the stored portal password, if quick unlock is enabled.
- * @returns The stored password, or null when none is stored.
- */
-export async function loadPassword(): Promise<string | null> {
-  return SecureStore.getItemAsync(PASSWORD_KEY);
-}
-
-/** Removes the stored portal password (disables quick unlock). */
-export async function clearPassword(): Promise<void> {
+export async function migrateLegacySecrets(): Promise<void> {
   await SecureStore.deleteItemAsync(PASSWORD_KEY);
-}
-
-/**
- * Reports whether a portal password is stored for quick unlock.
- * @returns True when a password is available for silent re-auth.
- */
-export async function hasStoredPassword(): Promise<boolean> {
-  return (await SecureStore.getItemAsync(PASSWORD_KEY)) !== null;
+  await SecureStore.deleteItemAsync(KEY);
 }

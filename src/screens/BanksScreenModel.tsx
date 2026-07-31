@@ -4,10 +4,15 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
-import { getConfig, getManifest, removeBank, saveConfig } from '../api/importerClient';
+import {
+  getConfig,
+  getManifest,
+  removeBank,
+  saveConfig,
+  type Session,
+} from '../api/importerClient';
 import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
-import type { Connection } from '../auth/connectionStore';
 import { haptics } from '../lib/haptics';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
@@ -125,7 +130,7 @@ function confirmBankRemoval(
   );
 }
 
-function useBanksData(connection: Connection | null, reloadKey: number): BanksDataState {
+function useBanksData(connection: Session | null, reloadKey: number): BanksDataState {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
   const [loading, setLoading] = useState(true);

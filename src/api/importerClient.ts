@@ -1,12 +1,15 @@
 /**
- * Minimal HTTP client for a self-hosted importer's portal API. Exchanges the
- * portal password for a bearer token and verifies a token against /auth/status.
- * All calls target the user's own importer over their private network.
+ * Minimal HTTP client for a self-hosted importer's portal API. Carries the
+ * bearer token issued by browser sign-in and verifies it against /auth/status.
+ * Every call goes over HTTPS, because a release build cannot make a plain-HTTP
+ * request at all: Android has blocked cleartext by default since 9.
  */
 
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
+
+const HTTPS = 'https://';
 
 /**
  * Removes the trailing slashes a typed address often carries.
@@ -26,41 +29,25 @@ function withoutTrailingSlashes(value: string): string {
 
 /**
  * Normalizes a user-typed address to an origin with a scheme and no trailing
- * slash, so `host:8080`, `http://host:8080`, and `http://host:8080/` all resolve
- * to the same base.
+ * slash, so `host:8080`, `https://host:8080`, and `https://host:8080/` all
+ * resolve to the same base.
+ *
+ * HTTPS is the only accepted scheme. The portal is reached through a proxy that
+ * terminates TLS, such as `tailscale serve`, and a release build could not make
+ * a plain-HTTP request anyway without switching off a platform protection that
+ * shipped code has no business switching off.
  * @param input - The raw address the user typed.
- * @returns A normalized `scheme://host[:port]` base URL.
+ * @returns A normalized `https://host[:port]` base URL.
+ * @throws Error when the address asks for plain HTTP.
  */
 export function normalizeBaseUrl(input: string): string {
   const trimmed = withoutTrailingSlashes(input.trim());
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
-}
-
-/**
- * Exchanges the portal password for a bearer token via `POST /auth/token`.
- * @param baseUrl - The importer address.
- * @param password - The portal password.
- * @returns The bearer token string.
- * @throws Error with a user-facing message on a wrong password, a server error,
- *   or an unexpected response body.
- */
-export async function requestToken(baseUrl: string, password: string): Promise<string> {
-  const res = await fetch(`${normalizeBaseUrl(baseUrl)}/auth/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ password }),
-  });
-  if (res.status === 401) {
-    throw new Error('Incorrect portal password.');
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith('http://')) {
+    throw new Error('Use https:// — a plain http:// address cannot be reached.');
   }
-  if (!res.ok) {
-    throw new Error(`The importer returned an error (${String(res.status)}).`);
-  }
-  const data = (await res.json()) as { token?: unknown };
-  if (typeof data.token !== 'string' || data.token.length === 0) {
-    throw new Error('Unexpected response from the importer.');
-  }
-  return data.token;
+  const rest = lowered.startsWith(HTTPS) ? trimmed.slice(HTTPS.length) : trimmed;
+  return `${HTTPS}${rest}`;
 }
 
 /**
@@ -89,8 +76,12 @@ export interface Session {
 /** Produces a fresh session (e.g. by re-authenticating), or null when it cannot. */
 export type ReauthHandler = () => Promise<Session | null>;
 
+/** Renews a session that is about to expire, or returns it unchanged. */
+export type SessionGuard = (session: Session) => Promise<Session>;
+
 let reauthHandler: ReauthHandler | null = null;
 let inFlightReauth: Promise<Session | null> | null = null;
+let sessionGuard: SessionGuard | null = null;
 
 /**
  * Registers (or clears) the handler used to silently re-authenticate when a
@@ -100,6 +91,18 @@ let inFlightReauth: Promise<Session | null> | null = null;
  */
 export function setReauthHandler(handler: ReauthHandler | null): void {
   reauthHandler = handler;
+}
+
+/**
+ * Registers (or clears) the check that runs before every authenticated request.
+ *
+ * Screens hold on to the session they rendered with, so without this the first
+ * call after a token expires would fail with a 401 the user can see flicker
+ * past. Renewing beforehand keeps that invisible.
+ * @param guard - The guard, or null to clear it.
+ */
+export function setSessionGuard(guard: SessionGuard | null): void {
+  sessionGuard = guard;
 }
 
 /**
@@ -119,8 +122,11 @@ async function tryReauth(): Promise<Session | null> {
 
 /**
  * Performs an authenticated request against the importer, attaching the bearer.
- * On a 401 it attempts a single silent re-authentication and retries once with
- * the refreshed token, so an expired session recovers transparently.
+ *
+ * A session close to expiry is renewed first. On a 401 it attempts a single
+ * silent re-authentication and retries once, so a session that expired sooner
+ * than expected still recovers without the caller handling it. The retry reuses
+ * `init`, so a body must be a value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
@@ -135,7 +141,8 @@ async function authed(session: Session, path: string, init: RequestInit = {}): P
         authorization: `Bearer ${active.token}`,
       },
     });
-  const res = await send(session);
+  const current = sessionGuard ? await sessionGuard(session) : session;
+  const res = await send(current);
   if (res.status !== 401) {
     return res;
   }

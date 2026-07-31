@@ -5,18 +5,23 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "expo": "~54.0.0",
+    "expo-asset": "~12.0.13",
     "expo-constants": "~18.0.13",
+    "expo-crypto": "~15.0.9",
+    "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
+    "expo-linking": "~8.0.12",
     "expo-local-authentication": "~17.0.8",
     "expo-notifications": "~0.32.17",
     "expo-secure-store": "~15.0.8",
     "expo-status-bar": "~3.0.9",
     "expo-updates": "~29.0.19",
-    "react": "19.1.9",
-    "react-native": "0.81.6",
-    "react-native-safe-area-context": "~5.8.0"
+    "expo-web-browser": "~15.0.11",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "~5.6.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.1",
@@ -28,7 +33,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-check-file": "^3.3.2",
     "eslint-plugin-import-x": "^4.17.1",
-    "eslint-plugin-jsdoc": "^63.3.2",
+    "eslint-plugin-jsdoc": "^63.2.2",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-sonarjs": "^4.2.0",
     "eslint-plugin-unicorn": "^61.0.2",
@@ -41,7 +46,7 @@
     "lint-staged": "^17.2.0",
     "markdownlint-cli2": "0.23.2",
     "prettier": "^3.9.6",
-    "react-test-renderer": "19.1.9",
+    "react-test-renderer": "19.1.0",
     "sonarqube-scanner": "^5.0.0",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.65.0"
@@ -50,8 +55,8 @@
     "postcss": "^8.5.18",
     "tar": "^7.5.21",
     "uuid": "^11.1.1",
-    "brace-expansion@1": "^1.1.17",
-    "brace-expansion@2": "^2.1.3",
+    "brace-expansion@1": "^1.1.16",
+    "brace-expansion@2": "^2.1.2",
     "brace-expansion@5": "^5.0.8"
   },
   "scripts": {

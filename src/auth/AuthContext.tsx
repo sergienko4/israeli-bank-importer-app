@@ -1,6 +1,10 @@
 /**
  * Connection state for the app: holds the active importer connection, restores
- * it from the secure store on launch, and exposes connect/disconnect actions.
+ * it from the secure store on launch, and exposes sign-in/sign-out actions.
+ *
+ * Screens only ever see a {@link Session} — an address and the bearer to send.
+ * The refresh token stays in here and in the secure store, so no screen can
+ * accidentally hand it to a request.
  */
 import {
   createContext,
@@ -10,21 +14,26 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
-import { registerDevice, requestToken, setReauthHandler } from '../api/importerClient';
-import { authenticateBiometric } from '../lib/biometrics';
+import {
+  normalizeBaseUrl,
+  registerDevice,
+  type Session,
+  setReauthHandler,
+  setSessionGuard,
+} from '../api/importerClient';
 import { getPushToken } from '../push/pushRegistration';
+import { signIn } from './appAuthFlow';
+import { isExpiring, refreshConnection, toSession } from './appSession';
 import {
   clearConnection,
-  clearPassword,
   type Connection,
-  hasStoredPassword,
   loadConnection,
-  loadPassword,
+  migrateLegacySecrets,
   saveConnection,
-  savePassword,
 } from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
@@ -33,16 +42,13 @@ export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
 /** Connection state + actions exposed to the tree. */
 export interface AuthState {
   status: ConnectionStatus;
-  connection: Connection | null;
-  /** True when a password is stored for silent re-auth (quick unlock). */
-  quickUnlockEnabled: boolean;
-  /** True when the session expired and silent re-auth was unavailable/declined. */
+  connection: Session | null;
+  /** True when the session could not be renewed and the user must act. */
   sessionExpired: boolean;
-  connect: (baseUrl: string, password: string, rememberPassword?: boolean) => Promise<void>;
-  /** Silently re-authenticates using the stored password; null when unavailable/failed. */
-  reauthenticate: () => Promise<Connection | null>;
-  /** Disables quick unlock by clearing the stored password. */
-  disableQuickUnlock: () => Promise<void>;
+  /** Runs browser sign-in against the given importer address. */
+  connect: (baseUrl: string) => Promise<void>;
+  /** Renews the session behind a biometric prompt; null when it could not. */
+  reauthenticate: () => Promise<Session | null>;
   disconnect: () => Promise<void>;
 }
 
@@ -53,7 +59,7 @@ const AuthContext = createContext<AuthState | undefined>(undefined);
  * the importer. Never blocks or fails connecting — push is optional.
  * @param session - The connection to register this device with.
  */
-async function registerForPush(session: Connection): Promise<void> {
+async function registerForPush(session: Session): Promise<void> {
   try {
     const pushToken = await getPushToken();
     if (pushToken) {
@@ -65,6 +71,20 @@ async function registerForPush(session: Connection): Promise<void> {
 }
 
 /**
+ * Removes the secrets an older version left behind, without letting a failed
+ * delete hide a connection that is still perfectly good.
+ */
+async function cleanUpLegacySecrets(): Promise<void> {
+  try {
+    await migrateLegacySecrets();
+  } catch {
+    // Best-effort: the v1 keys are unusable either way, and refusing to load
+    // the current connection over them would send a signed-in user back to the
+    // browser for nothing.
+  }
+}
+
+/**
  * Provides connection state + actions, restoring any saved connection on mount.
  * @param props - Children to render inside the provider.
  * @returns The provider element.
@@ -72,14 +92,14 @@ async function registerForPush(session: Connection): Promise<void> {
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
-  const [quickUnlockEnabled, setQuickUnlockEnabled] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const inFlight = useRef<Promise<Session | null> | null>(null);
 
   useEffect(() => {
-    Promise.all([loadConnection(), hasStoredPassword()])
-      .then(([saved, hasPassword]) => {
+    cleanUpLegacySecrets()
+      .then(loadConnection)
+      .then((saved) => {
         setConnection(saved);
-        setQuickUnlockEnabled(hasPassword);
         setStatus(saved ? 'connected' : 'disconnected');
       })
       .catch(() => {
@@ -87,96 +107,80 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       });
   }, []);
 
-  const connect = useCallback(
-    async (baseUrl: string, password: string, rememberPassword = false) => {
-      const token = await requestToken(baseUrl, password);
-      const next: Connection = { baseUrl, token };
-      await saveConnection(next);
-      await (rememberPassword ? savePassword(password) : clearPassword());
-      setConnection(next);
-      setQuickUnlockEnabled(rememberPassword);
-      setSessionExpired(false);
-      setStatus('connected');
-      void registerForPush(next);
-    },
-    [],
-  );
-
-  const reauthenticate = useCallback(async (): Promise<Connection | null> => {
-    if (!connection) {
-      return null;
-    }
-    const password = await loadPassword();
-    if (!password) {
-      setSessionExpired(true);
-      return null;
-    }
-    const unlock = await authenticateBiometric('Unlock to reconnect to your importer');
-    if (unlock.status === 'unsupported') {
-      await clearPassword();
-      setQuickUnlockEnabled(false);
-      setSessionExpired(true);
-      return null;
-    }
-    if (unlock.status !== 'success') {
-      setSessionExpired(true);
-      return null;
-    }
-    try {
-      const token = await requestToken(connection.baseUrl, password);
-      const next: Connection = { baseUrl: connection.baseUrl, token };
-      await saveConnection(next);
-      setConnection(next);
-      setSessionExpired(false);
-      setStatus('connected');
-      return next;
-    } catch {
-      setSessionExpired(true);
-      return null;
-    }
-  }, [connection]);
-
-  useEffect(() => {
-    setReauthHandler(reauthenticate);
-    return () => {
-      setReauthHandler(null);
-    };
-  }, [reauthenticate]);
-
-  const disableQuickUnlock = useCallback(async () => {
-    await clearPassword();
-    setQuickUnlockEnabled(false);
-  }, []);
-
-  const disconnect = useCallback(async () => {
+  const forget = useCallback(async () => {
     await clearConnection();
     setConnection(null);
-    setQuickUnlockEnabled(false);
     setSessionExpired(false);
     setStatus('disconnected');
   }, []);
 
+  const connect = useCallback(async (baseUrl: string) => {
+    const tokens = await signIn(baseUrl);
+    const next: Connection = {
+      baseUrl: normalizeBaseUrl(baseUrl),
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+    };
+    await saveConnection(next);
+    setConnection(next);
+    setSessionExpired(false);
+    setStatus('connected');
+    void registerForPush(toSession(next));
+  }, []);
+
+  const renew = useCallback(async (): Promise<Session | null> => {
+    if (!connection) {
+      return null;
+    }
+    const outcome = await refreshConnection(connection);
+    if (outcome.status === 'refreshed') {
+      setConnection(outcome.connection);
+      setSessionExpired(false);
+      return toSession(outcome.connection);
+    }
+    if (outcome.status === 'ended') {
+      await forget();
+      return null;
+    }
+    setSessionExpired(true);
+    return null;
+  }, [connection, forget]);
+
+  const reauthenticate = useCallback((): Promise<Session | null> => {
+    inFlight.current ??= renew().finally(() => {
+      inFlight.current = null;
+    });
+    return inFlight.current;
+  }, [renew]);
+
+  useEffect(() => {
+    const guard = async (active: Session): Promise<Session> => {
+      if (!connection || !isExpiring(connection)) {
+        return active;
+      }
+      return (await reauthenticate()) ?? active;
+    };
+    setReauthHandler(reauthenticate);
+    setSessionGuard(guard);
+    return () => {
+      setReauthHandler(null);
+      setSessionGuard(null);
+    };
+  }, [connection, reauthenticate]);
+
+  const session = useMemo(() => (connection ? toSession(connection) : null), [connection]);
+
   const value = useMemo<AuthState>(
     () => ({
       status,
-      connection,
-      quickUnlockEnabled,
+      connection: session,
       sessionExpired,
       connect,
       reauthenticate,
-      disableQuickUnlock,
-      disconnect,
+      disconnect: forget,
     }),
-    [
-      status,
-      connection,
-      quickUnlockEnabled,
-      sessionExpired,
-      connect,
-      reauthenticate,
-      disableQuickUnlock,
-      disconnect,
-    ],
+    [status, session, sessionExpired, connect, reauthenticate, forget],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

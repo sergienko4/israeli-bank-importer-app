@@ -31,7 +31,9 @@
     "plugins": [
       "expo-secure-store",
       "expo-font",
-      "expo-updates"
+      "expo-updates",
+      "expo-web-browser",
+      "expo-asset"
     ],
     "extra": {
       "eas": {

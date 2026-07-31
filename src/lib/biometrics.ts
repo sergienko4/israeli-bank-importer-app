@@ -1,7 +1,8 @@
 /**
- * Biometric gate over expo-local-authentication. Reports availability (hardware
- * present with a fingerprint/face enrolled) and prompts the user to authenticate.
- * The prompt result is fail-closed: callers only unlock on an explicit success.
+ * Biometric gate over expo-local-authentication. Prompts the user and reports
+ * the outcome fail-closed: callers only unlock on an explicit success, and a
+ * device with no hardware or nothing enrolled is reported as unsupported rather
+ * than waved through.
  */
 import * as LocalAuthentication from 'expo-local-authentication';
 
@@ -21,23 +22,6 @@ const UNSUPPORTED_PROMPT_ERRORS: ReadonlySet<LocalAuthenticationFailure['error']
   'not_enrolled',
   'passcode_not_set',
 ]);
-
-/**
- * Reports whether biometric authentication can be used on this device.
- * @returns True when biometric hardware is present and a credential is enrolled.
- */
-export async function isBiometricAvailable(): Promise<boolean> {
-  try {
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    if (!hasHardware) {
-      return false;
-    }
-    return await LocalAuthentication.isEnrolledAsync();
-  } catch (error: unknown) {
-    void error;
-    return false;
-  }
-}
 
 /**
  * Prompts the user to authenticate with biometrics.

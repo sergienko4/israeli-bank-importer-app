@@ -1,4 +1,4 @@
-import { checkAuthorized, normalizeBaseUrl, requestToken } from './importerClient';
+import { checkAuthorized, normalizeBaseUrl } from './importerClient';
 
 /**
  * Builds a minimal fake fetch Response for tests.
@@ -30,8 +30,8 @@ afterEach(() => {
 });
 
 describe('normalizeBaseUrl', () => {
-  it('adds http:// when no scheme is present', () => {
-    expect(normalizeBaseUrl('100.64.0.1:8080')).toBe('http://100.64.0.1:8080');
+  it('defaults to https when no scheme is present', () => {
+    expect(normalizeBaseUrl('host:8080')).toBe('https://host:8080');
   });
 
   it('keeps https and strips trailing slashes', () => {
@@ -39,29 +39,29 @@ describe('normalizeBaseUrl', () => {
   });
 
   it('trims surrounding whitespace', () => {
-    expect(normalizeBaseUrl('  http://host:8080  ')).toBe('http://host:8080');
-  });
-});
-
-describe('requestToken', () => {
-  it('returns the token on a 200 response', async () => {
-    stubFetch(200, { token: 'abc123' });
-    await expect(requestToken('host:8080', 'pw')).resolves.toBe('abc123');
+    expect(normalizeBaseUrl('  https://host:8080  ')).toBe('https://host:8080');
   });
 
-  it('throws a friendly message on 401', async () => {
-    stubFetch(401, { error: 'Invalid password' });
-    await expect(requestToken('host:8080', 'bad')).rejects.toThrow('Incorrect portal password.');
+  it('lowercases the scheme without touching the rest', () => {
+    expect(normalizeBaseUrl('HTTPS://Host:8080')).toBe('https://Host:8080');
   });
 
-  it('throws on a server error status', async () => {
-    stubFetch(500, {});
-    await expect(requestToken('host:8080', 'pw')).rejects.toThrow('500');
+  it.each([
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://192.168.1.5:8080',
+    'http://100.64.0.1:8080',
+    'http://example.com',
+    'http://8.8.8.8',
+    'http://[::1]:8080',
+  ])('refuses plain http for %s', (address) => {
+    expect(() => normalizeBaseUrl(address)).toThrow(
+      'Use https:// — a plain http:// address cannot be reached.',
+    );
   });
 
-  it('throws when the body carries no token', async () => {
-    stubFetch(200, {});
-    await expect(requestToken('host:8080', 'pw')).rejects.toThrow('Unexpected response');
+  it('refuses plain http whatever the case of the scheme', () => {
+    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Use https://');
   });
 });
 

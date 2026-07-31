@@ -1,55 +1,33 @@
 /**
- * Connect + login screen: a branded landing where the user enters their
- * importer URL and portal password, then connects. Errors surface in an inline
- * banner. Purely presentational over the auth context.
+ * Connect screen: a branded landing where the user enters their importer URL and
+ * hands off to the portal to sign in. Errors surface in an inline banner.
+ * Purely presentational over the auth context.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { type ReactElement, useEffect, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { type ReactElement, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '../auth/AuthContext';
 import { Banner, Button, Card, Screen, TextField } from '../components/ui';
-import { isBiometricAvailable } from '../lib/biometrics';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 
 /**
- * Renders the connect form and drives the connect action.
+ * Renders the connect form and drives the sign-in action.
  * @returns The connect screen element.
  */
 export function ConnectScreen(): ReactElement {
   const theme = useTheme();
   const { connect } = useAuth();
   const [baseUrl, setBaseUrl] = useState('');
-  const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(false);
-  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    void isBiometricAvailable()
-      .then((available) => {
-        if (active) {
-          setBiometricAvailable(available);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setBiometricAvailable(false);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const onConnect = async (): Promise<void> => {
     setBusy(true);
     setError(null);
     try {
-      await connect(baseUrl, password, remember && biometricAvailable);
+      await connect(baseUrl);
       haptics.success();
     } catch (e) {
       haptics.warning();
@@ -88,46 +66,19 @@ export function ConnectScreen(): ReactElement {
           autoComplete="url"
           textContentType="URL"
         />
-        <TextField
-          label="Portal password"
-          icon="lock-closed-outline"
-          secure
-          value={password}
-          onChangeText={setPassword}
-          placeholder="Your portal password"
-          autoComplete="current-password"
-          textContentType="password"
-        />
 
-        {biometricAvailable ? (
-          <View style={styles.toggle}>
-            <View style={styles.toggleText}>
-              <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>
-                Quick unlock
-              </Text>
-              <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
-                Reconnect with Face ID / fingerprint after your session expires.
-              </Text>
-            </View>
-            <Switch
-              accessibilityRole="switch"
-              accessibilityLabel="Enable quick unlock"
-              accessibilityHint="Allows biometric unlock after your session expires."
-              accessibilityState={{ checked: remember }}
-              value={remember}
-              onValueChange={setRemember}
-              trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
-            />
-          </View>
-        ) : null}
+        <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
+          Signing in opens your importer&apos;s own login page in the browser. Your password is
+          never entered here.
+        </Text>
 
         {error ? <Banner messages={[error]} tone="danger" /> : null}
 
         <Button
-          title="Connect"
+          title="Sign in"
           icon="arrow-forward"
           loading={busy}
-          disabled={!baseUrl || !password}
+          disabled={!baseUrl.trim()}
           onPress={() => {
             void onConnect();
           }}

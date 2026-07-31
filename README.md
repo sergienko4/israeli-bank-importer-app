@@ -30,8 +30,9 @@ leave your machine and never touch a third-party cloud.
 
 - The importer already exposes a **manifest-driven** portal API
   (`/api/manifest`, `/api/config`, `/api/banks/:name`, `/api/validate`).
-- The importer supports **bearer-token auth** (`POST /auth/token` →
-  `Authorization: Bearer`) for non-browser clients — this app uses it.
+- The importer supports **browser sign-in for apps** (`/auth/app/authorize` →
+  `/auth/app/token`) — this app uses it, so the portal password is never typed
+  into the app.
 - You reach your importer over a **private tunnel** (Tailscale recommended); the
   credential-editing API is never exposed to the public internet.
 - Optionally acts as the importer's **OTP channel**: when a bank needs a
@@ -42,10 +43,31 @@ leave your machine and never touch a third-party cloud.
 ## Requirements
 
 - **Node.js 22+** and the [Expo](https://docs.expo.dev/) toolchain (`npx expo`).
-- A **running importer** (v1.40.0+) with the config portal enabled, a portal
-  password set, and reachable from your phone over a private network.
+- A **running importer** (v1.41.0+) with the config portal enabled, app sign-in
+  turned on (`portal.app.enabled`), and reachable from your phone over a private
+  network.
 - For device builds: an **Expo account** (`EXPO_TOKEN`) and, to publish, Apple
   ($99/yr) and/or Google Play ($25) developer accounts.
+
+## Signing in
+
+1. Enter your importer's address and tap **Sign in**.
+2. Your phone's browser opens **your importer's own login page**. Complete
+   whatever it asks for — Google, a password, or both.
+3. The browser hands control back to the app, which receives a token pair.
+
+The app never sees your portal password, and it does not store one. What it
+keeps is a refresh token in the device secure store (iOS Keychain / Android
+Keystore). That token only works against this one importer, it is replaced every
+time it is used, and you can end it at any time from the portal's app-sessions
+list — the next renewal on that device then fails and the app returns to the
+sign-in screen.
+
+Renewal is guarded by Face ID / fingerprint. A device with no screen lock cannot
+protect a long-lived token, so on those devices the app signs out rather than
+renewing silently.
+
+Upgrading from an older version deletes the portal password it used to store.
 
 ## Quick start
 
@@ -201,7 +223,9 @@ user cannot act on.
   spring sheets, and skeleton loaders (all reduced-motion aware).
 - ✅ **Navigation & home** — persistent bottom tab bar + glanceable home dashboard.
 - ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
-- ✅ **Seamless reconnect** — biometric quick unlock + silent re-auth on session expiry.
+- ✅ **Seamless reconnect** — biometric-guarded token renewal on session expiry.
+- ✅ **Browser sign-in** — the portal authenticates the user; the app never
+  stores a password.
 
 ## Releasing a beta
 

@@ -1,8 +1,10 @@
 /**
- * Session-expired banner: a friendly, non-blocking overlay shown when the 12h
- * token expired and silent re-auth was unavailable or declined. Offers a single
- * tap to unlock (biometric quick-unlock) or reconnect (re-enter the password),
- * instead of leaving the user staring at failed requests.
+ * Session-expired banner: a friendly, non-blocking overlay shown when the
+ * session could not be renewed silently. Offers a single tap to unlock, instead
+ * of leaving the user staring at failed requests.
+ *
+ * A session that ended for good never reaches here — the app returns to the
+ * connect screen instead, because unlocking cannot bring it back.
  */
 import { type ReactElement, useState } from 'react';
 
@@ -15,7 +17,7 @@ import { haptics } from '../lib/haptics';
  * @returns The banner element, or null when not needed.
  */
 export function ReconnectBanner(): ReactElement | null {
-  const { sessionExpired, quickUnlockEnabled, reauthenticate, disconnect } = useAuth();
+  const { sessionExpired, reauthenticate } = useAuth();
   const [busy, setBusy] = useState(false);
 
   if (!sessionExpired) {
@@ -25,12 +27,10 @@ export function ReconnectBanner(): ReactElement | null {
   const onReconnect = async (): Promise<void> => {
     setBusy(true);
     try {
-      if (quickUnlockEnabled) {
-        const result = await reauthenticate();
-        haptics[result ? 'success' : 'warning']();
-      } else {
-        await disconnect();
-      }
+      const result = await reauthenticate();
+      haptics[result ? 'success' : 'warning']();
+    } catch {
+      haptics.warning();
     } finally {
       setBusy(false);
     }
@@ -40,8 +40,8 @@ export function ReconnectBanner(): ReactElement | null {
     <TopBanner
       icon="lock-closed"
       title="Session expired"
-      detail={quickUnlockEnabled ? 'Unlock to reconnect securely.' : 'Reconnect to continue.'}
-      actionTitle={quickUnlockEnabled ? 'Unlock' : 'Reconnect'}
+      detail="Unlock to reconnect securely."
+      actionTitle="Unlock"
       busy={busy}
       onPress={() => {
         void onReconnect();

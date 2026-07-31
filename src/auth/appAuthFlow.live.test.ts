@@ -49,7 +49,43 @@ function toBase64(bytes: Uint8Array): string {
   return encoded;
 }
 
-const mockBrowser = { redirectUrl: '' };
+const mockBrowser = { redirectUrl: '', factors: '' };
+const mockJar = new Map<string, string>();
+
+/**
+ * Stores every cookie a response sets.
+ *
+ * One response can set several, and reading the joined header keeps only the
+ * first - which silently drops the session cookie the Google callback issues
+ * alongside the one it clears.
+ * @param res - The response to read.
+ */
+function rememberCookies(res: Response): void {
+  const headers = res.headers as unknown as { getSetCookie?: () => string[] };
+  for (const entry of headers.getSetCookie?.() ?? []) {
+    const pair = entry.split(';')[0];
+    const split = pair.indexOf('=');
+    if (split > 0) {
+      mockJar.set(pair.slice(0, split).trim(), pair.slice(split + 1));
+    }
+  }
+}
+
+/**
+ * Issues a request carrying the collected cookies, the way a browser would.
+ * @param url - Where to go.
+ * @param init - Fetch options.
+ * @returns The response, with any new cookies already stored.
+ */
+async function hop(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = { ...(init.headers as Record<string, string> | undefined) };
+  if (mockJar.size > 0) {
+    headers.cookie = [...mockJar].map(([name, value]) => `${name}=${value}`).join('; ');
+  }
+  const res = await fetch(url, { ...init, headers, redirect: 'manual' });
+  rememberCookies(res);
+  return res;
+}
 
 /**
  * Produces random bytes the way the native module would.
@@ -97,18 +133,35 @@ jest.mock('expo-web-browser', () => ({
 }));
 
 /**
- * Signs in to the portal over HTTP and follows the authorize redirect.
+ * Satisfies the Google factor through whatever identity provider the portal is
+ * pointed at.
  *
- * This stands in for the system browser: it collects the portal's session
- * cookie the same way a browser would, then replays the authorize request the
- * app built, unchanged.
- * @param authorizeUrl - The authorization URL the app produced.
- * @returns A browser-shaped result carrying the redirect.
+ * The consent page is fetched and its approve link followed, which is all a
+ * person does on that screen.
  */
-async function mockSignInThroughPortal(
-  authorizeUrl: string,
-): Promise<{ type: string; url?: string }> {
-  const login = await fetch(`${BASE}/auth/login`, {
+async function satisfyGoogle(): Promise<void> {
+  const start = await hop(`${BASE}/auth/google`);
+  const consentUrl = start.headers.get('location') ?? '';
+  if (!consentUrl) {
+    throw new Error(`Portal did not redirect to an identity provider (${String(start.status)}).`);
+  }
+  const consent = await fetch(consentUrl);
+  const page = await consent.text();
+  const link = /href="([^"]+)"/.exec(page)?.[1];
+  if (!link) {
+    throw new Error('Consent page carried no approve link.');
+  }
+  const callback = await hop(link.replace(/&amp;/g, '&'));
+  if (callback.status >= 400) {
+    throw new Error(`Google callback rejected (${String(callback.status)}).`);
+  }
+}
+
+/**
+ * Satisfies the password factor.
+ */
+async function satisfyPassword(): Promise<void> {
+  const login = await hop(`${BASE}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ password: PASSWORD }),
@@ -116,8 +169,36 @@ async function mockSignInThroughPortal(
   if (!login.ok) {
     throw new Error(`Portal login failed (${String(login.status)}).`);
   }
-  const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
-  const authorized = await fetch(authorizeUrl, { headers: { cookie }, redirect: 'manual' });
+}
+
+/**
+ * Signs in to the portal over HTTP and follows the authorize redirect.
+ *
+ * This stands in for the system browser: it satisfies whatever factors the
+ * portal currently demands, then replays the authorize request the app built,
+ * unchanged.
+ * @param authorizeUrl - The authorization URL the app produced.
+ * @returns A browser-shaped result carrying the redirect.
+ */
+async function mockSignInThroughPortal(
+  authorizeUrl: string,
+): Promise<{ type: string; url?: string }> {
+  mockJar.clear();
+  const status = (await (await fetch(`${BASE}/auth/status`)).json()) as { authMode?: string };
+  if (status.authMode === 'google' || status.authMode === 'both') {
+    await satisfyGoogle();
+  }
+  if (status.authMode === 'password' || status.authMode === 'both') {
+    await satisfyPassword();
+  }
+
+  const settled = (await (await hop(`${BASE}/auth/status`)).json()) as {
+    google?: boolean;
+    password?: boolean;
+  };
+  mockBrowser.factors = `google=${String(settled.google)} password=${String(settled.password)}`;
+
+  const authorized = await hop(authorizeUrl);
   const location = authorized.headers.get('location') ?? '';
   mockBrowser.redirectUrl = location;
   return location.startsWith('bankimporter://')
@@ -131,6 +212,7 @@ describeLive('app sign-in against a live portal', () => {
   it('completes the flow and returns a usable access token', async () => {
     const tokens = await signIn(BASE);
 
+    expect(mockBrowser.factors).toBe('google=true password=true');
     expect(mockBrowser.redirectUrl.startsWith('bankimporter://auth?')).toBe(true);
     expect(tokens.accessToken.length).toBeGreaterThan(0);
     expect(tokens.refreshToken.length).toBeGreaterThan(0);
@@ -159,5 +241,24 @@ describeLive('app sign-in against a live portal', () => {
     await refreshTokens(BASE, first.refreshToken);
 
     await expect(refreshTokens(BASE, first.refreshToken)).rejects.toThrow(SESSION_ENDED);
+  }, 60_000);
+
+  it('stops working once the device is revoked from the portal', async () => {
+    const tokens = await signIn(BASE);
+    const sessions = (await (
+      await fetch(`${BASE}/api/app/sessions`, {
+        headers: { authorization: `Bearer ${tokens.accessToken}` },
+      })
+    ).json()) as { id: string; current: boolean }[];
+    const current = sessions.find((entry) => entry.current);
+    expect(current).toBeDefined();
+
+    const revoked = await fetch(`${BASE}/api/app/sessions/${String(current?.id)}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${tokens.accessToken}` },
+    });
+    expect(revoked.status).toBe(200);
+
+    await expect(refreshTokens(BASE, tokens.refreshToken)).rejects.toThrow(SESSION_ENDED);
   }, 60_000);
 });

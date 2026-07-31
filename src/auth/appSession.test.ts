@@ -31,6 +31,13 @@ const CONNECTION: Connection = {
   expiresAt: 2_000_000_000_000,
 };
 
+const ROTATED: Connection = {
+  baseUrl: CONNECTION.baseUrl,
+  accessToken: 'access-2',
+  refreshToken: 'refresh-2',
+  expiresAt: 2_000_000_900_000,
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUnlock.mockResolvedValue({ status: 'success' });
@@ -38,7 +45,6 @@ beforeEach(() => {
     accessToken: 'access-2',
     refreshToken: 'refresh-2',
     expiresAt: 2_000_000_900_000,
-    sessionId: 'session-1',
   });
 });
 
@@ -68,21 +74,20 @@ describe('isExpiring', () => {
 describe('refreshConnection when the user unlocks', () => {
   it('rotates the tokens and stores the result', async () => {
     const outcome = await refreshConnection(CONNECTION);
-    expect(outcome).toEqual({
-      status: 'refreshed',
-      connection: {
-        baseUrl: CONNECTION.baseUrl,
-        accessToken: 'access-2',
-        refreshToken: 'refresh-2',
-        expiresAt: 2_000_000_900_000,
-      },
-    });
+    expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
     expect(mockedSave).toHaveBeenCalledTimes(1);
+    expect(mockedSave).toHaveBeenCalledWith(ROTATED);
   });
 
   it('spends the stored refresh token against the stored address', async () => {
     await refreshConnection(CONNECTION);
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
+  });
+
+  it('keeps the rotated pair when the secure store refuses the write', async () => {
+    mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
+    const outcome = await refreshConnection(CONNECTION);
+    expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
   });
 });
 

@@ -77,18 +77,25 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
   if (unlock.status !== 'success') {
     return { status: 'declined', message: 'Unlock to reconnect to your importer.' };
   }
+  let next: Connection;
   try {
     const tokens = await refreshTokens(connection.baseUrl, connection.refreshToken);
-    const next: Connection = {
+    next = {
       baseUrl: connection.baseUrl,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
     };
-    await saveConnection(next);
-    return { status: 'refreshed', connection: next };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not reconnect.';
     return { status: endedBy(message), message };
   }
+  try {
+    await saveConnection(next);
+  } catch {
+    // The old refresh token is already spent, so a failed write must not be
+    // reported as a refusal: the caller keeps the rotated pair for this run
+    // rather than replaying a token the portal has retired.
+  }
+  return { status: 'refreshed', connection: next };
 }

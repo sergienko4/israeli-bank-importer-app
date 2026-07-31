@@ -157,7 +157,7 @@ You only do this once. From then on the app updates itself — see
 A sideloaded app gets no store to update it, so the app looks after itself.
 
 - **JavaScript changes** (most releases) ship as an
-  [EAS Update](https://docs.expo.dev/versions/v54.0.0/sdk/updates/). The app
+  [EAS Update](https://docs.expo.dev/versions/v57.0.0/sdk/updates/). The app
   checks on launch, downloads in the background, and then shows a **Restart to
   update** banner. Nothing is swapped out mid-session — the update applies only
   when you tap it, or on the next cold start.
@@ -217,7 +217,7 @@ user cannot act on.
 - ✅ **Phase 2** — manifest-driven config editing + banks/targets (mirrors the web portal).
 - ✅ **Phase 3** — read-only import status from the importer's audit log.
 - ✅ **Phase 4** — native push notifications on import completion (deep-links to status).
-- ✅ **Design system** — themed tokens + reusable UI kit (Expo SDK 54).
+- ✅ **Design system** — themed tokens + reusable UI kit (Expo SDK 57).
 - ✅ **Per-bank schema fix** — the banks editor scopes to each bank's own fields.
 - ✅ **Native motion** — press micro-interactions, direction-aware navigation,
   spring sheets, and skeleton loaders (all reduced-motion aware).

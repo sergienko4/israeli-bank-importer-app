@@ -250,8 +250,9 @@ export default tseslint.config(
 
   // 4b. Grandfathered: eslint-config-expo 56 turned on the React Compiler's
   //     `react-hooks/refs` and `react-hooks/set-state-in-effect`. Those two
-  //     rules found five sites that predate them, listed file by file so the
-  //     rules keep guarding every other file and anything written from here on.
+  //     rules found five sites across the four files below (AppShell trips
+  //     both rules), so the list is per file and every other file stays
+  //     covered, as does anything written from here on.
   //
   //     Each one needs a design decision rather than a mechanical edit, and
   //     these are animation and navigation internals with no test around them,

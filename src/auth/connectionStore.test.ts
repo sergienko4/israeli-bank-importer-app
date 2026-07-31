@@ -31,18 +31,27 @@ const CONNECTION: Connection = {
   expiresAt: 1_700_000_000_000,
 };
 
+/**
+ * Backs the secure-store mock with a plain record for the current test.
+ * @returns The record the mock reads from and writes to.
+ */
+function wireSecureStore(): Record<string, string> {
+  const store: Record<string, string> = {};
+  mocked.setItemAsync.mockImplementation(async (key: string, value: string) => {
+    store[key] = value;
+  });
+  mocked.getItemAsync.mockImplementation(async (key: string) => store[key] ?? null);
+  mocked.deleteItemAsync.mockImplementation(async (key: string) => {
+    delete store[key];
+  });
+  return store;
+}
+
 describe('connectionStore', () => {
   let store: Record<string, string>;
 
   beforeEach(() => {
-    store = {};
-    mocked.setItemAsync.mockImplementation(async (key: string, value: string) => {
-      store[key] = value;
-    });
-    mocked.getItemAsync.mockImplementation(async (key: string) => store[key] ?? null);
-    mocked.deleteItemAsync.mockImplementation(async (key: string) => {
-      delete store[key];
-    });
+    store = wireSecureStore();
   });
 
   it('round-trips a saved connection', async () => {
@@ -60,8 +69,14 @@ describe('connectionStore', () => {
   });
 
   it.each([
+    ['no address', { accessToken: 'a', refreshToken: 'r', expiresAt: 1 }],
+    ['no access token', { baseUrl: 'https://h', refreshToken: 'r', expiresAt: 1 }],
     ['no refresh token', { baseUrl: 'https://h', accessToken: 'a', expiresAt: 1 }],
     ['no expiry', { baseUrl: 'https://h', accessToken: 'a', refreshToken: 'r' }],
+    [
+      'a non-numeric expiry',
+      { baseUrl: 'https://h', accessToken: 'a', refreshToken: 'r', expiresAt: '1' },
+    ],
     ['the old v1 shape', { baseUrl: 'https://h', token: 't' }],
   ])('returns null for an entry with %s', async (_label, entry) => {
     store[V2_KEY] = JSON.stringify(entry);
@@ -92,14 +107,7 @@ describe('migrateLegacySecrets', () => {
   let store: Record<string, string>;
 
   beforeEach(() => {
-    store = {};
-    mocked.setItemAsync.mockImplementation(async (key: string, value: string) => {
-      store[key] = value;
-    });
-    mocked.getItemAsync.mockImplementation(async (key: string) => store[key] ?? null);
-    mocked.deleteItemAsync.mockImplementation(async (key: string) => {
-      delete store[key];
-    });
+    store = wireSecureStore();
   });
 
   it('removes the stored portal password', async () => {

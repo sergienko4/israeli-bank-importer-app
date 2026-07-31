@@ -39,7 +39,7 @@ export async function saveConnection(connection: Connection): Promise<void> {
  * @param parsed - The parsed entry.
  * @returns True when the entry is a complete connection.
  */
-function isComplete(parsed: Partial<Connection>): boolean {
+function isComplete(parsed: Partial<Connection>): parsed is Connection {
   return (
     typeof parsed.baseUrl === 'string' &&
     typeof parsed.accessToken === 'string' &&
@@ -63,7 +63,7 @@ export async function loadConnection(): Promise<Connection | null> {
   try {
     const parsed = JSON.parse(raw) as Partial<Connection>;
     if (isComplete(parsed)) {
-      return parsed as Connection;
+      return parsed;
     }
   } catch {
     // A corrupt entry is treated as "no connection" rather than crashing launch.

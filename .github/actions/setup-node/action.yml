@@ -6,12 +6,12 @@ description: >
 runs:
   using: composite
   steps:
-    # Contributors behind a corporate npm mirror keep their own `registry=` in
-    # ~/.npmrc, which is why this repo intentionally ships no .npmrc. CI has
-    # unrestricted egress and must therefore use the same public registry that
-    # package-lock.json resolves against - enforced by scripts/lint-lockfile.mjs.
-    # Writing to $GITHUB_ENV exports it to every later step in the calling job,
-    # so `npx` and `eas` pick it up too, not just the `npm ci` below.
+    # package-lock.json resolves every tarball against the public registry, and
+    # scripts/lint-lockfile.mjs enforces it. A corporate mirror that lags the
+    # public registry therefore cannot satisfy the lockfile - it reports the
+    # newest package versions as unpublished. The committed .npmrc points the
+    # install at the registry the lockfile was built from; this exports the same
+    # value to $GITHUB_ENV so later steps, `npx`, and `eas` see it too.
     - name: Pin the npm registry for this job
       shell: bash
       run: echo 'NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' >> "$GITHUB_ENV"

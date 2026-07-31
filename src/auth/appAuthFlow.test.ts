@@ -64,7 +64,6 @@ const TOKEN_BODY = {
   refreshToken: 'refresh-1',
   expiresIn: 900,
   tokenType: 'Bearer',
-  sessionId: 'session-1',
 };
 
 const realFetch = globalThis.fetch;
@@ -143,7 +142,7 @@ describe('signIn authorization request', () => {
     );
   });
 
-  it('refuses a clear-text address outside the private ranges', async () => {
+  it('refuses a plain http address', async () => {
     await expect(signIn('http://example.com')).rejects.toThrow('Use https://');
     expect(mockBrowser.openedUrl).toBe('');
   });
@@ -155,7 +154,6 @@ describe('signIn token exchange', () => {
     const tokens = await signIn(BASE);
     expect(tokens.accessToken).toBe('access-1');
     expect(tokens.refreshToken).toBe('refresh-1');
-    expect(tokens.sessionId).toBe('session-1');
     expect(tokens.expiresAt).toBeGreaterThanOrEqual(before + 900_000);
   });
 
@@ -199,6 +197,30 @@ describe('signIn when the redirect is not ours', () => {
     expect(fetchCalls).toHaveLength(0);
   });
 
+  it.each(['bankimporter://authorize.evil', 'bankimporter://authx'])(
+    'refuses %s, which only starts like our redirect',
+    async (lookalike) => {
+      mockBrowser.result = {
+        type: 'success',
+        get url(): string {
+          return `${lookalike}?code=the-code&state=${openedState()}`;
+        },
+      };
+      await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+      expect(fetchCalls).toHaveLength(0);
+    },
+  );
+
+  it('accepts a redirect that carries a path under our host', async () => {
+    mockBrowser.result = {
+      type: 'success',
+      get url(): string {
+        return `${REDIRECT_URI}/done?code=the-code&state=${openedState()}`;
+      },
+    };
+    await expect(signIn(BASE)).resolves.toMatchObject({ accessToken: 'access-1' });
+  });
+
   it('refuses a mismatched state without touching the network', async () => {
     mockBrowser.result = { type: 'success', url: `${REDIRECT_URI}?code=x&state=not-ours` };
     await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
@@ -211,9 +233,10 @@ describe('signIn when the redirect is not ours', () => {
     expect(fetchCalls).toHaveLength(0);
   });
 
-  it('surfaces an error the portal reported', async () => {
-    replyWithRedirect({ error: 'invalid_redirect_uri' });
-    await expect(signIn(BASE)).rejects.toThrow('invalid_redirect_uri');
+  it('reports a portal error without repeating what it said', async () => {
+    replyWithRedirect({ error: 'anything-the-browser-put-here' });
+    await expect(signIn(BASE)).rejects.toThrow('The importer refused the sign-in.');
+    await expect(signIn(BASE)).rejects.not.toThrow('anything-the-browser-put-here');
     expect(fetchCalls).toHaveLength(0);
   });
 
@@ -236,17 +259,10 @@ describe('signIn when the portal refuses the code', () => {
   });
 
   it.each([
-    ['no access token', { refreshToken: 'r', expiresIn: 900, sessionId: 's' }],
-    ['no refresh token', { accessToken: 'a', expiresIn: 900, sessionId: 's' }],
-    [
-      'an empty access token',
-      { accessToken: '', refreshToken: 'r', expiresIn: 900, sessionId: 's' },
-    ],
-    [
-      'a non-numeric lifetime',
-      { accessToken: 'a', refreshToken: 'r', expiresIn: '900', sessionId: 's' },
-    ],
-    ['no session id', { accessToken: 'a', refreshToken: 'r', expiresIn: 900 }],
+    ['no access token', { refreshToken: 'r', expiresIn: 900 }],
+    ['no refresh token', { accessToken: 'a', expiresIn: 900 }],
+    ['an empty access token', { accessToken: '', refreshToken: 'r', expiresIn: 900 }],
+    ['a non-numeric lifetime', { accessToken: 'a', refreshToken: 'r', expiresIn: '900' }],
   ])('refuses a body with %s', async (_label, body) => {
     stubFetch(200, body);
     await expect(signIn(BASE)).rejects.toThrow('Unexpected response from the importer.');

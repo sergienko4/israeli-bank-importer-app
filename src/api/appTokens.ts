@@ -8,6 +8,7 @@
  * is genuine. That is why a 400 here means "sign in again" and never "retry".
  */
 import { normalizeBaseUrl } from './importerClient';
+import { timedFetch } from './timedFetch';
 
 /**
  * What the portal says when a refresh token is revoked, replayed, or expired.
@@ -23,7 +24,6 @@ export interface AppTokens {
   accessToken: string;
   refreshToken: string;
   expiresAt: number;
-  sessionId: string;
 }
 
 /** The token payload shape, before any of it is trusted. */
@@ -31,7 +31,19 @@ export interface TokenBody {
   accessToken?: unknown;
   refreshToken?: unknown;
   expiresIn?: unknown;
-  sessionId?: unknown;
+}
+
+/**
+ * Reports whether a lifetime can be turned into a usable deadline.
+ *
+ * A `NaN` lifetime would produce a `NaN` deadline, and every later comparison
+ * against it reads as "not expiring" — so the app would keep an access token it
+ * can no longer use and never renew it.
+ * @param expiresIn - The lifetime the portal reported, in seconds.
+ * @returns True when the value is a finite, positive number.
+ */
+function isUsableLifetime(expiresIn: unknown): expiresIn is number {
+  return typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0;
 }
 
 /**
@@ -44,14 +56,13 @@ export interface TokenBody {
  * @throws Error when any field is missing or has the wrong type.
  */
 export function toAppTokens(body: TokenBody): AppTokens {
-  const { accessToken, refreshToken, expiresIn, sessionId } = body;
+  const { accessToken, refreshToken, expiresIn } = body;
   const isUsable =
     typeof accessToken === 'string' &&
     accessToken.length > 0 &&
     typeof refreshToken === 'string' &&
     refreshToken.length > 0 &&
-    typeof expiresIn === 'number' &&
-    typeof sessionId === 'string';
+    isUsableLifetime(expiresIn);
   if (!isUsable) {
     throw new Error('Unexpected response from the importer.');
   }
@@ -59,7 +70,6 @@ export function toAppTokens(body: TokenBody): AppTokens {
     accessToken,
     refreshToken,
     expiresAt: Date.now() + expiresIn * 1000,
-    sessionId,
   };
 }
 
@@ -72,7 +82,7 @@ export function toAppTokens(body: TokenBody): AppTokens {
  *   must clear the stored connection rather than retry.
  */
 export async function refreshTokens(baseUrl: string, refreshToken: string): Promise<AppTokens> {
-  const res = await fetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, {
+  const res = await timedFetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ refreshToken }),

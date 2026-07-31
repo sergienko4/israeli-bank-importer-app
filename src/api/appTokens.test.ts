@@ -39,7 +39,6 @@ describe('refreshTokens', () => {
       accessToken: 'access-2',
       refreshToken: 'refresh-2',
       expiresIn: 900,
-      sessionId: 'session-1',
     });
     const tokens = await refreshTokens(BASE, 'refresh-1');
     expect(tokens.accessToken).toBe('access-2');
@@ -51,7 +50,6 @@ describe('refreshTokens', () => {
       accessToken: 'a',
       refreshToken: 'b',
       expiresIn: 900,
-      sessionId: 's',
     });
     await refreshTokens(BASE, 'refresh-1');
     const sent = calls[0].init?.body as string;
@@ -60,7 +58,7 @@ describe('refreshTokens', () => {
   });
 
   it('normalizes the address before calling', async () => {
-    stubFetch(200, { accessToken: 'a', refreshToken: 'b', expiresIn: 900, sessionId: 's' });
+    stubFetch(200, { accessToken: 'a', refreshToken: 'b', expiresIn: 900 });
     await refreshTokens('importer.example.ts.net/', 'refresh-1');
     expect(calls[0].url).toBe('https://importer.example.ts.net/auth/app/refresh');
   });
@@ -87,7 +85,7 @@ describe('refreshTokens', () => {
   });
 
   it('refuses a body that is missing a token', async () => {
-    stubFetch(200, { accessToken: 'a', expiresIn: 900, sessionId: 's' });
+    stubFetch(200, { accessToken: 'a', expiresIn: 900 });
     await expect(refreshTokens(BASE, 'refresh-1')).rejects.toThrow(
       'Unexpected response from the importer.',
     );
@@ -101,9 +99,19 @@ describe('toAppTokens', () => {
       accessToken: 'a',
       refreshToken: 'b',
       expiresIn: 900,
-      sessionId: 's',
     });
     expect(tokens.expiresAt).toBeGreaterThanOrEqual(before + 900_000);
     expect(tokens.expiresAt).toBeLessThanOrEqual(Date.now() + 900_000);
+  });
+
+  it.each([
+    ['not a number', Number.NaN],
+    ['infinite', Number.POSITIVE_INFINITY],
+    ['negative', -900],
+    ['zero', 0],
+  ])('refuses a lifetime that is %s', (_label, expiresIn) => {
+    expect(() => toAppTokens({ accessToken: 'a', refreshToken: 'b', expiresIn })).toThrow(
+      'Unexpected response from the importer.',
+    );
   });
 });

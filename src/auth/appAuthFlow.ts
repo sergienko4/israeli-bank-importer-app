@@ -2,8 +2,8 @@
  * Browser sign-in against the importer's portal.
  *
  * The app never sees the portal password. It sends the user to the portal in
- * the system browser, where they satisfy whatever the portal requires Ã¢â‚¬â€ Google,
- * a password, or both Ã¢â‚¬â€ and the portal hands back a one-time code on the app's
+ * the system browser, where they satisfy whatever the portal requires — Google,
+ * a password, or both — and the portal hands back a one-time code on the app's
  * own scheme. The code is only useful together with the PKCE verifier this
  * module keeps in memory, so a malicious app that intercepts the redirect gains
  * nothing.
@@ -17,10 +17,32 @@ import * as WebBrowser from 'expo-web-browser';
 
 import { type AppTokens, toAppTokens, type TokenBody } from '../api/appTokens';
 import { normalizeBaseUrl } from '../api/importerClient';
+import { timedFetch } from '../api/timedFetch';
 import { createPkcePair, createState } from './pkce';
 
 /** Where the portal sends the browser back to. Must match `expo.scheme`. */
 export const REDIRECT_URI = 'bankimporter://auth';
+
+/** What may follow the redirect target: a path, a query, or a fragment. */
+const REDIRECT_BOUNDARIES = new Set(['/', '?', '#']);
+
+/**
+ * Reports whether a URL addresses this app's redirect and not a lookalike.
+ *
+ * A plain prefix test is not enough: `bankimporter://authorize.evil` starts
+ * with the redirect target but names a different host, and the operating
+ * system delivers it here all the same because the scheme matches. The
+ * character after the prefix has to end the host for the URL to be ours.
+ * @param url - The URL the browser handed back.
+ * @returns True when the URL targets this app's redirect.
+ */
+function isOurRedirect(url: string): boolean {
+  if (!url.startsWith(REDIRECT_URI)) {
+    return false;
+  }
+  const next = url.charAt(REDIRECT_URI.length);
+  return next === '' || REDIRECT_BOUNDARIES.has(next);
+}
 
 /** Device names are shown in the portal's session list, so they stay short. */
 const DEVICE_NAME_MAX = 64;
@@ -67,7 +89,7 @@ function authorizeUrl(baseUrl: string, challenge: string, state: string): string
 async function awaitRedirect(url: string): Promise<string> {
   const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI);
   if ('url' in result) {
-    if (!result.url.startsWith(REDIRECT_URI)) {
+    if (!isOurRedirect(result.url)) {
       throw new Error('Sign-in could not be verified.');
     }
     return result.url;
@@ -94,6 +116,10 @@ function single(params: Record<string, string | string[] | undefined> | null, ke
  *
  * The state is checked first: if it does not match, the redirect did not come
  * from the sign-in this app started, and its code is never sent anywhere.
+ *
+ * A reported error is answered with a fixed message. The value arrives from the
+ * browser, so displaying it verbatim would let whatever opened that redirect
+ * put arbitrary text in front of the user inside the app.
  * @param redirectUrl - The URL the browser handed back.
  * @param state - The state value this sign-in generated.
  * @returns The authorization code.
@@ -104,7 +130,7 @@ function codeFrom(redirectUrl: string, state: string): string {
   const { queryParams } = Linking.parse(redirectUrl);
   const reported = single(queryParams, 'error');
   if (reported.length > 0) {
-    throw new Error(reported);
+    throw new Error('The importer refused the sign-in.');
   }
   if (single(queryParams, 'state') !== state) {
     throw new Error('Sign-in could not be verified.');
@@ -143,7 +169,7 @@ function tokenError(status: number): Error {
  * @throws Error carrying a user-facing message when the portal refuses.
  */
 async function redeem(baseUrl: string, code: string, verifier: string): Promise<AppTokens> {
-  const res = await fetch(`${baseUrl}/auth/app/token`, {
+  const res = await timedFetch(`${baseUrl}/auth/app/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: REDIRECT_URI }),

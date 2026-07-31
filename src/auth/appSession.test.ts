@@ -8,12 +8,15 @@
  * reported as ended rather than retried, because a client that keeps knocking
  * defeats the point of revoking a device.
  */
-import { refreshTokens } from '../api/appTokens';
+import { refreshTokens, SESSION_ENDED } from '../api/appTokens';
 import { authenticateBiometric } from '../lib/biometrics';
 import { isExpiring, REFRESH_MARGIN_MS, refreshConnection, toSession } from './appSession';
 import { type Connection, saveConnection } from './connectionStore';
 
-jest.mock('../api/appTokens', () => ({ refreshTokens: jest.fn() }));
+jest.mock('../api/appTokens', () => ({
+  ...jest.requireActual<Record<string, unknown>>('../api/appTokens'),
+  refreshTokens: jest.fn(),
+}));
 jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
 jest.mock('./connectionStore', () => ({ saveConnection: jest.fn() }));
 
@@ -102,7 +105,7 @@ describe('refreshConnection when the user does not unlock', () => {
 
 describe('refreshConnection when the portal refuses', () => {
   it('treats an ended session as terminal', async () => {
-    mockedRefresh.mockRejectedValue(new Error('Session expired. Please sign in again.'));
+    mockedRefresh.mockRejectedValue(new Error(SESSION_ENDED));
     const outcome = await refreshConnection(CONNECTION);
     expect(outcome.status).toBe('ended');
     expect(mockedSave).not.toHaveBeenCalled();

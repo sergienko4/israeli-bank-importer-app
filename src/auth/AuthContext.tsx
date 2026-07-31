@@ -19,6 +19,7 @@ import {
 } from 'react';
 
 import {
+  normalizeBaseUrl,
   registerDevice,
   type Session,
   setReauthHandler,
@@ -95,13 +96,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
   const forget = useCallback(async () => {
     await clearConnection();
     setConnection(null);
+    setSessionExpired(false);
     setStatus('disconnected');
   }, []);
 
   const connect = useCallback(async (baseUrl: string) => {
     const tokens = await signIn(baseUrl);
     const next: Connection = {
-      baseUrl,
+      baseUrl: normalizeBaseUrl(baseUrl),
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
@@ -123,10 +125,11 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       setSessionExpired(false);
       return toSession(outcome.connection);
     }
-    setSessionExpired(true);
     if (outcome.status === 'ended') {
       await forget();
+      return null;
     }
+    setSessionExpired(true);
     return null;
   }, [connection, forget]);
 
@@ -152,11 +155,6 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     };
   }, [connection, reauthenticate]);
 
-  const disconnect = useCallback(async () => {
-    await forget();
-    setSessionExpired(false);
-  }, [forget]);
-
   const session = useMemo(() => (connection ? toSession(connection) : null), [connection]);
 
   const value = useMemo<AuthState>(
@@ -166,9 +164,9 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       sessionExpired,
       connect,
       reauthenticate,
-      disconnect,
+      disconnect: forget,
     }),
-    [status, session, sessionExpired, connect, reauthenticate, disconnect],
+    [status, session, sessionExpired, connect, reauthenticate, forget],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

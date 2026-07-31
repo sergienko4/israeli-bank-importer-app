@@ -12,7 +12,7 @@
  * because a system browser is the one thing a unit-test process cannot host —
  * that leg is covered on a device instead.
  */
-import { refreshTokens } from '../api/appTokens';
+import { refreshTokens, SESSION_ENDED } from '../api/appTokens';
 import { signIn } from './appAuthFlow';
 
 const BASE = String(process.env.LIVE_PORTAL_URL ?? '');
@@ -131,6 +131,7 @@ describeLive('app sign-in against a live portal', () => {
   it('completes the flow and returns a usable access token', async () => {
     const tokens = await signIn(BASE);
 
+    expect(mockBrowser.redirectUrl.startsWith('bankimporter://auth?')).toBe(true);
     expect(tokens.accessToken.length).toBeGreaterThan(0);
     expect(tokens.refreshToken.length).toBeGreaterThan(0);
     expect(tokens.expiresAt).toBeGreaterThan(Date.now());
@@ -157,12 +158,6 @@ describeLive('app sign-in against a live portal', () => {
     const first = await signIn(BASE);
     await refreshTokens(BASE, first.refreshToken);
 
-    await expect(refreshTokens(BASE, first.refreshToken)).rejects.toThrow(
-      'Session expired. Please sign in again.',
-    );
+    await expect(refreshTokens(BASE, first.refreshToken)).rejects.toThrow(SESSION_ENDED);
   }, 60_000);
-
-  it('lands on the app scheme rather than a portal page', () => {
-    expect(mockBrowser.redirectUrl.startsWith('bankimporter://auth?')).toBe(true);
-  });
 });

@@ -65,6 +65,8 @@ describe('normalizeBaseUrl', () => {
     'http://172.15.0.1:8080',
     'http://172.32.0.1:8080',
     'http://192.169.1.5:8080',
+    'http://010.0.0.1:8080',
+    'http://0177.0.0.1:8080',
   ])('refuses plain http for %s', (address) => {
     expect(() => normalizeBaseUrl(address)).toThrow(
       'Use https:// for addresses outside your home network.',

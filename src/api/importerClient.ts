@@ -50,6 +50,30 @@ function hostOf(address: string): string {
 }
 
 /**
+ * Parses one decimal octet.
+ *
+ * A leading zero means octal to the URL parser but decimal here, so `010.0.0.1`
+ * would look private while the request goes to 8.0.0.1. Such a part is refused
+ * rather than guessed at.
+ * @param part - One dot-separated part of the host.
+ * @returns The octet value, or null when the part is not a plain octet.
+ */
+function octetOf(part: string): number | null {
+  if (part.length === 0 || part.length > 3 || (part.length > 1 && part.startsWith('0'))) {
+    return null;
+  }
+  let value = 0;
+  for (const char of part) {
+    const digit = char.charCodeAt(0) - 48;
+    if (digit < 0 || digit > 9) {
+      return null;
+    }
+    value = value * 10 + digit;
+  }
+  return value > 255 ? null : value;
+}
+
+/**
  * Parses a dotted-quad IPv4 address.
  * @param host - The host to parse.
  * @returns The four octets, or null when the host is not an IPv4 literal.
@@ -61,21 +85,11 @@ function octetsOf(host: string): number[] | null {
   }
   const octets: number[] = [];
   for (const part of parts) {
-    if (part.length === 0 || part.length > 3) {
+    const octet = octetOf(part);
+    if (octet === null) {
       return null;
     }
-    let value = 0;
-    for (const char of part) {
-      const digit = char.charCodeAt(0) - 48;
-      if (digit < 0 || digit > 9) {
-        return null;
-      }
-      value = value * 10 + digit;
-    }
-    if (value > 255) {
-      return null;
-    }
-    octets.push(value);
+    octets.push(octet);
   }
   return octets;
 }

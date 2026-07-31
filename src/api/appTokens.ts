@@ -9,6 +9,15 @@
  */
 import { normalizeBaseUrl } from './importerClient';
 
+/**
+ * What the portal says when a refresh token is revoked, replayed, or expired.
+ *
+ * Exported because callers have to tell this apart from a temporary failure:
+ * retrying this one can never succeed, and a revoked device that keeps knocking
+ * is not revoked.
+ */
+export const SESSION_ENDED = 'Session expired. Please sign in again.';
+
 /** Tokens returned by the portal after a successful app sign-in. */
 export interface AppTokens {
   accessToken: string;
@@ -69,7 +78,7 @@ export async function refreshTokens(baseUrl: string, refreshToken: string): Prom
     body: JSON.stringify({ refreshToken }),
   });
   if (res.status === 400) {
-    throw new Error('Session expired. Please sign in again.');
+    throw new Error(SESSION_ENDED);
   }
   if (res.status === 429) {
     throw new Error('Too many attempts. Wait a minute and try again.');

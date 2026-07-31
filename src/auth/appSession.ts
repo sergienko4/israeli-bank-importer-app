@@ -6,7 +6,7 @@
  * apart from React so they can be reasoned about — and tested — without a
  * component around them.
  */
-import { refreshTokens } from '../api/appTokens';
+import { refreshTokens, SESSION_ENDED } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { authenticateBiometric } from '../lib/biometrics';
 import { type Connection, saveConnection } from './connectionStore';
@@ -54,7 +54,7 @@ export function isExpiring(connection: Connection, now: number = Date.now()): bo
  * @returns `ended` when the session is gone for good, `declined` otherwise.
  */
 function endedBy(message: string): 'ended' | 'declined' {
-  return message.startsWith('Session expired') ? 'ended' : 'declined';
+  return message === SESSION_ENDED ? 'ended' : 'declined';
 }
 
 /**

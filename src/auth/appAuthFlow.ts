@@ -62,9 +62,7 @@ function authorizeUrl(baseUrl: string, challenge: string, state: string): string
  * @throws Error when the user backed out or the browser could not complete.
  */
 async function awaitRedirect(url: string): Promise<string> {
-  const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI, {
-    preferEphemeralSession: true,
-  });
+  const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI);
   if ('url' in result) {
     return result.url;
   }

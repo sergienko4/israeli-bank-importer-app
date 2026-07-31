@@ -9,6 +9,8 @@ import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
 
+const HTTPS = 'https://';
+
 /**
  * Removes the trailing slashes a typed address often carries.
  *
@@ -44,7 +46,8 @@ export function normalizeBaseUrl(input: string): string {
   if (lowered.startsWith('http://')) {
     throw new Error('Use https:// — a plain http:// address cannot be reached.');
   }
-  return lowered.startsWith('https://') ? trimmed : `https://${trimmed}`;
+  const rest = lowered.startsWith(HTTPS) ? trimmed.slice(HTTPS.length) : trimmed;
+  return `${HTTPS}${rest}`;
 }
 
 /**
@@ -122,7 +125,8 @@ async function tryReauth(): Promise<Session | null> {
  *
  * A session close to expiry is renewed first. On a 401 it attempts a single
  * silent re-authentication and retries once, so a session that expired sooner
- * than expected still recovers without the caller handling it.
+ * than expected still recovers without the caller handling it. The retry reuses
+ * `init`, so a body must be a value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).

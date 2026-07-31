@@ -42,6 +42,10 @@ describe('normalizeBaseUrl', () => {
     expect(normalizeBaseUrl('  https://host:8080  ')).toBe('https://host:8080');
   });
 
+  it('lowercases the scheme without touching the rest', () => {
+    expect(normalizeBaseUrl('HTTPS://Host:8080')).toBe('https://Host:8080');
+  });
+
   it.each([
     'http://localhost:8080',
     'http://127.0.0.1:8080',

@@ -30,8 +30,8 @@ afterEach(() => {
 });
 
 describe('normalizeBaseUrl', () => {
-  it('adds http:// when no scheme is present', () => {
-    expect(normalizeBaseUrl('100.64.0.1:8080')).toBe('http://100.64.0.1:8080');
+  it('defaults to https when no scheme is present', () => {
+    expect(normalizeBaseUrl('host:8080')).toBe('https://host:8080');
   });
 
   it('keeps https and strips trailing slashes', () => {
@@ -39,7 +39,42 @@ describe('normalizeBaseUrl', () => {
   });
 
   it('trims surrounding whitespace', () => {
-    expect(normalizeBaseUrl('  http://host:8080  ')).toBe('http://host:8080');
+    expect(normalizeBaseUrl('  https://host:8080  ')).toBe('https://host:8080');
+  });
+
+  it.each([
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+    'http://10.0.0.4:8080',
+    'http://172.16.0.1:8080',
+    'http://172.31.255.255:8080',
+    'http://192.168.1.5:8080',
+    'http://100.64.0.0:8080',
+    'http://100.101.102.103:8080',
+    'http://100.127.255.255:8080',
+    'http://[::1]:8080',
+  ])('allows plain http for %s', (address) => {
+    expect(normalizeBaseUrl(address)).toBe(address);
+  });
+
+  it.each([
+    'http://example.com',
+    'http://8.8.8.8',
+    'http://100.63.255.255:8080',
+    'http://100.128.0.1:8080',
+    'http://172.15.0.1:8080',
+    'http://172.32.0.1:8080',
+    'http://192.169.1.5:8080',
+  ])('refuses plain http for %s', (address) => {
+    expect(() => normalizeBaseUrl(address)).toThrow(
+      'Use https:// for addresses outside your home network.',
+    );
+  });
+
+  it('classifies the host, not the path', () => {
+    expect(() => normalizeBaseUrl('http://example.com/127.0.0.1')).toThrow(
+      'Use https:// for addresses outside your home network.',
+    );
   });
 });
 

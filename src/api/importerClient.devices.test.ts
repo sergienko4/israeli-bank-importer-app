@@ -1,6 +1,6 @@
 import { registerDevice, type Session, unregisterDevice } from './importerClient';
 
-const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
+const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
 let calls: { url: string; method?: string }[] = [];
 const realFetch = globalThis.fetch;
 
@@ -40,7 +40,7 @@ describe('registerDevice', () => {
     stubFetch(200, { ok: true });
     const result = await registerDevice(session, 'ExponentPushToken[a]');
     expect(result.ok).toBe(true);
-    expect(calls[0].url).toBe('http://host:8080/api/devices');
+    expect(calls[0].url).toBe('https://host:8080/api/devices');
     expect(calls[0].method).toBe('POST');
   });
 

@@ -6,7 +6,7 @@ import {
   submitOtp,
 } from './importerClient';
 
-const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
+const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
 let calls: { url: string; method?: string; body?: string }[] = [];
 const realFetch = globalThis.fetch;
 
@@ -45,7 +45,7 @@ describe('getOtpSettings', () => {
   it('GETs the channel from /api/otp/settings', async () => {
     stubFetch(200, { channel: 'app' });
     await expect(getOtpSettings(session)).resolves.toEqual({ channel: 'app' });
-    expect(calls[0].url).toBe('http://host:8080/api/otp/settings');
+    expect(calls[0].url).toBe('https://host:8080/api/otp/settings');
   });
 
   it('throws on a failure status', async () => {
@@ -96,7 +96,7 @@ describe('submitOtp', () => {
     stubFetch(200, { ok: true });
     const result = await submitOtp(session, 'r1', '123456');
     expect(result.ok).toBe(true);
-    expect(calls[0].url).toBe('http://host:8080/api/otp/r1');
+    expect(calls[0].url).toBe('https://host:8080/api/otp/r1');
     expect(calls[0].method).toBe('POST');
     expect(calls[0].body).toContain('123456');
   });

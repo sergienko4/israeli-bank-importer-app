@@ -1,6 +1,6 @@
 import { getConfig, type Session, setReauthHandler } from './importerClient';
 
-const session: Session = { baseUrl: 'http://host:8080', token: 'old' };
+const session: Session = { baseUrl: 'https://host:8080', token: 'old' };
 const realFetch = globalThis.fetch;
 let authHeaders: (string | undefined)[] = [];
 
@@ -40,7 +40,7 @@ describe('silent re-auth on 401', () => {
       authHeaders.push(authOf(init));
       return Promise.resolve(call === 1 ? fakeResponse(401, {}) : fakeResponse(200, { ok: true }));
     }) as unknown as typeof fetch;
-    setReauthHandler(async () => ({ baseUrl: 'http://host:8080', token: 'fresh' }));
+    setReauthHandler(async () => ({ baseUrl: 'https://host:8080', token: 'fresh' }));
 
     await expect(getConfig(session)).resolves.toEqual({ ok: true });
     expect(authHeaders).toEqual(['Bearer old', 'Bearer fresh']);
@@ -64,7 +64,7 @@ describe('silent re-auth on 401', () => {
       call += 1;
       return Promise.resolve(fakeResponse(401, {}));
     });
-    setReauthHandler(async () => ({ baseUrl: 'http://host:8080', token: 'fresh' }));
+    setReauthHandler(async () => ({ baseUrl: 'https://host:8080', token: 'fresh' }));
 
     await expect(getConfig(session)).rejects.toThrow('Session expired');
     expect(call).toBe(2);

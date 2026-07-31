@@ -7,7 +7,7 @@ import {
   type Session,
 } from './importerClient';
 
-const session: Session = { baseUrl: 'http://host:8080', token: 'tok' };
+const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
 
 interface RecordedCall {
   url: string;
@@ -62,7 +62,7 @@ describe('getManifest', () => {
     stubFetch(200, { sections: [], banks: ['leumi'], bankRequirements: {} });
     const manifest = await getManifest(session);
     expect(manifest.banks).toEqual(['leumi']);
-    expect(calls[0].url).toBe('http://host:8080/api/manifest');
+    expect(calls[0].url).toBe('https://host:8080/api/manifest');
     expect(lastAuthHeader()).toBe('Bearer tok');
   });
 });
@@ -84,7 +84,7 @@ describe('saveConfig', () => {
     stubFetch(200, { ok: true });
     const result = await saveConfig(session, { a: 1 });
     expect(result.ok).toBe(true);
-    expect(calls[0].url).toBe('http://host:8080/api/config');
+    expect(calls[0].url).toBe('https://host:8080/api/config');
     expect(calls[0].init?.method).toBe('PUT');
   });
 

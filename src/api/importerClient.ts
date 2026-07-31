@@ -25,15 +25,124 @@ function withoutTrailingSlashes(value: string): string {
 }
 
 /**
+ * Extracts the host from an address that already carries a scheme.
+ *
+ * Written as a scan for the same reason as {@link withoutTrailingSlashes}: the
+ * address is user input, and a URL-shaped pattern is easy to make backtrack.
+ * @param address - An address beginning with `http://` or `https://`.
+ * @returns The lowercased host, without the port.
+ */
+function hostOf(address: string): string {
+  const afterScheme = address.slice(address.indexOf('://') + 3);
+  if (afterScheme.startsWith('[')) {
+    const close = afterScheme.indexOf(']');
+    return (close === -1 ? afterScheme : afterScheme.slice(0, close + 1)).toLowerCase();
+  }
+  let end = afterScheme.length;
+  for (let index = 0; index < afterScheme.length; index += 1) {
+    const char = afterScheme.charAt(index);
+    if (char === '/' || char === ':') {
+      end = index;
+      break;
+    }
+  }
+  return afterScheme.slice(0, end).toLowerCase();
+}
+
+/**
+ * Parses a dotted-quad IPv4 address.
+ * @param host - The host to parse.
+ * @returns The four octets, or null when the host is not an IPv4 literal.
+ */
+function octetsOf(host: string): number[] | null {
+  const parts = host.split('.');
+  if (parts.length !== 4) {
+    return null;
+  }
+  const octets: number[] = [];
+  for (const part of parts) {
+    if (part.length === 0 || part.length > 3) {
+      return null;
+    }
+    let value = 0;
+    for (const char of part) {
+      const digit = char.charCodeAt(0) - 48;
+      if (digit < 0 || digit > 9) {
+        return null;
+      }
+      value = value * 10 + digit;
+    }
+    if (value > 255) {
+      return null;
+    }
+    octets.push(value);
+  }
+  return octets;
+}
+
+/**
+ * Reports whether an IPv4 literal sits in a range that cannot be routed off the
+ * user's own network.
+ *
+ * `100.64.0.0/10` is the range Tailscale assigns, so reaching a node by its
+ * tailnet IP keeps working without a certificate.
+ * @param octets - The four octets of the address.
+ * @returns True when the address is loopback, RFC1918, or CGNAT.
+ */
+function isPrivateIPv4(octets: number[]): boolean {
+  const [first, second] = octets;
+  if (first === 127 || first === 10) {
+    return true;
+  }
+  if (first === 172) {
+    return second >= 16 && second <= 31;
+  }
+  if (first === 192) {
+    return second === 168;
+  }
+  return first === 100 && second >= 64 && second <= 127;
+}
+
+/**
+ * Reports whether plain HTTP is acceptable for a host.
+ * @param host - The lowercased host.
+ * @returns True when the host cannot leave the user's own network.
+ */
+function isPrivateHost(host: string): boolean {
+  if (host === 'localhost' || host === '::1' || host === '[::1]') {
+    return true;
+  }
+  const octets = octetsOf(host);
+  return octets ? isPrivateIPv4(octets) : false;
+}
+
+/**
  * Normalizes a user-typed address to an origin with a scheme and no trailing
- * slash, so `host:8080`, `http://host:8080`, and `http://host:8080/` all resolve
- * to the same base.
+ * slash, so `host:8080`, `https://host:8080`, and `https://host:8080/` all
+ * resolve to the same base.
+ *
+ * The default scheme is HTTPS because the portal is reached over
+ * `tailscale serve`, which terminates TLS. Plain HTTP is still accepted for
+ * addresses that cannot leave the user's own network, so local development and
+ * direct tailnet IPs keep working; anywhere else it would put the tokens on the
+ * wire in clear text.
  * @param input - The raw address the user typed.
  * @returns A normalized `scheme://host[:port]` base URL.
+ * @throws Error when plain HTTP is used for a host outside a private network.
  */
 export function normalizeBaseUrl(input: string): string {
   const trimmed = withoutTrailingSlashes(input.trim());
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith('https://')) {
+    return trimmed;
+  }
+  if (!lowered.startsWith('http://')) {
+    return `https://${trimmed}`;
+  }
+  if (isPrivateHost(hostOf(trimmed))) {
+    return trimmed;
+  }
+  throw new Error('Use https:// for addresses outside your home network.');
 }
 
 /**

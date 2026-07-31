@@ -15,6 +15,7 @@ import * as Device from 'expo-device';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
+import { type AppTokens, toAppTokens, type TokenBody } from '../api/appTokens';
 import { normalizeBaseUrl } from '../api/importerClient';
 import { createPkcePair, createState } from './pkce';
 
@@ -23,14 +24,6 @@ export const REDIRECT_URI = 'bankimporter://auth';
 
 /** Device names are shown in the portal's session list, so they stay short. */
 const DEVICE_NAME_MAX = 64;
-
-/** Tokens returned by the portal after a successful app sign-in. */
-export interface AppTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
-  sessionId: string;
-}
 
 /**
  * Names this device for the portal's session list.
@@ -135,43 +128,6 @@ function tokenError(status: number): Error {
     return new Error('Too many attempts. Wait a minute and try again.');
   }
   return new Error(`The importer returned an error (${String(status)}).`);
-}
-
-/** The token payload shape, before any of it is trusted. */
-interface TokenBody {
-  accessToken?: unknown;
-  refreshToken?: unknown;
-  expiresIn?: unknown;
-  sessionId?: unknown;
-}
-
-/**
- * Validates a token response and stamps it with an absolute expiry.
- *
- * The portal sends a lifetime in seconds; the app stores a wall-clock deadline
- * so a refresh can be scheduled without tracking when the response arrived.
- * @param body - The parsed response body.
- * @returns The validated tokens.
- * @throws Error when any field is missing or the wrong type.
- */
-export function toAppTokens(body: TokenBody): AppTokens {
-  const { accessToken, refreshToken, expiresIn, sessionId } = body;
-  const isUsable =
-    typeof accessToken === 'string' &&
-    accessToken.length > 0 &&
-    typeof refreshToken === 'string' &&
-    refreshToken.length > 0 &&
-    typeof expiresIn === 'number' &&
-    typeof sessionId === 'string';
-  if (!isUsable) {
-    throw new Error('Unexpected response from the importer.');
-  }
-  return {
-    accessToken,
-    refreshToken,
-    expiresAt: Date.now() + expiresIn * 1000,
-    sessionId,
-  };
 }
 
 /**

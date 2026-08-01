@@ -10,7 +10,7 @@
     "scheme": "bankimporter",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sergienko4.israelibankimporter"

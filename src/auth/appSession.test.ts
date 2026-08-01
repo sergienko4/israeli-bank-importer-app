@@ -108,6 +108,27 @@ describe('refreshConnection when the user does not unlock', () => {
   });
 });
 
+describe('the message on a terminal outcome', () => {
+  // Ending the session returns the user to the connect screen, which shows this
+  // message. Without one they would arrive there with no idea what happened.
+  it('names the fix when the device has no screen lock', async () => {
+    mockedUnlock.mockResolvedValue({ status: 'unsupported' });
+    const outcome = await refreshConnection(CONNECTION);
+    expect(outcome).toEqual({
+      status: 'ended',
+      message: 'Set up a screen lock to stay signed in.',
+    });
+  });
+
+  it('says what to do when the portal retires the session', async () => {
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
+    const outcome = await refreshConnection(CONNECTION);
+    expect(outcome.status).toBe('ended');
+    expect(outcome).toHaveProperty('message', SESSION_ENDED);
+    expect(SESSION_ENDED).toMatch(/sign in again/i);
+  });
+});
+
 describe('refreshConnection when the portal refuses', () => {
   it('treats an ended session as terminal', async () => {
     mockedRefresh.mockRejectedValue(new SessionEndedError());

@@ -45,6 +45,15 @@ export interface AuthState {
   connection: Session | null;
   /** True when the session could not be renewed and the user must act. */
   sessionExpired: boolean;
+  /**
+   * Why the app signed itself out, for the connect screen to explain.
+   *
+   * Being returned to the sign-in screen with no reason is the worst kind of
+   * hidden error: the user is looking at the consequence with no way to work
+   * out the cause, and the most common cause here — no screen lock, so the
+   * refresh token cannot be protected — is one they can fix in a minute.
+   */
+  endedReason: string | null;
   /** Runs browser sign-in against the given importer address. */
   connect: (baseUrl: string) => Promise<void>;
   /** Renews the session behind a biometric prompt; null when it could not. */
@@ -96,6 +105,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
   const [status, setStatus] = useState<ConnectionStatus>('loading');
   const [connection, setConnection] = useState<Connection | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [endedReason, setEndedReason] = useState<string | null>(null);
   const inFlight = useRef<Promise<Session | null> | null>(null);
 
   useEffect(() => {
@@ -110,10 +120,11 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       });
   }, []);
 
-  const forget = useCallback(async () => {
+  const forget = useCallback(async (reason?: string) => {
     await clearConnection();
     setConnection(null);
     setSessionExpired(false);
+    setEndedReason(reason ?? null);
     setStatus('disconnected');
   }, []);
 
@@ -128,6 +139,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     await saveConnection(next);
     setConnection(next);
     setSessionExpired(false);
+    setEndedReason(null);
     setStatus('connected');
     void registerForPush(toSession(next));
   }, []);
@@ -143,7 +155,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       return toSession(outcome.connection);
     }
     if (outcome.status === 'ended') {
-      await forget();
+      await forget(outcome.message);
       return null;
     }
     setSessionExpired(true);
@@ -174,16 +186,23 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
 
   const session = useMemo(() => (connection ? toSession(connection) : null), [connection]);
 
+  // Wrapped so a caller cannot pass a reason: the user tapping Disconnect knows
+  // why they are back at the sign-in screen.
+  const disconnect = useCallback(async () => {
+    await forget();
+  }, [forget]);
+
   const value = useMemo<AuthState>(
     () => ({
       status,
       connection: session,
       sessionExpired,
+      endedReason,
       connect,
       reauthenticate,
-      disconnect: forget,
+      disconnect,
     }),
-    [status, session, sessionExpired, connect, reauthenticate, forget],
+    [status, session, sessionExpired, endedReason, connect, reauthenticate, disconnect],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

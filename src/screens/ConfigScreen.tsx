@@ -82,7 +82,7 @@ function ConfigSectionEditor({
   return (
     <Screen
       header={<AppHeader title={selected.label} subtitle="Edit fields and save" onBack={onBack} />}
-      notice={saveErrors ? <Banner messages={saveErrors} /> : undefined}
+      notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
       <Card>

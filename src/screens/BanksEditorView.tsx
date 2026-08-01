@@ -64,7 +64,7 @@ export function BanksEditorView({
   return (
     <Screen
       header={<AppHeader title={bankName} subtitle="Credentials & targets" onBack={onBack} />}
-      notice={saveErrors ? <Banner messages={saveErrors} /> : undefined}
+      notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
       <Text

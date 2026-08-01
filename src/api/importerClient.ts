@@ -52,15 +52,35 @@ export function normalizeBaseUrl(input: string): string {
 }
 
 /**
+ * Runs a request, replacing a transport failure with wording worth reading.
+ *
+ * A dropped connection arrives as whatever the platform calls it, and every
+ * caller here puts a raised message straight in front of the user.
+ * @param send - Performs the request.
+ * @returns The response, when the importer answered at all.
+ * @throws Error naming the importer as unreachable when it did not.
+ */
+async function reachable(send: () => Promise<Response>): Promise<Response> {
+  try {
+    return await send();
+  } catch {
+    throw new Error(failureMessage('unreachable').text);
+  }
+}
+
+/**
  * Reports whether a bearer token is currently authorized via `GET /auth/status`.
  * @param baseUrl - The importer address.
  * @param token - A bearer token previously issued by the importer.
  * @returns True when the importer reports the token as authorized.
  */
 export async function checkAuthorized(baseUrl: string, token: string): Promise<boolean> {
-  const res = await fetch(`${normalizeBaseUrl(baseUrl)}/auth/status`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
+  const url = `${normalizeBaseUrl(baseUrl)}/auth/status`;
+  const res = await reachable(() =>
+    fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  );
   if (!res.ok) {
     return false;
   }
@@ -134,14 +154,19 @@ async function tryReauth(): Promise<Session | null> {
  * @returns The fetch Response.
  */
 async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
-  const send = (active: Session): Promise<Response> =>
-    fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
-      ...init,
-      headers: {
-        ...(init.headers as Record<string, string> | undefined),
-        authorization: `Bearer ${active.token}`,
-      },
-    });
+  const send = async (active: Session): Promise<Response> => {
+    // Built before the guard so a rejected address keeps its own wording.
+    const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
+    return reachable(() =>
+      fetch(url, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          authorization: `Bearer ${active.token}`,
+        },
+      }),
+    );
+  };
   const current = sessionGuard ? await sessionGuard(session) : session;
   const res = await send(current);
   if (res.status !== 401) {

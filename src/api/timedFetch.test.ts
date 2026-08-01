@@ -49,8 +49,15 @@ describe('timedFetch', () => {
     await expect(pending).rejects.toThrow(NO_RESPONSE);
   });
 
-  it('reports a network failure as itself, not as a timeout', async () => {
+  it('names the importer as unreachable rather than repeating the platform', async () => {
+    // "Network request failed" is what Android calls it. It names the failure,
+    // offers no way out, and is not wording anyone chose to show a reader.
     globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
-    await expect(timedFetch('https://h/x', {})).rejects.toThrow('Network request failed');
+    await expect(timedFetch('https://h/x', {})).rejects.toThrow('Could not reach the importer');
+  });
+
+  it('still tells a timeout apart from a connection that never opened', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(timedFetch('https://h/x', {})).rejects.not.toThrow(NO_RESPONSE);
   });
 });

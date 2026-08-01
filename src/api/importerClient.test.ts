@@ -95,3 +95,28 @@ describe('checkAuthorized', () => {
     await expect(checkAuthorized('host:8080', 't')).resolves.toBe(false);
   });
 });
+
+describe('a connection that never opens', () => {
+  // Every caller of these functions puts a raised message straight in front of
+  // the reader, so a platform string must not be what gets raised.
+  it('names the importer as unreachable instead of repeating the platform', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('https://host:8080', 'token')).rejects.toThrow(
+      'Could not reach the importer',
+    );
+  });
+
+  it('does not let the platform wording through', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('https://host:8080', 'token')).rejects.not.toThrow(
+      'Network request failed',
+    );
+  });
+
+  it('keeps the address complaint, which is not a transport failure', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('http://host:8080', 'token')).rejects.toThrow(
+      'Start the address with https://',
+    );
+  });
+});

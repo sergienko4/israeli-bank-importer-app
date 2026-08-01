@@ -17,6 +17,15 @@ interface ScreenProps {
   header?: ReactNode;
   /** Fixed footer below the body (e.g. a sticky save bar). */
   footer?: ReactNode;
+  /**
+   * A message pinned between the body and the footer.
+   *
+   * Anything reporting the outcome of the footer's action belongs here rather
+   * than at the end of the body. The footer never scrolls away, so an error
+   * placed after a long form is off screen at the exact moment the user is
+   * looking at the button that produced it.
+   */
+  notice?: ReactNode;
   /** Scroll the body. Default true. */
   scroll?: boolean;
   /** Pad the body. Default true. */
@@ -27,6 +36,9 @@ interface ScreenProps {
   refreshControl?: NonNullable<ComponentProps<typeof ScrollView>['refreshControl']>;
 }
 
+/** Keeps a long validation list from swallowing the screen it is reporting on. */
+const NOTICE_MAX_HEIGHT = 200;
+
 /**
  * Renders the themed screen scaffold.
  * @param props - Screen configuration.
@@ -36,6 +48,7 @@ export function Screen({
   children,
   header,
   footer,
+  notice,
   scroll = true,
   padded = true,
   contentStyle,
@@ -64,6 +77,18 @@ export function Screen({
     <View style={[styles.flex, { backgroundColor: theme.colors.bg, paddingTop: insets.top }]}>
       {header}
       {body}
+      {notice ? (
+        <ScrollView
+          style={{ maxHeight: NOTICE_MAX_HEIGHT }}
+          contentContainerStyle={{
+            paddingHorizontal: theme.spacing.lg,
+            paddingTop: theme.spacing.sm,
+            paddingBottom: footer ? theme.spacing.sm : insets.bottom || theme.spacing.md,
+          }}
+        >
+          {notice}
+        </ScrollView>
+      ) : null}
       {footer ? (
         <View
           style={{

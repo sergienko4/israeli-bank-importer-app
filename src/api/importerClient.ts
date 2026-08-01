@@ -98,8 +98,8 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   if (!res.ok) {
     return false;
   }
-  const data: unknown = await res.json().catch(() => undefined);
-  return (data as { authorized?: unknown } | undefined)?.authorized === true;
+  const authStatus: unknown = await res.json().catch(() => undefined);
+  return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
 /** An authenticated importer session (base URL + bearer token). */
@@ -283,8 +283,8 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const data = await parsedBody(res, STATUS_BODY);
-  return data.runs;
+  const statusBody = await parsedBody(res, STATUS_BODY);
+  return statusBody.runs;
 }
 
 /**
@@ -357,8 +357,8 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const data = await parsedBody(res, PENDING_OTP_BODY);
-  return data.requests;
+  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  return pendingBody.requests;
 }
 
 /**

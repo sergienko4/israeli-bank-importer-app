@@ -20,6 +20,22 @@ import { timedFetch } from './timedFetch';
  */
 export const SESSION_ENDED = failureMessage('signed-out').text;
 
+/**
+ * Raised when the portal has ended this session for good.
+ *
+ * The type carries the meaning, not the sentence. Several unrelated failures
+ * are worded the same way on purpose — a 401 anywhere reads as "sign in again"
+ * — so matching on the text would make any of them look like a revoked refresh
+ * token and sign the user out for something a retry would have fixed.
+ */
+export class SessionEndedError extends Error {
+  /** Creates the error with the shared signed-out wording. */
+  constructor() {
+    super(SESSION_ENDED);
+    this.name = 'SessionEndedError';
+  }
+}
+
 /** Tokens returned by the portal after a successful app sign-in. */
 export interface AppTokens {
   accessToken: string;
@@ -89,7 +105,7 @@ export async function refreshTokens(baseUrl: string, refreshToken: string): Prom
     body: JSON.stringify({ refreshToken }),
   });
   if (res.status === 400) {
-    throw new Error(SESSION_ENDED);
+    throw new SessionEndedError();
   }
   if (res.status === 429) {
     throw new Error(failureMessage('too-busy').text);

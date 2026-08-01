@@ -6,7 +6,7 @@
  * apart from React so they can be reasoned about — and tested — without a
  * component around them.
  */
-import { refreshTokens, SESSION_ENDED } from '../api/appTokens';
+import { refreshTokens, SessionEndedError } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { authenticateBiometric } from '../lib/biometrics';
 import { type Connection, saveConnection } from './connectionStore';
@@ -47,14 +47,14 @@ export function isExpiring(connection: Connection, now: number = Date.now()): bo
 /**
  * Decides whether a refresh failure is worth retrying.
  *
- * The portal answers a revoked, replayed, or expired refresh token with one
- * message, and no amount of retrying changes it. Anything else — a dropped
- * connection, a rate limit — is worth another attempt later.
- * @param message - The message the refresh call failed with.
+ * A revoked, replayed, or expired refresh token is terminal and arrives as its
+ * own type. Everything else — a dropped connection, a rate limit, a portal
+ * restarting — is worth another attempt later, and must not sign the user out.
+ * @param error - The failure the refresh call raised.
  * @returns `ended` when the session is gone for good, `declined` otherwise.
  */
-function endedBy(message: string): 'ended' | 'declined' {
-  return message === SESSION_ENDED ? 'ended' : 'declined';
+function endedBy(error: unknown): 'ended' | 'declined' {
+  return error instanceof SessionEndedError ? 'ended' : 'declined';
 }
 
 /**
@@ -87,8 +87,8 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
       expiresAt: tokens.expiresAt,
     };
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Could not reconnect.';
-    return { status: endedBy(message), message };
+    const message = error instanceof Error ? error.message : 'Could not reconnect. Try again.';
+    return { status: endedBy(error), message };
   }
   try {
     await saveConnection(next);

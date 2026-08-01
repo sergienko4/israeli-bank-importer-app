@@ -8,7 +8,7 @@
  * reported as ended rather than retried, because a client that keeps knocking
  * defeats the point of revoking a device.
  */
-import { refreshTokens, SESSION_ENDED } from '../api/appTokens';
+import { refreshTokens, SESSION_ENDED, SessionEndedError } from '../api/appTokens';
 import { authenticateBiometric } from '../lib/biometrics';
 import { isExpiring, REFRESH_MARGIN_MS, refreshConnection, toSession } from './appSession';
 import { type Connection, saveConnection } from './connectionStore';
@@ -110,10 +110,19 @@ describe('refreshConnection when the user does not unlock', () => {
 
 describe('refreshConnection when the portal refuses', () => {
   it('treats an ended session as terminal', async () => {
-    mockedRefresh.mockRejectedValue(new Error(SESSION_ENDED));
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
     const outcome = await refreshConnection(CONNECTION);
     expect(outcome.status).toBe('ended');
     expect(mockedSave).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session when something merely worded like an ended one arrives', async () => {
+    // A 401 from any endpoint is worded "sign in again" too. Deciding
+    // terminality by reading the sentence would sign the user out for a
+    // failure a retry would have fixed.
+    mockedRefresh.mockRejectedValue(new Error(SESSION_ENDED));
+    const outcome = await refreshConnection(CONNECTION);
+    expect(outcome.status).toBe('declined');
   });
 
   it('treats a rate limit as worth retrying later', async () => {
@@ -131,6 +140,6 @@ describe('refreshConnection when the portal refuses', () => {
   it('survives a rejection that is not an Error', async () => {
     mockedRefresh.mockRejectedValue('nope');
     const outcome = await refreshConnection(CONNECTION);
-    expect(outcome).toEqual({ status: 'declined', message: 'Could not reconnect.' });
+    expect(outcome).toEqual({ status: 'declined', message: 'Could not reconnect. Try again.' });
   });
 });

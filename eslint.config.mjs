@@ -277,6 +277,19 @@ export default tseslint.config(
     },
   },
 
+  // 4b. Vendored API contract (byte-identical copy of the importer's src/Contract)
+  // These files are not ours to reformat. They are compared byte-for-byte
+  // against the importer repo by `npm run contract:check`, so renaming them to
+  // this project's camelCase convention would break the only thing that proves
+  // the app and the server still agree on the wire. Only the filename rule is
+  // relaxed; every other rule still applies.
+  {
+    files: ['src/api/generated/**/*.ts'],
+    rules: {
+      'check-file/filename-naming-convention': 'off',
+    },
+  },
+
   // 5. Tests (relaxed)
   {
     files: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.spec.ts'],

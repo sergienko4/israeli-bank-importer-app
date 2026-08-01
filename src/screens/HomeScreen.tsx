@@ -16,7 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import type { PillTone } from '../components/ui';
 import { Banner, Button, Card, Entrance, Screen, Skeleton, StatusPill } from '../components/ui';
 import { haptics } from '../lib/haptics';
-import { banksConfigured, latestRun, relativeTime } from '../lib/homeOverview';
+import { banksConfigured, latestRun, relativeTime, successRateLabel } from '../lib/homeOverview';
 import { isOverviewTimeout, withOverviewTimeout } from '../lib/overviewTimeout';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -128,7 +128,7 @@ function LastImportBody({
             {relativeTime(last.timestamp)}
           </Text>
         </View>
-        <StatusPill label={`${String(Math.round(last.successRate * 100))}%`} tone={runTone(last)} />
+        <StatusPill label={successRateLabel(last)} tone={runTone(last)} />
       </View>
     );
   }

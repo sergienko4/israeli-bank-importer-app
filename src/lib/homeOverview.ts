@@ -27,6 +27,18 @@ export function latestRun(runs: RunEntry[]): RunEntry | null {
 }
 
 /**
+ * Formats a run's success rate for display.
+ *
+ * The importer already reports the rate out of 100, so this only rounds it.
+ * Scaling it again turned a flawless import into "10000%".
+ * @param run - The run to label.
+ * @returns The rate as a percentage string.
+ */
+export function successRateLabel(run: RunEntry): string {
+  return `${String(Math.round(run.successRate))}%`;
+}
+
+/**
  * Formats an ISO timestamp as a short relative time (e.g. "5m ago"), falling
  * back to a locale date for anything a week or older.
  * @param iso - The ISO timestamp.

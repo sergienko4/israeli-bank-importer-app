@@ -135,9 +135,11 @@ function unlistedFiles() {
  * Fetches every pinned module before any is written, so a fetch that fails
  * partway cannot leave a half-updated directory behind.
  *
- * The writes themselves still happen one file at a time: a crash between two
- * of them leaves a mixed revision, which `contract:check` then reports. That is
- * the whole guarantee — no more is claimed.
+ * The update itself is not atomic: modules are written, then unlisted ones
+ * removed, one file at a time. A crash midway leaves a mixed revision — which
+ * `contract:check` reports, as drift or as an unlisted module, and re-running
+ * the sync resolves. Being detectable is the whole guarantee; no more is
+ * claimed.
  * @returns {Promise<Map<string, string>>} Upstream contents by file name.
  */
 async function fetchAll() {

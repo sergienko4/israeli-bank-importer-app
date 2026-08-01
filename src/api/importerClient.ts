@@ -5,6 +5,7 @@
  * request at all: Android has blocked cleartext by default since 9.
  */
 
+import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
@@ -44,10 +45,27 @@ export function normalizeBaseUrl(input: string): string {
   const trimmed = withoutTrailingSlashes(input.trim());
   const lowered = trimmed.toLowerCase();
   if (lowered.startsWith('http://')) {
-    throw new Error('Use https:// — a plain http:// address cannot be reached.');
+    throw new Error('Start the address with https:// so the connection stays private.');
   }
   const rest = lowered.startsWith(HTTPS) ? trimmed.slice(HTTPS.length) : trimmed;
   return `${HTTPS}${rest}`;
+}
+
+/**
+ * Runs a request, replacing a transport failure with wording worth reading.
+ *
+ * A dropped connection arrives as whatever the platform calls it, and every
+ * caller here puts a raised message straight in front of the user.
+ * @param send - Performs the request.
+ * @returns The response, when the importer answered at all.
+ * @throws Error naming the importer as unreachable when it did not.
+ */
+async function reachable(send: () => Promise<Response>): Promise<Response> {
+  try {
+    return await send();
+  } catch {
+    throw new Error(failureMessage('unreachable').text);
+  }
 }
 
 /**
@@ -57,9 +75,12 @@ export function normalizeBaseUrl(input: string): string {
  * @returns True when the importer reports the token as authorized.
  */
 export async function checkAuthorized(baseUrl: string, token: string): Promise<boolean> {
-  const res = await fetch(`${normalizeBaseUrl(baseUrl)}/auth/status`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
+  const url = `${normalizeBaseUrl(baseUrl)}/auth/status`;
+  const res = await reachable(() =>
+    fetch(url, {
+      headers: { authorization: `Bearer ${token}` },
+    }),
+  );
   if (!res.ok) {
     return false;
   }
@@ -127,20 +148,33 @@ async function tryReauth(): Promise<Session | null> {
  * silent re-authentication and retries once, so a session that expired sooner
  * than expected still recovers without the caller handling it. The retry reuses
  * `init`, so a body must be a value that can be sent twice, such as a string.
+ *
+ * `signal` is excluded: {@link reachable} reads any rejection as an importer it
+ * could not reach, which a cancelled request is not. Adding cancellation means
+ * teaching that function to tell the two apart first.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
  * @returns The fetch Response.
  */
-async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
-  const send = (active: Session): Promise<Response> =>
-    fetch(`${normalizeBaseUrl(active.baseUrl)}${path}`, {
-      ...init,
-      headers: {
-        ...(init.headers as Record<string, string> | undefined),
-        authorization: `Bearer ${active.token}`,
-      },
-    });
+async function authed(
+  session: Session,
+  path: string,
+  init: Omit<RequestInit, 'signal'> = {},
+): Promise<Response> {
+  const send = async (active: Session): Promise<Response> => {
+    // Built before the guard so a rejected address keeps its own wording.
+    const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
+    return reachable(() =>
+      fetch(url, {
+        ...init,
+        headers: {
+          ...(init.headers as Record<string, string> | undefined),
+          authorization: `Bearer ${active.token}`,
+        },
+      }),
+    );
+  };
   const current = sessionGuard ? await sessionGuard(session) : session;
   const res = await send(current);
   if (res.status !== 401) {
@@ -159,7 +193,7 @@ async function authed(session: Session, path: string, init: RequestInit = {}): P
 export async function getManifest(session: Session): Promise<Manifest> {
   const res = await authed(session, '/api/manifest');
   if (!res.ok) {
-    throw new Error(`Could not load the manifest (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as Manifest;
 }
@@ -173,10 +207,10 @@ export async function getManifest(session: Session): Promise<Manifest> {
 export async function getConfig(session: Session): Promise<ConfigObject> {
   const res = await authed(session, '/api/config');
   if (res.status === 401) {
-    throw new Error('Session expired. Please reconnect.');
+    throw new Error(failureMessage('signed-out').text);
   }
   if (!res.ok) {
-    throw new Error(`Could not load the config (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as ConfigObject;
 }
@@ -190,7 +224,7 @@ async function toFailure(res: Response): Promise<SaveResult> {
   const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
   return {
     ok: false,
-    error: data.error ?? `Request failed (${String(res.status)}).`,
+    error: data.error ?? messageForStatus(res.status),
     errors: data.errors,
   };
 }
@@ -230,10 +264,10 @@ export async function removeBank(session: Session, name: string): Promise<SaveRe
 export async function getStatus(session: Session): Promise<RunEntry[]> {
   const res = await authed(session, '/api/status');
   if (res.status === 401) {
-    throw new Error('Session expired. Please reconnect.');
+    throw new Error(failureMessage('signed-out').text);
   }
   if (!res.ok) {
-    throw new Error(`Could not load status (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   const data = (await res.json()) as { runs?: RunEntry[] };
   return Array.isArray(data.runs) ? data.runs : [];
@@ -278,7 +312,7 @@ export async function unregisterDevice(session: Session, token: string): Promise
 export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   const res = await authed(session, '/api/otp/settings');
   if (!res.ok) {
-    throw new Error(`Could not load OTP settings (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as OtpSettings;
 }
@@ -307,7 +341,7 @@ export async function setOtpSettings(session: Session, channel: OtpChannel): Pro
 export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
   const res = await authed(session, '/api/otp/pending');
   if (!res.ok) {
-    throw new Error(`Could not load pending OTP requests (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   const data = (await res.json()) as { requests?: PendingOtpRequest[] };
   return Array.isArray(data.requests) ? data.requests : [];

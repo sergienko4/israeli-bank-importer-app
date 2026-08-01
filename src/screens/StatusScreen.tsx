@@ -3,7 +3,7 @@
  * from the importer's redacted audit log, newest first, with pull-to-refresh.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { getStatus } from '../api/importerClient';
@@ -22,8 +22,39 @@ import {
   SkeletonList,
   StatusPill,
 } from '../components/ui';
+import { failureMessage, reportedOrFallback } from '../lib/errorMessages';
 import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
+
+const UNREACHABLE = failureMessage('unreachable').text;
+
+/**
+ * Renders the run history, or an explanation of why it is empty.
+ * @param props - The runs, newest first.
+ * @returns The list, or the empty state when there is nothing to show.
+ */
+function RunList({ runs }: Readonly<{ runs: readonly RunEntry[] }>): ReactElement {
+  if (runs.length === 0) {
+    return (
+      <EmptyState
+        icon="pulse-outline"
+        title="No runs yet"
+        message={
+          'Import runs will appear here after the importer scrapes your banks. Pull down to refresh.'
+        }
+      />
+    );
+  }
+  return (
+    <>
+      {runs.map((entry, index) => (
+        <Entrance key={`run-${String(index)}`} index={index}>
+          <RunCard entry={entry} />
+        </Entrance>
+      ))}
+    </>
+  );
+}
 
 interface Props {
   onBack?: () => void;
@@ -133,6 +164,7 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (!connection) {
@@ -147,7 +179,7 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
         }
       } catch (e) {
         if (active) {
-          setError(e instanceof Error ? e.message : 'Failed to load status.');
+          setError(reportedOrFallback(e instanceof Error ? e.message : undefined, UNREACHABLE));
         }
       } finally {
         if (active) {
@@ -169,17 +201,21 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
   };
 
   const onRefresh = async (): Promise<void> => {
-    if (!connection) {
+    // A ref, not the refreshing state: two taps in one frame both read the state
+    // from the render they came from, so only a ref stops the second request.
+    if (!connection || inFlight.current) {
       return;
     }
+    inFlight.current = true;
     setRefreshing(true);
     try {
       setRuns(await getStatus(connection));
       setError(null);
       setRefreshError(null);
     } catch (e) {
-      setRefreshError(e instanceof Error ? e.message : 'Failed to load status.');
+      setRefreshError(reportedOrFallback(e instanceof Error ? e.message : undefined, UNREACHABLE));
     } finally {
+      inFlight.current = false;
       setRefreshing(false);
     }
   };
@@ -205,6 +241,19 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
     <Screen
       header={<AppHeader title="Import status" subtitle="Recent runs" onBack={onBack} />}
       contentStyle={styles.list}
+      notice={
+        refreshError === null ? undefined : (
+          <Banner
+            messages={[refreshError]}
+            action={{
+              label: 'Try again',
+              onPress: () => {
+                void onRefresh();
+              },
+            }}
+          />
+        )
+      }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -216,22 +265,7 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
         />
       }
     >
-      {refreshError ? <Banner messages={[refreshError]} tone="danger" /> : null}
-      {ordered.length === 0 ? (
-        <EmptyState
-          icon="pulse-outline"
-          title="No runs yet"
-          message={
-            'Import runs will appear here after the importer scrapes your banks. Pull down to refresh.'
-          }
-        />
-      ) : (
-        ordered.map((entry, index) => (
-          <Entrance key={`run-${String(index)}`} index={index}>
-            <RunCard entry={entry} />
-          </Entrance>
-        ))
-      )}
+      <RunList runs={ordered} />
     </Screen>
   );
 }

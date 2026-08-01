@@ -50,7 +50,9 @@ describe('getOtpSettings', () => {
 
   it('throws on a failure status', async () => {
     stubFetch(500, {});
-    await expect(getOtpSettings(session)).rejects.toThrow('Could not load OTP settings');
+    await expect(getOtpSettings(session)).rejects.toThrow(
+      'The importer is not answering right now',
+    );
   });
 });
 
@@ -87,7 +89,7 @@ describe('getPendingOtp', () => {
 
   it('throws on a failure status', async () => {
     stubFetch(500, {});
-    await expect(getPendingOtp(session)).rejects.toThrow('Could not load pending OTP');
+    await expect(getPendingOtp(session)).rejects.toThrow('The importer is not answering right now');
   });
 });
 

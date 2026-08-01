@@ -75,7 +75,7 @@ describe('getConfig', () => {
 
   it('throws a reconnect message on 401', async () => {
     stubFetch(401, {});
-    await expect(getConfig(session)).rejects.toThrow('Session expired');
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
   });
 });
 
@@ -123,6 +123,6 @@ describe('getStatus', () => {
 
   it('throws a reconnect message on 401', async () => {
     stubFetch(401, {});
-    await expect(getStatus(session)).rejects.toThrow('Session expired');
+    await expect(getStatus(session)).rejects.toThrow('session has ended');
   });
 });

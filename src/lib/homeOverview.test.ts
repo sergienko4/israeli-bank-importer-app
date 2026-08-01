@@ -1,5 +1,5 @@
 import type { RunEntry } from '../api/status';
-import { banksConfigured, latestRun, relativeTime } from './homeOverview';
+import { banksConfigured, latestRun, relativeTime, successRateLabel } from './homeOverview';
 
 function run(timestamp: string): RunEntry {
   return {
@@ -9,7 +9,7 @@ function run(timestamp: string): RunEntry {
     failedBanks: 0,
     totalTransactions: 10,
     totalDuration: 1000,
-    successRate: 1,
+    successRate: 100,
     banks: [],
   };
 }
@@ -57,5 +57,24 @@ describe('relativeTime', () => {
 
   it('returns the raw value for an unparseable timestamp', () => {
     expect(relativeTime('not-a-date', now)).toBe('not-a-date');
+  });
+});
+
+describe('successRateLabel', () => {
+  // The importer reports the rate out of 100. Scaling it again turned a
+  // flawless import into "10000%" on the screen the user opens first.
+  it.each([
+    [100, '100%'],
+    [50, '50%'],
+    [0, '0%'],
+    [66.6666, '67%'],
+  ])('renders a rate of %s as %s', (successRate, label) => {
+    expect(successRateLabel({ ...run('2026-07-01T10:00:00Z'), successRate })).toBe(label);
+  });
+
+  it('never multiplies the rate a second time', () => {
+    expect(successRateLabel({ ...run('2026-07-01T10:00:00Z'), successRate: 100 })).not.toBe(
+      '10000%',
+    );
   });
 });

@@ -47,7 +47,7 @@ interface ErrorViewProps {
 export function ErrorView({ message, onRetry }: Readonly<ErrorViewProps>): ReactElement {
   const theme = useTheme();
   return (
-    <View style={styles.center} accessibilityRole="alert">
+    <View style={styles.center} accessibilityRole="alert" accessibilityLiveRegion="polite">
       <View
         style={[
           styles.bubble,

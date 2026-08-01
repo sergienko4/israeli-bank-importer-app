@@ -18,6 +18,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { type AppTokens, toAppTokens, type TokenBody } from '../api/appTokens';
 import { normalizeBaseUrl } from '../api/importerClient';
 import { timedFetch } from '../api/timedFetch';
+import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import { createPkcePair, createState } from './pkce';
 
 /** Where the portal sends the browser back to. Must match `expo.scheme`. */
@@ -90,14 +91,16 @@ async function awaitRedirect(url: string): Promise<string> {
   const result = await WebBrowser.openAuthSessionAsync(url, REDIRECT_URI);
   if ('url' in result) {
     if (!isOurRedirect(result.url)) {
-      throw new Error('Sign-in could not be verified.');
+      throw new Error('That sign-in did not come back from this importer. Start it again.');
     }
     return result.url;
   }
   const wasClosed =
     result.type === WebBrowser.WebBrowserResultType.CANCEL ||
     result.type === WebBrowser.WebBrowserResultType.DISMISS;
-  throw new Error(wasClosed ? 'Sign-in was cancelled.' : 'Sign-in could not be completed.');
+  throw new Error(
+    wasClosed ? 'Sign-in was cancelled.' : 'The browser closed before sign-in finished. Try again.',
+  );
 }
 
 /**
@@ -130,14 +133,14 @@ function codeFrom(redirectUrl: string, state: string): string {
   const { queryParams } = Linking.parse(redirectUrl);
   const reported = single(queryParams, 'error');
   if (reported.length > 0) {
-    throw new Error('The importer refused the sign-in.');
+    throw new Error('The importer would not complete the sign-in. Try again.');
   }
   if (single(queryParams, 'state') !== state) {
-    throw new Error('Sign-in could not be verified.');
+    throw new Error('That sign-in did not come back from this importer. Start it again.');
   }
   const code = single(queryParams, 'code');
   if (code.length === 0) {
-    throw new Error('Sign-in did not return a code.');
+    throw new Error('The sign-in came back without a code. Start it again.');
   }
   return code;
 }
@@ -148,16 +151,19 @@ function codeFrom(redirectUrl: string, state: string): string {
  * @returns The error to throw.
  */
 function tokenError(status: number): Error {
+  // The importer returns 503 here only for app sign-in being switched off, and
+  // the browser has just completed the same flow against the same origin, so a
+  // 503 at this point is that setting rather than an importer that is down.
   if (status === 503) {
-    return new Error('This importer does not have app sign-in enabled.');
+    return new Error('This importer has not turned on app sign-in. Enable it in the portal.');
   }
   if (status === 400) {
-    return new Error('Sign-in expired. Please try again.');
+    return new Error('The sign-in took too long and expired. Start it again.');
   }
   if (status === 429) {
-    return new Error('Too many attempts. Wait a minute and try again.');
+    return new Error(failureMessage('too-busy').text);
   }
-  return new Error(`The importer returned an error (${String(status)}).`);
+  return new Error(messageForStatus(status));
 }
 
 /**

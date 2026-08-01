@@ -18,10 +18,14 @@ import { useTheme } from '../theme/ThemeContext';
  */
 export function ConnectScreen(): ReactElement {
   const theme = useTheme();
-  const { connect } = useAuth();
+  const { connect, endedReason } = useAuth();
   const [baseUrl, setBaseUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // A sign-in failure the user just caused outranks the reason they were
+  // returned here, which by then is the older news of the two.
+  const message = error ?? endedReason;
 
   const onConnect = async (): Promise<void> => {
     setBusy(true);
@@ -72,7 +76,7 @@ export function ConnectScreen(): ReactElement {
           never entered here.
         </Text>
 
-        {error ? <Banner messages={[error]} tone="danger" /> : null}
+        {message ? <Banner messages={[message]} tone="danger" /> : null}
 
         <Button
           title="Sign in"

@@ -149,6 +149,9 @@ export async function fetchLatestRelease(currentVersion: string): Promise<Availa
     const data = (await res.json()) as { tag_name?: unknown; assets?: unknown };
     return toAvailableRelease(data, currentVersion);
   } catch {
+    // Silent on purpose: the app is fully usable on the version it already has,
+    // so a failed check is not a problem the reader has to hear about. Saying
+    // nothing reads as "no update", which is the safe reading of not knowing.
     return null;
   } finally {
     clearTimeout(timeoutId);

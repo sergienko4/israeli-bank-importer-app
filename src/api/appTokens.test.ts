@@ -66,28 +66,28 @@ describe('refreshTokens', () => {
   it('treats 400 as a session that has ended', async () => {
     stubFetch(400, { error: 'invalid_grant' });
     await expect(refreshTokens(BASE, 'stale')).rejects.toThrow(
-      'Session expired. Please sign in again.',
+      'Your session has ended. Sign in again to continue.',
     );
   });
 
   it('reports a rate limit separately, because waiting helps', async () => {
     stubFetch(429, {});
     await expect(refreshTokens(BASE, 'refresh-1')).rejects.toThrow(
-      'Too many attempts. Wait a minute and try again.',
+      'Too many attempts. Wait a minute, then try again.',
     );
   });
 
   it('reports any other status with its code', async () => {
     stubFetch(500, {});
     await expect(refreshTokens(BASE, 'refresh-1')).rejects.toThrow(
-      'The importer returned an error (500).',
+      'The importer is not answering right now.',
     );
   });
 
   it('refuses a body that is missing a token', async () => {
     stubFetch(200, { accessToken: 'a', expiresIn: 900 });
     await expect(refreshTokens(BASE, 'refresh-1')).rejects.toThrow(
-      'Unexpected response from the importer.',
+      'The importer sent something this app could not read.',
     );
   });
 });
@@ -111,7 +111,7 @@ describe('toAppTokens', () => {
     ['zero', 0],
   ])('refuses a lifetime that is %s', (_label, expiresIn) => {
     expect(() => toAppTokens({ accessToken: 'a', refreshToken: 'b', expiresIn })).toThrow(
-      'Unexpected response from the importer.',
+      'The importer sent something this app could not read.',
     );
   });
 });

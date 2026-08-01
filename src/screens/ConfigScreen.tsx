@@ -4,7 +4,7 @@
  * shown inline. Structured sections (banks, lists) are handled elsewhere.
  */
 import { type ReactElement, useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import { getConfig, getManifest, saveConfig } from '../api/importerClient';
 import type { ConfigObject, Manifest, SectionDef } from '../api/manifest';
@@ -82,16 +82,12 @@ function ConfigSectionEditor({
   return (
     <Screen
       header={<AppHeader title={selected.label} subtitle="Edit fields and save" onBack={onBack} />}
+      notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
       <Card>
         <SectionForm section={selected} config={config} onChange={onChange} />
       </Card>
-      {saveErrors ? (
-        <View style={styles.errors}>
-          <Banner messages={saveErrors} />
-        </View>
-      ) : null}
     </Screen>
   );
 }
@@ -278,5 +274,4 @@ const styles = StyleSheet.create({
   sectionLabel: { letterSpacing: 0.6, marginTop: 20, marginBottom: 8, marginLeft: 4 },
   menu: { overflow: 'hidden' },
   indent: { marginLeft: 68 },
-  errors: { marginTop: 16 },
 });

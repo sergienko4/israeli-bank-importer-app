@@ -55,13 +55,27 @@ describe('normalizeBaseUrl', () => {
     'http://8.8.8.8',
     'http://[::1]:8080',
   ])('refuses plain http for %s', (address) => {
-    expect(() => normalizeBaseUrl(address)).toThrow(
-      'Use https:// — a plain http:// address cannot be reached.',
-    );
+    expect(() => normalizeBaseUrl(address)).toThrow('Start the address with https://');
   });
 
   it('refuses plain http whatever the case of the scheme', () => {
-    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Use https://');
+    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Start the address with https://');
+  });
+
+  // This message is written here rather than drawn from errorMessages, because
+  // it answers what the reader typed rather than what the importer replied. It
+  // still owes the reader the same sentence, so it is held to the same rules.
+  it('reads as a plain instruction, like the rest of the app', () => {
+    let message = '';
+    try {
+      normalizeBaseUrl('http://host:8080');
+    } catch (error: unknown) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).not.toMatch(/invalid|illegal|incorrect|forbidden|bad request/i);
+    expect(message).not.toMatch(/\(\d{3}\)|\berror\b|\bfailed\b/i);
+    expect(message).toMatch(/^[A-Z].*\.$/);
+    expect(message).toMatch(/https:\/\//);
   });
 });
 
@@ -79,5 +93,30 @@ describe('checkAuthorized', () => {
   it('is false on a non-ok response', async () => {
     stubFetch(401, {});
     await expect(checkAuthorized('host:8080', 't')).resolves.toBe(false);
+  });
+});
+
+describe('a connection that never opens', () => {
+  // Every caller of these functions puts a raised message straight in front of
+  // the reader, so a platform string must not be what gets raised.
+  it('names the importer as unreachable instead of repeating the platform', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('https://host:8080', 'token')).rejects.toThrow(
+      'Could not reach the importer',
+    );
+  });
+
+  it('does not let the platform wording through', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('https://host:8080', 'token')).rejects.not.toThrow(
+      'Network request failed',
+    );
+  });
+
+  it('keeps the address complaint, which is not a transport failure', async () => {
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('Network request failed')));
+    await expect(checkAuthorized('http://host:8080', 'token')).rejects.toThrow(
+      'Start the address with https://',
+    );
   });
 });

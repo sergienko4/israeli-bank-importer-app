@@ -17,6 +17,7 @@ export interface RunEntry {
   failedBanks: number;
   totalTransactions: number;
   totalDuration: number;
+  /** Percentage of banks that succeeded, already out of 100. */
   successRate: number;
   banks: RunBank[];
 }

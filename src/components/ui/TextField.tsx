@@ -125,8 +125,14 @@ function FieldSupportText({ error, help }: Readonly<FieldSupportTextProps>): Rea
   const theme = useTheme();
   if (error) {
     return (
-      <Text style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}>
-        {error}
+      <Text
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}
+      >
+        {/* The mark carries the error where colour cannot: a red border alone
+            says nothing to a screen reader or to anyone who cannot see red. */}
+        ⚠ {error}
       </Text>
     );
   }

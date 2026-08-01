@@ -7,6 +7,7 @@
  * answers would leave that state permanently, which is worse than a failure the
  * user can retry.
  */
+import { failureMessage } from '../lib/errorMessages';
 
 /** Long enough for a slow home network, short enough to stay a wait. */
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -19,7 +20,8 @@ export const NO_RESPONSE = 'The importer did not respond in time.';
  * @param url - The request URL.
  * @param init - The request options; any caller signal is replaced.
  * @returns The response, when one arrives in time.
- * @throws Error with {@link NO_RESPONSE} on timeout, or whatever `fetch` threw.
+ * @throws Error with {@link NO_RESPONSE} on timeout, or the wording for an
+ *   importer that could not be reached.
  */
 export async function timedFetch(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -28,8 +30,10 @@ export async function timedFetch(url: string, init: RequestInit): Promise<Respon
   }, REQUEST_TIMEOUT_MS);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
-  } catch (error: unknown) {
-    throw controller.signal.aborted ? new Error(NO_RESPONSE) : error;
+  } catch {
+    // A dropped connection surfaces as whatever the platform calls it, and
+    // "Network request failed" names the failure without offering a way out.
+    throw new Error(controller.signal.aborted ? NO_RESPONSE : failureMessage('unreachable').text);
   } finally {
     clearTimeout(timeoutId);
   }

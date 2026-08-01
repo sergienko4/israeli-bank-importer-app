@@ -7,6 +7,7 @@
  * the device, and it ends the whole session rather than guessing which holder
  * is genuine. That is why a 400 here means "sign in again" and never "retry".
  */
+import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import { normalizeBaseUrl } from './importerClient';
 import { timedFetch } from './timedFetch';
 
@@ -17,7 +18,7 @@ import { timedFetch } from './timedFetch';
  * retrying this one can never succeed, and a revoked device that keeps knocking
  * is not revoked.
  */
-export const SESSION_ENDED = 'Session expired. Please sign in again.';
+export const SESSION_ENDED = failureMessage('signed-out').text;
 
 /** Tokens returned by the portal after a successful app sign-in. */
 export interface AppTokens {
@@ -64,7 +65,7 @@ export function toAppTokens(body: TokenBody): AppTokens {
     refreshToken.length > 0 &&
     isUsableLifetime(expiresIn);
   if (!isUsable) {
-    throw new Error('Unexpected response from the importer.');
+    throw new Error(failureMessage('unexpected-reply').text);
   }
   return {
     accessToken,
@@ -91,10 +92,10 @@ export async function refreshTokens(baseUrl: string, refreshToken: string): Prom
     throw new Error(SESSION_ENDED);
   }
   if (res.status === 429) {
-    throw new Error('Too many attempts. Wait a minute and try again.');
+    throw new Error(failureMessage('too-busy').text);
   }
   if (!res.ok) {
-    throw new Error(`The importer returned an error (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return toAppTokens((await res.json()) as TokenBody);
 }

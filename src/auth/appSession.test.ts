@@ -117,13 +117,13 @@ describe('refreshConnection when the portal refuses', () => {
   });
 
   it('treats a rate limit as worth retrying later', async () => {
-    mockedRefresh.mockRejectedValue(new Error('Too many attempts. Wait a minute and try again.'));
+    mockedRefresh.mockRejectedValue(new Error('Too many attempts. Wait a minute, then try again.'));
     const outcome = await refreshConnection(CONNECTION);
     expect(outcome.status).toBe('declined');
   });
 
   it('treats a server error as worth retrying later', async () => {
-    mockedRefresh.mockRejectedValue(new Error('The importer returned an error (500).'));
+    mockedRefresh.mockRejectedValue(new Error('The importer is not answering right now.'));
     const outcome = await refreshConnection(CONNECTION);
     expect(outcome.status).toBe('declined');
   });

@@ -56,13 +56,13 @@ describe('silent re-auth on 401', () => {
   it('propagates the 401 when no reauth handler is set', async () => {
     globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
     setReauthHandler(null);
-    await expect(getConfig(session)).rejects.toThrow('Session expired');
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
   });
 
   it('propagates the 401 when reauth returns null', async () => {
     globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
     setReauthHandler(async () => null);
-    await expect(getConfig(session)).rejects.toThrow('Session expired');
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
   });
 
   it('retries at most once', async () => {
@@ -73,7 +73,7 @@ describe('silent re-auth on 401', () => {
     });
     setReauthHandler(async () => ({ baseUrl: 'https://host:8080', token: 'fresh' }));
 
-    await expect(getConfig(session)).rejects.toThrow('Session expired');
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
     expect(call).toBe(2);
   });
 });

@@ -5,6 +5,7 @@
  * request at all: Android has blocked cleartext by default since 9.
  */
 
+import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import type { RunEntry } from './status';
@@ -44,7 +45,7 @@ export function normalizeBaseUrl(input: string): string {
   const trimmed = withoutTrailingSlashes(input.trim());
   const lowered = trimmed.toLowerCase();
   if (lowered.startsWith('http://')) {
-    throw new Error('Use https:// — a plain http:// address cannot be reached.');
+    throw new Error('Start the address with https:// so the connection stays private.');
   }
   const rest = lowered.startsWith(HTTPS) ? trimmed.slice(HTTPS.length) : trimmed;
   return `${HTTPS}${rest}`;
@@ -159,7 +160,7 @@ async function authed(session: Session, path: string, init: RequestInit = {}): P
 export async function getManifest(session: Session): Promise<Manifest> {
   const res = await authed(session, '/api/manifest');
   if (!res.ok) {
-    throw new Error(`Could not load the manifest (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as Manifest;
 }
@@ -173,10 +174,10 @@ export async function getManifest(session: Session): Promise<Manifest> {
 export async function getConfig(session: Session): Promise<ConfigObject> {
   const res = await authed(session, '/api/config');
   if (res.status === 401) {
-    throw new Error('Session expired. Please reconnect.');
+    throw new Error(failureMessage('signed-out').text);
   }
   if (!res.ok) {
-    throw new Error(`Could not load the config (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as ConfigObject;
 }
@@ -190,7 +191,7 @@ async function toFailure(res: Response): Promise<SaveResult> {
   const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
   return {
     ok: false,
-    error: data.error ?? `Request failed (${String(res.status)}).`,
+    error: data.error ?? messageForStatus(res.status),
     errors: data.errors,
   };
 }
@@ -230,10 +231,10 @@ export async function removeBank(session: Session, name: string): Promise<SaveRe
 export async function getStatus(session: Session): Promise<RunEntry[]> {
   const res = await authed(session, '/api/status');
   if (res.status === 401) {
-    throw new Error('Session expired. Please reconnect.');
+    throw new Error(failureMessage('signed-out').text);
   }
   if (!res.ok) {
-    throw new Error(`Could not load status (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   const data = (await res.json()) as { runs?: RunEntry[] };
   return Array.isArray(data.runs) ? data.runs : [];
@@ -278,7 +279,7 @@ export async function unregisterDevice(session: Session, token: string): Promise
 export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   const res = await authed(session, '/api/otp/settings');
   if (!res.ok) {
-    throw new Error(`Could not load OTP settings (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   return (await res.json()) as OtpSettings;
 }
@@ -307,7 +308,7 @@ export async function setOtpSettings(session: Session, channel: OtpChannel): Pro
 export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
   const res = await authed(session, '/api/otp/pending');
   if (!res.ok) {
-    throw new Error(`Could not load pending OTP requests (${String(res.status)}).`);
+    throw new Error(messageForStatus(res.status));
   }
   const data = (await res.json()) as { requests?: PendingOtpRequest[] };
   return Array.isArray(data.requests) ? data.requests : [];

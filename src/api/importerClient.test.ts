@@ -55,13 +55,11 @@ describe('normalizeBaseUrl', () => {
     'http://8.8.8.8',
     'http://[::1]:8080',
   ])('refuses plain http for %s', (address) => {
-    expect(() => normalizeBaseUrl(address)).toThrow(
-      'Use https:// — a plain http:// address cannot be reached.',
-    );
+    expect(() => normalizeBaseUrl(address)).toThrow('Start the address with https://');
   });
 
   it('refuses plain http whatever the case of the scheme', () => {
-    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Use https://');
+    expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Start the address with https://');
   });
 });
 

@@ -143,7 +143,7 @@ describe('signIn authorization request', () => {
   });
 
   it('refuses a plain http address', async () => {
-    await expect(signIn('http://example.com')).rejects.toThrow('Use https://');
+    await expect(signIn('http://example.com')).rejects.toThrow('Start the address with https://');
     expect(mockBrowser.openedUrl).toBe('');
   });
 });
@@ -181,7 +181,7 @@ describe('signIn when the browser does not complete', () => {
 
   it('reports any other outcome as a failure', async () => {
     mockBrowser.result = { type: 'locked' };
-    await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be completed.');
+    await expect(signIn(BASE)).rejects.toThrow('The browser closed before sign-in finished.');
   });
 });
 
@@ -193,7 +193,9 @@ describe('signIn when the redirect is not ours', () => {
         return `https://evil.example/?code=the-code&state=${openedState()}`;
       },
     };
-    await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+    await expect(signIn(BASE)).rejects.toThrow(
+      'That sign-in did not come back from this importer. Start it again.',
+    );
     expect(fetchCalls).toHaveLength(0);
   });
 
@@ -206,7 +208,9 @@ describe('signIn when the redirect is not ours', () => {
           return `${lookalike}?code=the-code&state=${openedState()}`;
         },
       };
-      await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+      await expect(signIn(BASE)).rejects.toThrow(
+        'That sign-in did not come back from this importer. Start it again.',
+      );
       expect(fetchCalls).toHaveLength(0);
     },
   );
@@ -223,36 +227,40 @@ describe('signIn when the redirect is not ours', () => {
 
   it('refuses a mismatched state without touching the network', async () => {
     mockBrowser.result = { type: 'success', url: `${REDIRECT_URI}?code=x&state=not-ours` };
-    await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+    await expect(signIn(BASE)).rejects.toThrow(
+      'That sign-in did not come back from this importer. Start it again.',
+    );
     expect(fetchCalls).toHaveLength(0);
   });
 
   it('refuses a redirect with no state at all', async () => {
     mockBrowser.result = { type: 'success', url: `${REDIRECT_URI}?code=x` };
-    await expect(signIn(BASE)).rejects.toThrow('Sign-in could not be verified.');
+    await expect(signIn(BASE)).rejects.toThrow(
+      'That sign-in did not come back from this importer. Start it again.',
+    );
     expect(fetchCalls).toHaveLength(0);
   });
 
   it('reports a portal error without repeating what it said', async () => {
     replyWithRedirect({ error: 'anything-the-browser-put-here' });
-    await expect(signIn(BASE)).rejects.toThrow('The importer refused the sign-in.');
+    await expect(signIn(BASE)).rejects.toThrow('The importer would not complete the sign-in.');
     await expect(signIn(BASE)).rejects.not.toThrow('anything-the-browser-put-here');
     expect(fetchCalls).toHaveLength(0);
   });
 
   it('refuses a redirect that carries no code', async () => {
     replyWithRedirect({});
-    await expect(signIn(BASE)).rejects.toThrow('Sign-in did not return a code.');
+    await expect(signIn(BASE)).rejects.toThrow('The sign-in came back without a code.');
     expect(fetchCalls).toHaveLength(0);
   });
 });
 
 describe('signIn when the portal refuses the code', () => {
   it.each([
-    [503, 'This importer does not have app sign-in enabled.'],
-    [400, 'Sign-in expired. Please try again.'],
-    [429, 'Too many attempts. Wait a minute and try again.'],
-    [500, 'The importer returned an error (500).'],
+    [503, 'This importer has not turned on app sign-in.'],
+    [400, 'The sign-in took too long and expired.'],
+    [429, 'Too many attempts. Wait a minute, then try again.'],
+    [500, 'The importer is not answering right now.'],
   ])('maps %s to its message', async (status, message) => {
     stubFetch(Number(status), {});
     await expect(signIn(BASE)).rejects.toThrow(String(message));
@@ -265,6 +273,8 @@ describe('signIn when the portal refuses the code', () => {
     ['a non-numeric lifetime', { accessToken: 'a', refreshToken: 'r', expiresIn: '900' }],
   ])('refuses a body with %s', async (_label, body) => {
     stubFetch(200, body);
-    await expect(signIn(BASE)).rejects.toThrow('Unexpected response from the importer.');
+    await expect(signIn(BASE)).rejects.toThrow(
+      'The importer sent something this app could not read.',
+    );
   });
 });

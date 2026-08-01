@@ -61,6 +61,22 @@ describe('normalizeBaseUrl', () => {
   it('refuses plain http whatever the case of the scheme', () => {
     expect(() => normalizeBaseUrl('HTTP://host:8080')).toThrow('Start the address with https://');
   });
+
+  // This message is written here rather than drawn from errorMessages, because
+  // it answers what the reader typed rather than what the importer replied. It
+  // still owes the reader the same sentence, so it is held to the same rules.
+  it('reads as a plain instruction, like the rest of the app', () => {
+    let message = '';
+    try {
+      normalizeBaseUrl('http://host:8080');
+    } catch (error: unknown) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).not.toMatch(/invalid|illegal|incorrect|forbidden|bad request/i);
+    expect(message).not.toMatch(/\(\d{3}\)|\berror\b|\bfailed\b/i);
+    expect(message).toMatch(/^[A-Z].*\.$/);
+    expect(message).toMatch(/https:\/\//);
+  });
 });
 
 describe('checkAuthorized', () => {

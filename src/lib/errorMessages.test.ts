@@ -12,6 +12,7 @@ import {
   causeOfStatus,
   failureMessage,
   messageForStatus,
+  reportedOrFallback,
 } from './errorMessages';
 
 describe('every failure message', () => {
@@ -64,13 +65,12 @@ describe('retryability', () => {
   it('does not offer a retry when the session has ended, because retrying cannot help', () => {
     expect(failureMessage('signed-out').isRetryable).toBe(false);
   });
-
-  it.each(['refused', 'unavailable', 'too-busy', 'unreachable', 'timed-out', 'unexpected-reply'])(
-    'offers a retry for %s',
-    (cause) => {
-      expect(failureMessage(cause as 'refused').isRetryable).toBe(true);
-    },
-  );
+  // Derived from the catalog rather than listed: a cause added later is covered
+  // the moment it exists, and has to justify itself if it refuses a retry.
+  it('offers a retry for every other failure', () => {
+    const dead = ALL_FAILURE_MESSAGES.filter((message) => !message.isRetryable);
+    expect(dead).toEqual([failureMessage('signed-out')]);
+  });
 });
 
 describe('messageForStatus', () => {
@@ -80,5 +80,29 @@ describe('messageForStatus', () => {
 
   it('keeps the status out of what the reader sees', () => {
     expect(messageForStatus(500)).not.toContain('500');
+  });
+});
+
+describe('reportedOrFallback', () => {
+  // An empty string would fill the error slot with nothing, which reads as a
+  // glitch rather than a problem, so it has to be treated as no message at all.
+  it.each([
+    ['nothing reported', undefined],
+    ['an empty string', ''],
+    ['only whitespace', '   '],
+  ])('falls back on %s', (_label, reported) => {
+    expect(reportedOrFallback(reported, 'Try again.')).toBe('Try again.');
+  });
+
+  it('prefers what the importer actually said', () => {
+    expect(reportedOrFallback('That code has expired.', 'Try again.')).toBe(
+      'That code has expired.',
+    );
+  });
+
+  it('trims what it shows so stray spacing cannot shift the layout', () => {
+    expect(reportedOrFallback('  That code has expired.  ', 'Try again.')).toBe(
+      'That code has expired.',
+    );
   });
 });

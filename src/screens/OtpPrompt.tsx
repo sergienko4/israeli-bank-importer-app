@@ -10,9 +10,12 @@ import { submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { Banner, Button, Sheet, TextField } from '../components/ui';
+import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
 import { useTheme } from '../theme/ThemeContext';
+
+const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
 
 interface Props {
   /** The pending request to answer. */
@@ -63,17 +66,12 @@ export function OtpPrompt({
         onSubmitted();
       } else {
         haptics.warning();
-        setError(
-          result.error ?? 'The importer would not accept that code. Check it and try again.',
-        );
+        setError(reportedOrFallback(result.error, CODE_REJECTED));
       }
     } catch (error: unknown) {
       haptics.warning();
-      setError(
-        error instanceof Error
-          ? error.message
-          : 'The importer would not accept that code. Check it and try again.',
-      );
+      const reported = error instanceof Error ? error.message : undefined;
+      setError(reportedOrFallback(reported, CODE_REJECTED));
     } finally {
       setSubmitting(false);
     }

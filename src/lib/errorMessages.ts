@@ -105,3 +105,17 @@ export function messageForStatus(status: number): string {
 
 /** Every message this module can produce, for tests that police the wording. */
 export const ALL_FAILURE_MESSAGES: readonly FailureMessage[] = Object.values(MESSAGES);
+
+/**
+ * Prefers what the importer reported, falling back when it said nothing usable.
+ *
+ * A blank message is worse than a generic one: it fills the error slot with
+ * nothing, which reads as a glitch rather than a problem the reader can act on.
+ * @param reported - Text the importer or a thrown error supplied, if any.
+ * @param fallback - Wording to use when the reported text is missing or blank.
+ * @returns Text that is always worth showing.
+ */
+export function reportedOrFallback(reported: string | undefined, fallback: string): string {
+  const trimmed = reported?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : fallback;
+}

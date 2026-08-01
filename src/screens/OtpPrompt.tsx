@@ -50,7 +50,7 @@ export function OtpPrompt({
     }
     if (!connection) {
       haptics.warning();
-      setError('Reconnect to the importer before submitting this app OTP code.');
+      setError('Reconnect to the importer, then enter the code again.');
       return;
     }
     setSubmitting(true);
@@ -63,11 +63,17 @@ export function OtpPrompt({
         onSubmitted();
       } else {
         haptics.warning();
-        setError(result.error ?? 'The importer rejected the code.');
+        setError(
+          result.error ?? 'The importer would not accept that code. Check it and try again.',
+        );
       }
     } catch (error: unknown) {
       haptics.warning();
-      setError(error instanceof Error ? error.message : 'The importer rejected the code.');
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'The importer would not accept that code. Check it and try again.',
+      );
     } finally {
       setSubmitting(false);
     }

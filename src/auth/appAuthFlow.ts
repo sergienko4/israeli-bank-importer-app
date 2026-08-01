@@ -15,7 +15,7 @@ import * as Device from 'expo-device';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 
-import { type AppTokens, toAppTokens, type TokenBody } from '../api/appTokens';
+import { type AppTokens, toAppTokens } from '../api/appTokens';
 import { normalizeBaseUrl } from '../api/importerClient';
 import { timedFetch } from '../api/timedFetch';
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
@@ -183,7 +183,7 @@ async function redeem(baseUrl: string, code: string, verifier: string): Promise<
   if (!res.ok) {
     throw tokenError(res.status);
   }
-  return toAppTokens((await res.json()) as TokenBody);
+  return toAppTokens(await res.json());
 }
 
 /**

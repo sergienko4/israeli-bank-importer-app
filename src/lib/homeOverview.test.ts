@@ -8,6 +8,7 @@ function run(timestamp: string): RunEntry {
     successfulBanks: 2,
     failedBanks: 0,
     totalTransactions: 10,
+    totalDuplicates: 0,
     totalDuration: 1000,
     successRate: 100,
     banks: [],

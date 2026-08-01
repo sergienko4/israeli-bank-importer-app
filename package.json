@@ -4,6 +4,7 @@
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@sinclair/typebox": "^0.34.52",
     "expo": "^57.0.0",
     "expo-asset": "~57.0.8",
     "expo-constants": "~57.0.8",
@@ -77,10 +78,12 @@
     "sonar:issues": "node scripts/sonar-issues.mjs",
     "lint:licenses": "npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --failOn \"AGPL-1.0;AGPL-3.0\"",
     "export": "expo export --platform android --platform ios",
-    "prepare": "husky"
+    "prepare": "husky",
+    "contract:check": "node scripts/check-contract.mjs",
+    "contract:sync": "node scripts/check-contract.mjs --write"
   },
   "engines": {
-    "node": ">=22"
+    "node": "\u003e=22"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

@@ -1,23 +1,11 @@
-/** Types for the importer's redacted import-run status (GET /api/status). */
+/**
+ * Types for the importer's redacted import-run status (GET /api/status).
+ *
+ * These are the importer's own declarations, not this app's guess at them. The
+ * hand-written copy they replace was missing `totalDuplicates` and both
+ * reconciliation fields, and recorded the unit of `successRate` in a comment —
+ * which is how a flawless import once rendered as "10000%". The contract puts
+ * that unit in the schema, with a range that makes the wrong reading fail.
+ */
 
-/** Per-bank outcome within a run. */
-export interface RunBank {
-  name: string;
-  status: string;
-  duration?: number;
-  txns: number;
-  error?: string;
-}
-
-/** A single completed import run summary. */
-export interface RunEntry {
-  timestamp: string;
-  totalBanks: number;
-  successfulBanks: number;
-  failedBanks: number;
-  totalTransactions: number;
-  totalDuration: number;
-  /** Percentage of banks that succeeded, already out of 100. */
-  successRate: number;
-  banks: RunBank[];
-}
+export type { RunBank, RunEntry } from './generated';

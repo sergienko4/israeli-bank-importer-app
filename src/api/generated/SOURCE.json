@@ -1,0 +1,14 @@
+{
+  "repo": "sergienko4/israeli-bank-scrapers-to-actual-budget",
+  "ref": "feat/api-contract",
+  "importerVersion": "1.41.0",
+  "files": [
+    "AppAuth.ts",
+    "Common.ts",
+    "Config.ts",
+    "Devices.ts",
+    "Manifest.ts",
+    "Otp.ts",
+    "Status.ts"
+  ]
+}

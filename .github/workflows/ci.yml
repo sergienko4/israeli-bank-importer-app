@@ -26,6 +26,8 @@ jobs:
         run: npm run lint:actions
       - name: Lint lockfile registry hosts
         run: npm run lint:lockfile
+      - name: Contract matches the importer
+        run: npm run contract:check
       - name: Typecheck
         run: npm run typecheck
       - name: Lint

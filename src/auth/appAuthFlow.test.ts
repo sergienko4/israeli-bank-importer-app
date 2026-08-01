@@ -278,3 +278,82 @@ describe('signIn when the portal refuses the code', () => {
     );
   });
 });
+
+describe('the wording of every sign-in failure', () => {
+  // This module writes its messages by hand instead of drawing them from
+  // errorMessages, so nothing else holds them to the same rules.
+  async function messageFrom(arrange: () => void): Promise<string> {
+    arrange();
+    try {
+      await signIn(BASE);
+    } catch (error: unknown) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error('signIn resolved where it should have thrown');
+  }
+
+  const failures: readonly (readonly [string, () => void])[] = [
+    [
+      'app sign-in is switched off',
+      () => {
+        stubFetch(503, {});
+      },
+    ],
+    [
+      'the code expired',
+      () => {
+        stubFetch(400, {});
+      },
+    ],
+    [
+      'the portal is busy',
+      () => {
+        stubFetch(429, {});
+      },
+    ],
+    [
+      'the portal is down',
+      () => {
+        stubFetch(500, {});
+      },
+    ],
+    [
+      'the portal refuses',
+      () => {
+        replyWithRedirect({ error: 'whatever' });
+      },
+    ],
+    [
+      'the redirect carries no code',
+      () => {
+        replyWithRedirect({});
+      },
+    ],
+    [
+      'the redirect is not ours',
+      () => {
+        mockBrowser.result = { type: 'success', url: `${REDIRECT_URI}?code=x&state=not-ours` };
+      },
+    ],
+    [
+      'the browser could not finish',
+      () => {
+        mockBrowser.result = { type: 'locked' };
+      },
+    ],
+  ];
+
+  it.each(failures)('reads as a plain instruction when %s', async (_label, arrange) => {
+    const message = await messageFrom(arrange);
+    expect(message).not.toMatch(/invalid|illegal|incorrect|forbidden|bad request/i);
+    expect(message).not.toMatch(/\(\d{3}\)|\berror\b|\bfailed\b/i);
+    expect(message).toMatch(/^[A-Z].*\.$/);
+    expect(message).toMatch(/try again|start it again|enable it|wait a minute|check/i);
+  });
+
+  it('does not instruct the user when they cancelled on purpose', async () => {
+    // The one message with no way out, because the user already took it.
+    mockBrowser.result = { type: 'cancel' };
+    await expect(signIn(BASE)).rejects.toThrow('Sign-in was cancelled.');
+  });
+});

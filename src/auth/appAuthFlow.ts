@@ -151,6 +151,9 @@ function codeFrom(redirectUrl: string, state: string): string {
  * @returns The error to throw.
  */
 function tokenError(status: number): Error {
+  // The importer returns 503 here only for app sign-in being switched off, and
+  // the browser has just completed the same flow against the same origin, so a
+  // 503 at this point is that setting rather than an importer that is down.
   if (status === 503) {
     return new Error('This importer has not turned on app sign-in. Enable it in the portal.');
   }

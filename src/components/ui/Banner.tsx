@@ -123,8 +123,9 @@ const styles = StyleSheet.create({
   root: { flexDirection: 'row', gap: 8, padding: 12 },
   icon: { marginTop: 1 },
   messages: { flex: 1, gap: 4 },
-  // 20pt of text plus 12pt hitSlop top and bottom clears the 44pt minimum.
-  action: { alignSelf: 'flex-start', paddingVertical: 4 },
+  // hitSlop widens the press area but not the frame a screen reader reports, so
+  // the target is sized here and hitSlop is left as tolerance around it.
+  action: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 44, minWidth: 44 },
   actionPressed: { opacity: 0.6 },
   // Underlined so the action is not signalled by colour alone.
   actionLabel: { fontWeight: '700', textDecorationLine: 'underline' },

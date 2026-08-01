@@ -4,6 +4,14 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sergienko4/israeli-bank-importer-app/badge)](https://scorecard.dev/viewer/?uri=github.com/sergienko4/israeli-bank-importer-app)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+| Home | Import status | Bank one-time code |
+| --- | --- | --- |
+| ![Home screen showing connection state and the last import](docs/screenshots/home.png) | ![Import status listing recent runs with per-bank results](docs/screenshots/status.png) | ![Prompt asking for the one-time code a bank sent](docs/screenshots/otp.png) |
+
+| Configuration | Banks | A failure that stays in view |
+| --- | --- | --- |
+| ![Configuration sections to edit](docs/screenshots/config.png) | ![Configured banks and the ones you can add](docs/screenshots/banks.png) | ![A failure pinned above the action bar with a retry](docs/screenshots/error-notice.png) |
+
 A cross-platform **Expo / React Native** app (iOS + Android) that lets you edit
 your **self-hosted [Israeli Bank Importer](https://github.com/sergienko4/israeli-bank-scrapers-to-actual-budget)**
 configuration from your phone — without SSHing into a server or hand-editing

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.3](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.2...israeli-bank-importer-app-v0.2.3) (2026-08-01)
+
+
+### Features
+
+* **auth:** sign in through the importer's own login page ([#59](https://github.com/sergienko4/israeli-bank-importer-app/issues/59)) ([6c533cf](https://github.com/sergienko4/israeli-bank-importer-app/commit/6c533cfb8bead0d8f0ee30fbf87f97887758fa2e))
+
+
+### Bug Fixes
+
+* **ui:** stop errors hiding below the fold ([#63](https://github.com/sergienko4/israeli-bank-importer-app/issues/63)) ([c161d3c](https://github.com/sergienko4/israeli-bank-importer-app/commit/c161d3cc97297876d05542d1c51c2016aef0fff9))
+
 ## [0.2.2](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.1...israeli-bank-importer-app-v0.2.2) (2026-07-30)
 
 

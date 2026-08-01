@@ -66,7 +66,10 @@ async function registerForPush(session: Session): Promise<void> {
       await registerDevice(session, pushToken);
     }
   } catch {
-    // Push is best-effort; a failure here never affects the connection.
+    // Silent on purpose, and safe to be: push only makes an OTP prompt arrive
+    // sooner. The watcher polls regardless, so a failure here costs latency
+    // rather than the prompt itself, and reporting it during sign-in would
+    // describe a problem the user cannot act on.
   }
 }
 

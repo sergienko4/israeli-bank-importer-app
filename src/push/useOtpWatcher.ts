@@ -36,7 +36,9 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
           setPending(selectPendingOtp(requests, dismissed.current));
         }
       } catch {
-        // Best-effort; the next tick retries.
+        // Silent on purpose: this runs every few seconds, so reporting a failed
+        // poll would replace one message with an identical one indefinitely.
+        // The screens that need the importer report their own failures.
       }
     };
     void poll();

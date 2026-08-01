@@ -4,7 +4,8 @@
  * Every file beside this one is a byte-identical copy of `src/Contract/` in
  * sergienko4/israeli-bank-scrapers-to-actual-budget. Do not edit them: run
  * `npm run contract:sync` to pull a newer contract, and `npm run contract:check`
- * to prove the copy still matches the importer version pinned in SOURCE.json.
+ * to prove the copy still matches the importer commit pinned in
+ * `scripts/check-contract.mjs`.
  *
  * This barrel is ours, not the importer's, so it is not part of that
  * comparison. It exists because the importer's own index uses `.js` import

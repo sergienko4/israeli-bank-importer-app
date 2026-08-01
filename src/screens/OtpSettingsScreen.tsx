@@ -139,6 +139,7 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
       header={
         <AppHeader title="OTP delivery" subtitle="How bank codes are collected" onBack={onBack} />
       }
+      notice={saveError ? <Banner messages={[saveError]} /> : undefined}
     >
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
         Choose how the importer asks you for a bank&apos;s one-time code during login.
@@ -169,11 +170,6 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
           );
         })}
       </Card>
-      {saveError ? (
-        <View style={styles.errors}>
-          <Banner messages={[saveError]} />
-        </View>
-      ) : null}
     </Screen>
   );
 }
@@ -187,5 +183,4 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 2,
   },
-  errors: { marginTop: 16 },
 });

@@ -2,7 +2,7 @@
  * Selected-bank editor view for credentials, targets, and optional fields.
  */
 import type { ReactElement } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
@@ -64,6 +64,7 @@ export function BanksEditorView({
   return (
     <Screen
       header={<AppHeader title={bankName} subtitle="Credentials & targets" onBack={onBack} />}
+      notice={saveErrors ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
       <Text
@@ -105,11 +106,6 @@ export function BanksEditorView({
         ) : null}
       </Card>
       <BanksTargetsEditor fields={targetFields} targets={targets} onChange={onTargetsChange} />
-      {saveErrors ? (
-        <View style={styles.errors}>
-          <Banner messages={saveErrors} />
-        </View>
-      ) : null}
 
       <Sheet visible={sheetOpen} onClose={onCloseSheet} title="Add a field">
         <ScrollView>
@@ -133,5 +129,4 @@ export function BanksEditorView({
 const styles = StyleSheet.create({
   sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
   addField: { marginTop: 8 },
-  errors: { marginTop: 16 },
 });

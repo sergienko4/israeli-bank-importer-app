@@ -205,6 +205,19 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
     <Screen
       header={<AppHeader title="Import status" subtitle="Recent runs" onBack={onBack} />}
       contentStyle={styles.list}
+      notice={
+        refreshError ? (
+          <Banner
+            messages={[refreshError]}
+            action={{
+              label: 'Try again',
+              onPress: () => {
+                void onRefresh();
+              },
+            }}
+          />
+        ) : undefined
+      }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -216,7 +229,6 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
         />
       }
     >
-      {refreshError ? <Banner messages={[refreshError]} tone="danger" /> : null}
       {ordered.length === 0 ? (
         <EmptyState
           icon="pulse-outline"

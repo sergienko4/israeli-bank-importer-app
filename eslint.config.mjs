@@ -248,6 +248,35 @@ export default tseslint.config(
     },
   },
 
+  // 4b. Grandfathered: eslint-config-expo 56 turned on the React Compiler's
+  //     `react-hooks/refs` and `react-hooks/set-state-in-effect`. Those two
+  //     rules found five sites across the four files below (AppShell trips
+  //     both rules), so the list is per file and every other file stays
+  //     covered, as does anything written from here on.
+  //
+  //     Each one needs a design decision rather than a mechanical edit, and
+  //     these are animation and navigation internals with no test around them,
+  //     so they are not something to rewrite inside a dependency upgrade:
+  //       - ScreenSwitch: the pan responder is built once and reads the latest
+  //         props through refs, because rebuilding it would cancel the gesture.
+  //       - Sheet: `mounted` deliberately lags `visible` so the panel survives
+  //         its own closing animation.
+  //       - AppShell: the slide direction is derived from the previous tab
+  //         index, which is exactly a value that must not trigger a render.
+  //       - useOtpWatcher: the poll result arrives from outside React.
+  {
+    files: [
+      'src/components/ui/ScreenSwitch.tsx',
+      'src/components/ui/Sheet.tsx',
+      'src/push/useOtpWatcher.ts',
+      'src/screens/AppShell.tsx',
+    ],
+    rules: {
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
+
   // 5. Tests (relaxed)
   {
     files: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.spec.ts'],

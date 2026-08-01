@@ -5,7 +5,7 @@
  * collapses to an instant appearance when reduced motion is requested.
  */
 import type { ReactElement, ReactNode } from 'react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Animated } from 'react-native';
 
@@ -38,7 +38,7 @@ export function Entrance({
   style,
 }: Readonly<EntranceProps>): ReactElement {
   const reducedMotion = useReducedMotion();
-  const progress = useRef(new Animated.Value(0)).current;
+  const [progress] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (reducedMotion) {

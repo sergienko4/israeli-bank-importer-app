@@ -1,9 +1,17 @@
 # Expo HAS CHANGED
 
-Read the exact versioned docs at <https://docs.expo.dev/versions/v54.0.0/> before writing any code.
+Read the exact versioned docs at <https://docs.expo.dev/versions/v57.0.0/> before writing any code.
 
-This app targets **Expo SDK 54** (`expo@~54.0.0`, `react-native@0.81.5`, `react@19.1.0`).
-Match that line for every dependency and API - do not use SDK 57 docs or examples.
+This app targets **Expo SDK 57** (`expo@^57.0.0`, `react-native@0.86.2`, `react@19.2.3`).
+Match that line for every dependency and API - do not use older SDK docs or examples.
+
+Two things from that upgrade are easy to trip over:
+
+- `expo/fetch` backs `globalThis.fetch` since SDK 56. Call `fetch` directly; do
+  not import it.
+- `npm` must resolve against `https://registry.npmjs.org/`, which the committed
+  `.npmrc` pins. A corporate mirror that lags the public registry reports the
+  newest published versions as unpublished and blocks `expo install --fix`.
 
 ## Code quality gates
 

@@ -62,4 +62,4 @@ jobs:
         run: |
           MESSAGE=$(printf '%s' "$HEAD_MESSAGE" | head -n 1)
           eas update --branch "$BRANCH" --message "${MESSAGE:-$GITHUB_SHA}" \
-            --platform android --non-interactive
+            --platform android --environment preview --non-interactive

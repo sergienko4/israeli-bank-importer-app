@@ -15,7 +15,7 @@ reviews:
   path_instructions:
     - path: 'src/**/*.{ts,tsx}'
       instructions: |
-        Expo SDK 54 / React Native / TypeScript app. Enforce:
+        Expo SDK 57 / React Native / TypeScript app. Enforce:
         - Strict TypeScript: zero `any`, no `as any`/`as never`; prefer precise types.
         - Function components with hooks only; no class components.
         - Accessibility is a correctness requirement: every interactive control has

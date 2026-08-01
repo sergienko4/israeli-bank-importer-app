@@ -3,7 +3,7 @@
  * press-in and settles it back on release, honoring reduced motion. Share this
  * across Button, ListRow, and Card so every tappable surface feels the same.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated } from 'react-native';
 
 import { pressScale as defaultPressScale, spring } from '../theme/motion';
@@ -27,7 +27,7 @@ export interface PressScale {
  */
 export function usePressScale(to: number = defaultPressScale): PressScale {
   const isReduced = useReducedMotion();
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (isReduced) {

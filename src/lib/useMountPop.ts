@@ -3,7 +3,7 @@
  * scale-and-fade in on first render, honoring reduced motion by appearing
  * instantly. Returns animated values to drive an Animated.View.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { Animated } from 'react-native';
 
 import { durations, spring } from '../theme/motion';
@@ -25,8 +25,8 @@ export interface MountPop {
  */
 export function useMountPop(from = 0.9): MountPop {
   const isReduced = useReducedMotion();
-  const scale = useRef(new Animated.Value(isReduced ? 1 : from)).current;
-  const opacity = useRef(new Animated.Value(isReduced ? 1 : 0)).current;
+  const [scale] = useState(() => new Animated.Value(isReduced ? 1 : from));
+  const [opacity] = useState(() => new Animated.Value(isReduced ? 1 : 0));
 
   useEffect(() => {
     if (isReduced) {

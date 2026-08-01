@@ -20,7 +20,7 @@
  *   node scripts/check-contract.mjs --write    pull the pinned revision in
  */
 
-import { lstatSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** Where the vendored copy lives. Nothing outside this directory is written. */
@@ -175,6 +175,21 @@ function writeModule(name, text) {
 }
 
 /**
+ * Removes a module the contract no longer includes.
+ *
+ * Only ever reached under `--write`, and only for a name `unlistedFiles()`
+ * returned — which excludes this project's own barrel and anything that is not
+ * a contract module. Without this, `contract:sync` could not resolve what
+ * `contract:check` reports, and its own advice would loop.
+ * @param {string} name - File name within the vendored directory.
+ * @returns {void}
+ */
+function deleteModule(name) {
+  assertPlainFile(name);
+  rmSync(join(DIR, name));
+}
+
+/**
  * Reports drift and marks the run as failed.
  * @param {string[]} drifted - Modules whose contents no longer match.
  * @param {string[]} unlisted - Modules the contract no longer includes.
@@ -203,9 +218,10 @@ async function run() {
   const unlisted = unlistedFiles();
   if (shouldWrite) {
     for (const [name, text] of upstream) writeModule(name, text);
+    for (const name of unlisted) deleteModule(name);
     console.log(`Contract synced from ${REPO}@${source.ref}.`);
     if (unlisted.length > 0) {
-      console.log(`No longer part of the contract, delete by hand: ${unlisted.join(', ')}`);
+      console.log(`Removed, no longer part of the contract: ${unlisted.join(', ')}`);
     }
   } else if (drifted.length > 0 || unlisted.length > 0) {
     reportDrift(drifted, unlisted);

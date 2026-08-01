@@ -148,12 +148,20 @@ async function tryReauth(): Promise<Session | null> {
  * silent re-authentication and retries once, so a session that expired sooner
  * than expected still recovers without the caller handling it. The retry reuses
  * `init`, so a body must be a value that can be sent twice, such as a string.
+ *
+ * `signal` is excluded: {@link reachable} reads any rejection as an importer it
+ * could not reach, which a cancelled request is not. Adding cancellation means
+ * teaching that function to tell the two apart first.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
  * @returns The fetch Response.
  */
-async function authed(session: Session, path: string, init: RequestInit = {}): Promise<Response> {
+async function authed(
+  session: Session,
+  path: string,
+  init: Omit<RequestInit, 'signal'> = {},
+): Promise<Response> {
   const send = async (active: Session): Promise<Response> => {
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;

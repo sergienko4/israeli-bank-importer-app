@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.3...israeli-bank-importer-app-v0.2.4) (2026-08-02)
+
+
+### Features
+
+* **api:** read the importer's replies against its contract ([#64](https://github.com/sergienko4/israeli-bank-importer-app/issues/64)) ([ae57133](https://github.com/sergienko4/israeli-bank-importer-app/commit/ae571339e0e60be5fd3c30863f14ec96884c89c6))
+
 ## [0.2.3](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.2...israeli-bank-importer-app-v0.2.3) (2026-08-01)
 
 

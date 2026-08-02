@@ -6,8 +6,16 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
+import {
+  CONFIG_BODY,
+  MANIFEST_BODY,
+  OTP_SETTINGS,
+  PENDING_OTP_BODY,
+  STATUS_BODY,
+} from './generated';
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
+import { parsedBody } from './parseResponse';
 import type { RunEntry } from './status';
 
 const HTTPS = 'https://';
@@ -70,6 +78,12 @@ async function reachable(send: () => Promise<Response>): Promise<Response> {
 
 /**
  * Reports whether a bearer token is currently authorized via `GET /auth/status`.
+ *
+ * This one stays a question rather than a contract parse, and reads only the
+ * single field it depends on. An importer that answers with something this app
+ * does not recognise has not said the token is good, so the answer is no —
+ * where a full-shape check would refuse an older importer that simply omits a
+ * field this call never looks at, and sign the user out for nothing.
  * @param baseUrl - The importer address.
  * @param token - A bearer token previously issued by the importer.
  * @returns True when the importer reports the token as authorized.
@@ -84,8 +98,8 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   if (!res.ok) {
     return false;
   }
-  const data = (await res.json()) as { authorized?: unknown };
-  return data.authorized === true;
+  const authStatus: unknown = await res.json().catch(() => undefined);
+  return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
 /** An authenticated importer session (base URL + bearer token). */
@@ -195,7 +209,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return (await res.json()) as Manifest;
+  return parsedBody(res, MANIFEST_BODY);
 }
 
 /**
@@ -212,7 +226,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return (await res.json()) as ConfigObject;
+  return parsedBody(res, CONFIG_BODY);
 }
 
 /**
@@ -269,8 +283,8 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const data = (await res.json()) as { runs?: RunEntry[] };
-  return Array.isArray(data.runs) ? data.runs : [];
+  const statusBody = await parsedBody(res, STATUS_BODY);
+  return statusBody.runs;
 }
 
 /**
@@ -314,7 +328,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return (await res.json()) as OtpSettings;
+  return parsedBody(res, OTP_SETTINGS);
 }
 
 /**
@@ -343,8 +357,8 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const data = (await res.json()) as { requests?: PendingOtpRequest[] };
-  return Array.isArray(data.requests) ? data.requests : [];
+  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  return pendingBody.requests;
 }
 
 /**

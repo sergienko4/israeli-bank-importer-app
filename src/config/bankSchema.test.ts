@@ -19,7 +19,10 @@ describe('bank schema scoping', () => {
   it("never offers another bank's fields (regression: global-catalog leak)", () => {
     // A bank that logs in with username + password must not be offered a
     // card-number field that belongs to a different bank.
-    const requirement: BankRequirement = { required: ['username', 'password'] };
+    const requirement: BankRequirement = {
+      displayName: 'Test Bank',
+      required: ['username', 'password'],
+    };
     const bank = { username: '', password: '' };
 
     const addable = addableFields(section, requirement, bank).map((f) => f.key);
@@ -31,6 +34,7 @@ describe('bank schema scoping', () => {
 
   it("offers a bank's own advertised optional fields", () => {
     const requirement: BankRequirement = {
+      displayName: 'Test Bank',
       required: ['username', 'password'],
       optional: ['nationalId'],
     };
@@ -40,7 +44,11 @@ describe('bank schema scoping', () => {
   });
 
   it('does not re-offer an optional field already present on the bank', () => {
-    const requirement: BankRequirement = { required: ['username'], optional: ['nationalId'] };
+    const requirement: BankRequirement = {
+      displayName: 'Test Bank',
+      required: ['username'],
+      optional: ['nationalId'],
+    };
     const bank = { username: 'x', nationalId: '123' };
 
     expect(addableFields(section, requirement, bank)).toEqual([]);
@@ -52,20 +60,28 @@ describe('bank schema scoping', () => {
   });
 
   it('offers nothing to add once a no-optionals bank is seeded with its required fields', () => {
-    const requirement: BankRequirement = { required: ['username', 'password'] };
+    const requirement: BankRequirement = {
+      displayName: 'Test Bank',
+      required: ['username', 'password'],
+    };
     const bank = { username: '', password: '' };
 
     expect(addableFields(section, requirement, bank)).toEqual([]);
   });
 
   it('unions required and optional keys into the allowed set', () => {
-    const requirement: BankRequirement = { required: ['a'], optional: ['b', 'c'] };
+    const requirement: BankRequirement = {
+      displayName: 'Test Bank',
+      required: ['a'],
+      optional: ['b', 'c'],
+    };
 
     expect([...allowedFieldKeys(requirement)].sort()).toEqual(['a', 'b', 'c']);
   });
 
   it("preserves the catalog order of a bank's schema fields", () => {
     const requirement: BankRequirement = {
+      displayName: 'Test Bank',
       required: ['password'],
       optional: ['username', 'nationalId'],
     };

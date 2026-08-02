@@ -112,12 +112,34 @@ describe('removeBank', () => {
 
 describe('getStatus', () => {
   it('returns the runs on success', async () => {
-    stubFetch(200, { runs: [{ timestamp: 't', banks: [] }] });
+    stubFetch(200, {
+      runs: [
+        {
+          timestamp: 't',
+          totalBanks: 1,
+          successfulBanks: 1,
+          failedBanks: 0,
+          totalTransactions: 3,
+          totalDuplicates: 0,
+          totalDuration: 10,
+          successRate: 100,
+          banks: [],
+        },
+      ],
+    });
     await expect(getStatus(session)).resolves.toHaveLength(1);
   });
 
-  it('returns an empty list when there are no runs', async () => {
+  it('says so when the importer sends something it cannot read', async () => {
+    // Previously this rendered as "no runs yet", which is a different and
+    // reassuring fact. An importer that answers /api/status without any runs
+    // field has not told us the history is empty; it has told us nothing.
     stubFetch(200, {});
+    await expect(getStatus(session)).rejects.toThrow('could not read');
+  });
+
+  it('returns an empty list when the importer has no runs yet', async () => {
+    stubFetch(200, { runs: [] });
     await expect(getStatus(session)).resolves.toEqual([]);
   });
 

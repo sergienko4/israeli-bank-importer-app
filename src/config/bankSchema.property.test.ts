@@ -35,6 +35,7 @@ const sectionArb = fc.uniqueArray(keyArb, { maxLength: 6 }).map<SectionDef>((key
 const requirementArb = fc.oneof(
   fc.constant(undefined),
   fc.record<BankRequirement>({
+    displayName: fc.string(),
     required: fc.uniqueArray(keyArb, { maxLength: 3 }),
     optional: fc.oneof(fc.constant(undefined), fc.uniqueArray(keyArb, { maxLength: 3 })),
   }),
@@ -100,7 +101,7 @@ describe('bank schema scoping properties', () => {
   it('treats a missing optional list as required-only', () => {
     fc.assert(
       fc.property(fc.uniqueArray(keyArb, { maxLength: 4 }), (required) => {
-        expect([...allowedFieldKeys({ required })]).toEqual(required);
+        expect([...allowedFieldKeys({ displayName: 'Test Bank', required })]).toEqual(required);
       }),
     );
   });

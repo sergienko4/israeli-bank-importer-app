@@ -43,13 +43,6 @@ export interface AppTokens {
   expiresAt: number;
 }
 
-/** The token payload shape, before any of it is trusted. */
-export interface TokenBody {
-  accessToken?: unknown;
-  refreshToken?: unknown;
-  expiresIn?: unknown;
-}
-
 /**
  * Reports whether a lifetime can be turned into a usable deadline.
  *
@@ -68,12 +61,17 @@ function isUsableLifetime(expiresIn: unknown): expiresIn is number {
  *
  * The portal sends a lifetime in seconds; the app stores a wall-clock deadline
  * so a refresh can be scheduled without tracking when the response arrived.
- * @param body - The parsed response body.
+ *
+ * This checks only the three fields the app uses, rather than the whole grant
+ * the contract describes. An older importer that does not yet send every field
+ * of a grant can still sign this device in, which a stricter check would
+ * refuse for no benefit.
+ * @param body - The parsed response body, not yet trusted.
  * @returns The validated tokens.
  * @throws Error when any field is missing or has the wrong type.
  */
-export function toAppTokens(body: TokenBody): AppTokens {
-  const { accessToken, refreshToken, expiresIn } = body;
+export function toAppTokens(body: unknown): AppTokens {
+  const { accessToken, refreshToken, expiresIn } = (body ?? {}) as Record<string, unknown>;
   const isUsable =
     typeof accessToken === 'string' &&
     accessToken.length > 0 &&
@@ -113,5 +111,5 @@ export async function refreshTokens(baseUrl: string, refreshToken: string): Prom
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return toAppTokens((await res.json()) as TokenBody);
+  return toAppTokens(await res.json());
 }

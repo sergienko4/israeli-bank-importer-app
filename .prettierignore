@@ -12,3 +12,8 @@ ios/
 # and re-stringifies app.json on every release, which expands short arrays that
 # Prettier collapses. Checking it makes every release PR fail format:check.
 app.json
+# The vendored API contract is a byte-identical copy of the importer's
+# src/Contract, and `npm run contract:check` compares it against that repo.
+# Reformatting it here would make every check report drift that is really just
+# a difference of opinion about line breaks.
+src/api/generated/

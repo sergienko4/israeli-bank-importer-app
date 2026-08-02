@@ -26,6 +26,8 @@ jobs:
         run: npm run lint:actions
       - name: Lint lockfile registry hosts
         run: npm run lint:lockfile
+      - name: Contract matches the importer
+        run: npm run contract:check
       - name: Typecheck
         run: npm run typecheck
       - name: Lint
@@ -39,6 +41,8 @@ jobs:
         continue-on-error: true
       - name: Bundle for iOS + Android
         run: npm run export
+      - name: No bundled module shadows a global
+        run: npm run check:bundle
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

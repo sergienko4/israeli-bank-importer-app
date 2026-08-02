@@ -127,7 +127,7 @@ describe('concurrent requests that all expire at once', () => {
       const header = authOf(init) ?? '';
       seen.push(header);
       return Promise.resolve(
-        header === 'Bearer old' ? fakeResponse(401, {}) : fakeResponse(200, []),
+        header === 'Bearer old' ? fakeResponse(401, {}) : fakeResponse(200, { runs: [] }),
       );
     }) as unknown as typeof fetch;
 

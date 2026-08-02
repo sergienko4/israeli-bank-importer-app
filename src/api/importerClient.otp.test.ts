@@ -82,8 +82,15 @@ describe('getPendingOtp', () => {
     await expect(getPendingOtp(session)).resolves.toEqual(requests);
   });
 
-  it('returns an empty array when requests is absent', async () => {
+  it('says so when the importer sends something it cannot read', async () => {
+    // An answer with no requests field is not the same as no requests
+    // pending, and showing it as the latter hides a real problem.
     stubFetch(200, {});
+    await expect(getPendingOtp(session)).rejects.toThrow('could not read');
+  });
+
+  it('returns an empty array when nothing is pending', async () => {
+    stubFetch(200, { requests: [] });
     await expect(getPendingOtp(session)).resolves.toEqual([]);
   });
 

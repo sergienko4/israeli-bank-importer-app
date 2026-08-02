@@ -80,7 +80,8 @@
     "export": "expo export --platform android --platform ios",
     "prepare": "husky",
     "contract:check": "node scripts/check-contract.mjs",
-    "contract:sync": "node scripts/check-contract.mjs --write"
+    "contract:sync": "node scripts/check-contract.mjs --write",
+    "check:bundle": "node scripts/check-bundle.mjs"
   },
   "engines": {
     "node": "\u003e=22"

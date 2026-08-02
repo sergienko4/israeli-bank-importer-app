@@ -1,6 +1,7 @@
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require('expo/metro-config');
 
+/** The Metro configuration this project bundles with. */
 const config = getDefaultConfig(__dirname);
 
 /**

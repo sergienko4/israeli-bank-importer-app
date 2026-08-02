@@ -1,6 +1,6 @@
 {
   "name": "israeli-bank-importer-app",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -84,7 +84,7 @@
     "check:bundle": "node scripts/check-bundle.mjs"
   },
   "engines": {
-    "node": "\u003e=22"
+    "node": ">=22"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

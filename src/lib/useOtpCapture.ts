@@ -10,15 +10,17 @@
  */
 import { useEffect, useRef } from 'react';
 
-import { noopOtpCaptureSource, type OtpCaptureSource, startOtpCapture } from './otpCapture';
+import OtpSmsConsentModule from '../../modules/otp-sms-consent/src/OtpSmsConsentModule';
+import { type OtpCaptureSource, startOtpCapture } from './otpCapture';
+import { createSmsConsentSource } from './smsConsentSource';
 
 /**
  * The capture this build listens through.
  *
- * There is no platform implementation yet, so capture is inert and the OTP
- * prompt behaves exactly as it does today.
+ * Resolves to the Android consent module where it exists and to an inert
+ * source everywhere else, so no caller needs a platform check.
  */
-const platformSource: OtpCaptureSource = noopOtpCaptureSource;
+const platformSource: OtpCaptureSource = createSmsConsentSource(OtpSmsConsentModule);
 
 /**
  * Listens for a one-time-code message for as long as a request is on screen.

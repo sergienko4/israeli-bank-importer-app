@@ -34,6 +34,7 @@ import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
+import { useOtpCapture } from '../lib/useOtpCapture';
 import { useTheme } from '../theme/ThemeContext';
 
 const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
@@ -250,6 +251,10 @@ export function OtpPrompt({
     countdown.cancel();
     haptics.warning();
   };
+
+  // A captured code is fed through the same path as a paste, so it inherits
+  // every auto-submit bound rather than getting a shortcut around them.
+  useOtpCapture(visible, handleChange);
 
   // Dismissing is a refusal, so it must also drop an armed code: without this
   // the countdown would resume if the same request's sheet were reopened.

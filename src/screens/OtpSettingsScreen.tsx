@@ -27,6 +27,7 @@ import {
 import { haptics } from '../lib/haptics';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoSubmit, saveOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
+import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 import { AutoReadCard } from './AutoReadCard';
 
@@ -92,6 +93,9 @@ function AutoSubmitCard(): ReactElement {
     setError(null);
     try {
       await saveOtpAutoSubmit(next);
+      // The receiver reads a flag rather than the preference, so moving the
+      // switch has to move the flag too. Turning it off empties the stash.
+      await applyStashGate();
       haptics.success();
     } catch (e) {
       // Reverting matters most when turning it OFF: leaving the switch showing

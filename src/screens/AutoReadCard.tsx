@@ -16,6 +16,7 @@ import { haptics } from '../lib/haptics';
 import { requestReceiveSms } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoRead, saveOtpAutoRead } from '../lib/otpAutoReadStore';
 import { setAutoReadEnabled } from '../lib/otpAutoReadToggle';
+import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 
 /**
@@ -63,6 +64,9 @@ export function AutoReadCard(): ReactElement {
       request: requestReceiveSms,
       persist: saveOtpAutoRead,
     });
+    // The receiver reads a flag rather than the preference, so moving the
+    // switch has to move the flag too. Turning it off empties the stash.
+    await applyStashGate();
     // The result decides the switch, not the tap: a refused permission has to
     // leave it off rather than showing a state the device never reached.
     setEnabled(result === 'enabled');

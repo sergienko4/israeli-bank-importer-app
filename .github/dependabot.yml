@@ -20,26 +20,81 @@ updates:
       include: scope
     # Upgrades that the registry offers but this app cannot take. Each entry
     # records what blocks it, so the list can be re-tested rather than
-    # re-argued at the next Expo SDK upgrade. Every entry is scoped to the
-    # incompatible upgrade path only, so patch releases - which is how these
-    # projects ship security fixes - still reach the review queue.
+    # re-argued at the next Expo SDK upgrade. Every entry is scoped by
+    # `update-types` rather than naming a bare dependency, so it filters
+    # version updates only - security updates are not a `version-update:*`
+    # type and still reach the review queue.
+    #
+    # The Expo block below is not a list of opinions: it is every declared
+    # package that appears in `expo/bundledNativeModules.json`, which is the
+    # file `npx expo install --check` validates against. A bump past the SDK
+    # pin turns `expo doctor` red, and doctor is a required CI check, so each
+    # entry is scoped to the pin's *shape*:
+    #   exact pin (`19.2.3`)  -> any bump breaks it, so ignore all three
+    #   tilde pin (`~5.7.0`)  -> patch stays inside the range, ignore the rest
+    # These move when the SDK moves - bump `expo`, then `npx expo install
+    # --fix`, which is why `expo` itself is deliberately NOT ignored.
     ignore:
-      # Expo SDK 54 builds against react 19.1.0 and react-native 0.81.5.
-      # Newer minor lines belong to a later SDK, and `npx expo install
-      # --check` rejects them, so the React line moves when the SDK moves.
+      # Exact pins. Expo SDK 57 builds against react 19.2.3 and react-native
+      # 0.86.2, and pins each native module to a single version, so even a
+      # patch bump fails `npx expo install --check`. A react patch slipping
+      # through this gap is what broke doctor on main (PRs #67/#68).
       - dependency-name: react
-        update-types: ['version-update:semver-minor', 'version-update:semver-major']
+        update-types:
+          [
+            'version-update:semver-patch',
+            'version-update:semver-minor',
+            'version-update:semver-major',
+          ]
       - dependency-name: react-native
+        update-types:
+          [
+            'version-update:semver-patch',
+            'version-update:semver-minor',
+            'version-update:semver-major',
+          ]
+      - dependency-name: react-native-reanimated
+        update-types:
+          [
+            'version-update:semver-patch',
+            'version-update:semver-minor',
+            'version-update:semver-major',
+          ]
+      - dependency-name: react-native-worklets
+        update-types:
+          [
+            'version-update:semver-patch',
+            'version-update:semver-minor',
+            'version-update:semver-major',
+          ]
+      - dependency-name: react-native-keyboard-controller
+        update-types:
+          [
+            'version-update:semver-patch',
+            'version-update:semver-minor',
+            'version-update:semver-major',
+          ]
+      # Tilde pins. A patch resolves inside the SDK's own range and stays
+      # compatible; a minor leaves it. safe-area-context reaching 5.8.0 past
+      # the SDK's `~5.7.0` is the other half of the doctor breakage.
+      - dependency-name: react-native-safe-area-context
         update-types: ['version-update:semver-minor', 'version-update:semver-major']
-      - dependency-name: react-test-renderer
+      - dependency-name: 'expo-*'
         update-types: ['version-update:semver-minor', 'version-update:semver-major']
-      - dependency-name: '@types/react'
+      - dependency-name: '@expo/*'
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
+      - dependency-name: jest-expo
         update-types: ['version-update:semver-minor', 'version-update:semver-major']
       # eslint-config-expo is published per SDK - its dist-tags are literally
-      # sdk-51, canary-sdk-55, canary-sdk-56 - so 10.x is the SDK 54 line and
-      # 'latest' tracks whichever SDK shipped most recently.
+      # sdk-51, canary-sdk-55, canary-sdk-56 - so 57.x is the SDK 57 line and
+      # 'latest' tracks whichever SDK shipped most recently. It is also
+      # bundledNativeModules-pinned at `~57.0.1`, hence the minor entry.
       - dependency-name: eslint-config-expo
-        update-types: ['version-update:semver-major']
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
+      # Not SDK-pinned, but @types/react tracks whichever react line the SDK
+      # ships, so it moves with the entry above rather than independently.
+      - dependency-name: '@types/react'
+        update-types: ['version-update:semver-minor', 'version-update:semver-major']
       # ESLint 10 removed context.getFilename(). Every published
       # eslint-config-expo, 57.0.1 included, still nests an
       # eslint-plugin-react that calls it, and the lint run dies on the first
@@ -79,7 +134,6 @@ updates:
           - 'react'
           - 'react-dom'
           - 'react-native'
-          - 'react-test-renderer'
       eslint:
         patterns:
           - 'eslint'

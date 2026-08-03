@@ -3,10 +3,14 @@
  * are collected through this app or forwarded via Telegram. This setting lives
  * outside the config manifest, so it is intentionally editable only here and not
  * in the web portal.
+ *
+ * The auto-submit choice below it is different in kind: it is stored on this
+ * device rather than on the importer, because it describes how a code reaches
+ * the field on this phone, not how the account behaves.
  */
 import { Ionicons } from '@expo/vector-icons';
 import { type ReactElement, useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { getOtpSettings, setOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
@@ -21,6 +25,7 @@ import {
   SkeletonList,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
+import { loadOtpAutoSubmit, saveOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { useTheme } from '../theme/ThemeContext';
 
 interface Props {
@@ -48,6 +53,89 @@ const CHOICES: Choice[] = [
     subtitle: 'The importer asks for the OTP over your Telegram bot.',
   },
 ];
+
+/**
+ * Renders the device-local auto-submit choice.
+ *
+ * Kept self-contained because nothing else on this screen depends on it: the
+ * channel above talks to the importer, this talks to the keystore.
+ * @returns The auto-submit card.
+ */
+function AutoSubmitCard(): ReactElement {
+  const theme = useTheme();
+  const [enabled, setEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const run = async (): Promise<void> => {
+      const stored = await loadOtpAutoSubmit();
+      if (active) {
+        setEnabled(stored);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Takes the target value rather than inverting current state, so the row and
+  // the switch cannot fight each other if both report the same tap.
+  const toggle = async (next: boolean): Promise<void> => {
+    if (next === enabled) {
+      return;
+    }
+    setEnabled(next);
+    setError(null);
+    try {
+      await saveOtpAutoSubmit(next);
+      haptics.success();
+    } catch (e) {
+      // Reverting matters most when turning it OFF: leaving the switch showing
+      // "off" after a failed write would tell the user codes are no longer sent
+      // automatically while they still are.
+      setEnabled(!next);
+      haptics.warning();
+      setError(e instanceof Error ? e.message : 'Could not save the auto-submit setting.');
+    }
+  };
+
+  return (
+    <View style={styles.section}>
+      <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
+        When a code arrives by autofill or paste, this app can send it without waiting for you to
+        press Submit.
+      </Text>
+      <Card padded={false} style={styles.menu}>
+        <ListRow
+          icon="flash-outline"
+          title="Submit codes automatically"
+          subtitle="You get three seconds to cancel. Only whole codes that arrive at once count — typing is never submitted for you."
+          accessibilityRole="switch"
+          accessibilityState={{ checked: enabled }}
+          accessibilityHint="Sends a filled one-time code without pressing Submit."
+          onPress={() => {
+            void toggle(!enabled);
+          }}
+          right={
+            <Switch
+              value={enabled}
+              onValueChange={(next) => {
+                void toggle(next);
+              }}
+            />
+          }
+        />
+      </Card>
+      <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
+        Leave this off if you would rather check every code first. A scam text can look like a real
+        one, and an auto-submitted wrong code still costs one of the bank&apos;s few attempts.
+      </Text>
+      {error ? <Banner messages={[error]} /> : null}
+    </View>
+  );
+}
 
 /**
  * Renders the OTP delivery settings screen.
@@ -170,12 +258,16 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
           );
         })}
       </Card>
+      {/* Only shown for the app channel: with Telegram the code never reaches
+          this field, so an auto-submit switch here would do nothing. */}
+      {channel === 'app' ? <AutoSubmitCard /> : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12, marginLeft: 4 },
+  section: { marginTop: 24 },
   menu: { overflow: 'hidden' },
   dot: {
     width: 20,

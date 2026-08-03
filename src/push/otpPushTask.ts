@@ -20,7 +20,7 @@ import { getPendingOtp } from '../api/importerClient';
 import { loadConnection } from '../auth/connectionStore';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
-import { backgroundSession } from '../lib/otpHeadlessTask';
+import { backgroundSession } from '../lib/otpBackgroundSession';
 import { wakeAutoReadWindow } from '../lib/otpPushWake';
 
 /** Identifies the task to both `expo-task-manager` and the OS. */

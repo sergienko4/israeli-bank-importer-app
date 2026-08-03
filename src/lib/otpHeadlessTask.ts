@@ -8,34 +8,15 @@
  */
 import { AppRegistry, Platform } from 'react-native';
 
-import { getPendingOtp, type Session, submitOtp } from '../api/importerClient';
-import { toSession } from '../auth/appSession';
-import { type Connection, loadConnection } from '../auth/connectionStore';
+import { getPendingOtp, submitOtp } from '../api/importerClient';
+import { loadConnection } from '../auth/connectionStore';
 import { isAutoReadBuild } from './otpAutoReadPermission';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { backgroundSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 
 /** Must match `TASK_NAME` in `OtpSmsAutoReadService.kt`. */
 export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
-
-/**
- * Narrows a stored connection to one usable with nobody watching.
- *
- * An expired token is treated as no session at all. Renewing one requires a
- * biometric prompt, and raising that from a background task would either fail
- * outright or demand exactly the interaction this feature exists to remove. The
- * user finishes such a code by hand, which is the pre-existing behaviour.
- *
- * @param connection - The stored connection, or `null` when unpaired.
- * @param now - Current time in epoch milliseconds.
- * @returns A usable session, or `null` when the code must be typed instead.
- */
-export function backgroundSession(connection: Connection | null, now: number): Session | null {
-  if (connection === null || connection.expiresAt <= now) {
-    return null;
-  }
-  return toSession(connection);
-}
 
 /**
  * Handles one message handed over by the native receiver.

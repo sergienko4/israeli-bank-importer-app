@@ -11,6 +11,12 @@
  * Being lifted also shrinks the room the panel has to grow into, so its height
  * cap is measured against the space above the keyboard rather than the whole
  * window; budgeting against the window pushes a tall panel off the top instead.
+ *
+ * The body scrolls but deliberately does not auto-scroll a focused input into
+ * view: the panel is already translated clear of the IME, so a keyboard-aware
+ * scroller nested here would subtract the keyboard a second time and over-
+ * scroll. Sheets are for short content — a form long enough to need per-field
+ * scrolling belongs on a {@link Screen} instead.
  */
 import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';

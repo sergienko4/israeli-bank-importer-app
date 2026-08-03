@@ -2,7 +2,7 @@
  * Keyboard offset arithmetic, kept pure and separate from the components that
  * apply it.
  *
- * Two numbers matter, and both are easy to get subtly wrong.
+ * Three numbers matter, and each is easy to get subtly wrong.
  *
  * The first is the safe-area correction. On a gesture-navigation device the
  * reported keyboard height already spans the home-indicator strip, so a layout
@@ -13,7 +13,11 @@
  * keyboard it covers the bottom of the scroll viewport, so a field scrolled to
  * sit just above the keyboard can still end up behind the bar.
  *
- * Both are arithmetic, so they live here where they can be unit- and
+ * The third is the height budget of a panel that is itself lifted by the
+ * keyboard. Capping such a panel against the full window is what pushes its
+ * top, and its title, off the top of the screen once the keyboard opens.
+ *
+ * All three are arithmetic, so they live here where they can be unit- and
  * property-tested rather than eyeballed on a device.
  */
 
@@ -66,4 +70,44 @@ export function computeFocusedFieldOffset(inputs: Readonly<FocusedFieldOffsetInp
  */
 export function computeStickyFooterOffset(bottomSafeAreaInset: number): number {
   return clampMeasurement(bottomSafeAreaInset);
+}
+
+/** Geometry needed to size a panel that the keyboard lifts off the bottom edge. */
+export interface SheetMaxHeightInputs {
+  /** Height of the window the panel is displayed in. */
+  readonly windowHeight: number;
+  /** Current keyboard height, or zero while it is closed. */
+  readonly keyboardHeight: number;
+  /** Fraction of the free space the panel may occupy, in (0, 1]. */
+  readonly ratio: number;
+}
+
+/**
+ * Clamps a share of available space to a usable fraction.
+ * @param value - Raw ratio.
+ * @returns The ratio when it is a fraction above zero, otherwise one.
+ */
+function clampRatio(value: number): number {
+  return Number.isFinite(value) && value > 0 && value <= 1 ? value : 1;
+}
+
+/**
+ * Computes the tallest a keyboard-lifted panel may be and stay fully on screen.
+ *
+ * A panel pinned to the bottom edge and translated up by the keyboard height
+ * only has the space *above* the keyboard to grow into. Budgeting it against
+ * the whole window instead is what silently moves its top edge off screen: an
+ * 80%-tall panel lifted by a 40%-tall keyboard starts 20% above the top.
+ *
+ * A keyboard reported as at least as tall as the window is treated as
+ * unmeasured rather than collapsing the panel to nothing, since a panel with no
+ * height is a worse failure than one that is slightly too tall.
+ * @param inputs - Window and keyboard heights plus the share to allow.
+ * @returns A non-negative maximum height in density-independent pixels.
+ */
+export function computeSheetMaxHeight(inputs: Readonly<SheetMaxHeightInputs>): number {
+  const windowHeight = clampMeasurement(inputs.windowHeight);
+  const keyboardHeight = clampMeasurement(inputs.keyboardHeight);
+  const available = keyboardHeight < windowHeight ? windowHeight - keyboardHeight : windowHeight;
+  return clampMeasurement(available * clampRatio(inputs.ratio));
 }

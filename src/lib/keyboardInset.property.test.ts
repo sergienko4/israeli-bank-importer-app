@@ -9,7 +9,11 @@
  */
 import * as fc from 'fast-check';
 
-import { computeFocusedFieldOffset, computeStickyFooterOffset } from './keyboardInset';
+import {
+  computeFocusedFieldOffset,
+  computeSheetMaxHeight,
+  computeStickyFooterOffset,
+} from './keyboardInset';
 
 /** Any double a layout callback could plausibly hand us, including NaN. */
 const measurement = fc.oneof(
@@ -59,6 +63,35 @@ describe('computeStickyFooterOffset properties', () => {
       fc.property(fc.double({ min: 0, max: 200, noNaN: true }), (inset) => {
         expect(computeStickyFooterOffset(inset)).toBeLessThanOrEqual(inset);
       }),
+    );
+  });
+});
+
+describe('computeSheetMaxHeight properties', () => {
+  it('always returns a finite, non-negative height', () => {
+    fc.assert(
+      fc.property(measurement, measurement, measurement, (windowHeight, keyboardHeight, ratio) => {
+        const result = computeSheetMaxHeight({ windowHeight, keyboardHeight, ratio });
+        expect(Number.isFinite(result)).toBe(true);
+        expect(result).toBeGreaterThanOrEqual(0);
+      }),
+    );
+  });
+
+  it('leaves a lifted panel on screen for any keyboard smaller than the window', () => {
+    // The invariant the whole function exists for: panel height plus the
+    // distance it is lifted by must still fit inside the window.
+    fc.assert(
+      fc.property(
+        fc.double({ min: 1, max: 3000, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true, maxExcluded: false }),
+        fc.double({ min: 0, max: 1, noNaN: true, maxExcluded: true }),
+        (windowHeight, ratio, keyboardShare) => {
+          const keyboardHeight = windowHeight * keyboardShare;
+          const result = computeSheetMaxHeight({ windowHeight, keyboardHeight, ratio });
+          expect(result + keyboardHeight).toBeLessThanOrEqual(windowHeight);
+        },
+      ),
     );
   });
 });

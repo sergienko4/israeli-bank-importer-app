@@ -7,6 +7,10 @@
  * The panel is pinned to `bottom: 0`, which is exactly where the keyboard
  * appears, so it is wrapped in a keyboard-sticky view: without that the OTP
  * field a caller puts in here is covered by the IME the moment it is focused.
+ *
+ * Being lifted also shrinks the room the panel has to grow into, so its height
+ * cap is measured against the space above the keyboard rather than the whole
+ * window; budgeting against the window pushes a tall panel off the top instead.
  */
 import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -21,11 +25,11 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { KeyboardStickyView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
-import { computeStickyFooterOffset } from '../../lib/keyboardInset';
+import { computeSheetMaxHeight, computeStickyFooterOffset } from '../../lib/keyboardInset';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { durations, easing, motionDuration, spring } from '../../theme/motion';
 import { useTheme } from '../../theme/ThemeContext';
@@ -59,6 +63,7 @@ export function Sheet({
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
+  const keyboardHeight = useKeyboardState((state) => state.height);
   const [mounted, setMounted] = useState(visible);
   const [progress] = useState(() => new Animated.Value(0));
   const previousVisible = useRef(false);
@@ -127,7 +132,11 @@ export function Sheet({
           style={[
             styles.sheet,
             {
-              maxHeight: windowHeight * SHEET_MAX_HEIGHT_RATIO,
+              maxHeight: computeSheetMaxHeight({
+                windowHeight,
+                keyboardHeight,
+                ratio: SHEET_MAX_HEIGHT_RATIO,
+              }),
               backgroundColor: theme.colors.surface,
               borderTopLeftRadius: theme.radius.xl,
               borderTopRightRadius: theme.radius.xl,

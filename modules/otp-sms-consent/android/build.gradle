@@ -1,0 +1,26 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.otpsmsconsent'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.otpsmsconsent"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // SMS User Consent API. Deliberately NOT play-services-auth: this module
+  // never asks for a phone number, and it must never pull in an SMS
+  // permission. Consent is granted per message, by the user, in a system
+  // dialog we do not control.
+  implementation "com.google.android.gms:play-services-auth-api-phone:18.3.1"
+}

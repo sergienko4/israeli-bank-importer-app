@@ -1,0 +1,10 @@
+<!--
+  Deliberately empty.
+
+  The SMS User Consent API requires no permission: play services shows the user
+  a dialog for each candidate message, and the app only ever sees a message the
+  user approved. If a *_SMS permission ever appears in the merged manifest,
+  something in this module has regressed and must be reverted.
+-->
+<manifest>
+</manifest>

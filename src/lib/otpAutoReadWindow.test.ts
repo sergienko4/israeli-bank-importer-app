@@ -1,5 +1,27 @@
 import type { PendingOtpRequest } from '../api/otp';
-import { autoReadWindowDeadline } from './otpAutoReadWindow';
+import { autoReadWindowDeadline, syncAutoReadWindow } from './otpAutoReadWindow';
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+
+// Named `mock*` so Jest allows the hoisted factory below to close over them.
+// The factory delegates through arrows because it runs during the import phase,
+// before these consts are initialised.
+const mockOpenWindow = jest.fn();
+const mockCloseWindow = jest.fn();
+
+jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+jest.mock('../../modules/otp-sms-consent/src/OtpSmsConsentModule', () => ({
+  __esModule: true,
+  default: {
+    openAutoReadWindow: (deadline: number) => {
+      mockOpenWindow(deadline);
+    },
+    closeAutoReadWindow: () => {
+      mockCloseWindow();
+    },
+  },
+}));
+
+const mockAllowed = jest.mocked(loadBackgroundCaptureAllowed);
 
 const NOW = 1_700_000_000_000;
 
@@ -33,5 +55,32 @@ describe('autoReadWindowDeadline', () => {
   it('caps a far-future deadline so a stuck request cannot hold it open', () => {
     const deadline = autoReadWindowDeadline([request('a', 48 * 60 * 60 * 1000)], NOW);
     expect(deadline).toBe(NOW + 10 * 60 * 1000);
+  });
+});
+
+describe('syncAutoReadWindow', () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it('opens the window when a code is expected and both switches are on', async () => {
+    mockAllowed.mockResolvedValue(true);
+    await syncAutoReadWindow([request('a', 60_000)], NOW);
+    expect(mockOpenWindow).toHaveBeenCalledWith(NOW + 60_000);
+  });
+
+  it('keeps the window shut while the user has a switch off', async () => {
+    // Android leaves RECEIVE_SMS granted once answered, so this preference is
+    // the only thing that can stop the receiver examining messages.
+    mockAllowed.mockResolvedValue(false);
+    await syncAutoReadWindow([request('a', 60_000)], NOW);
+    expect(mockOpenWindow).not.toHaveBeenCalled();
+    expect(mockCloseWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the window when nothing is pending, without consulting the switches', async () => {
+    mockAllowed.mockResolvedValue(true);
+    await syncAutoReadWindow([], NOW);
+    expect(mockCloseWindow).toHaveBeenCalledTimes(1);
   });
 });

@@ -50,7 +50,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
   useEffect(() => {
     if (!connection) {
       setPending(null);
-      syncAutoReadWindow([]);
+      void syncAutoReadWindow([]);
       return undefined;
     }
     let active = true;
@@ -60,7 +60,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       }
       // Tracks every pending request, not just the one shown: the native
       // receiver has to stay open as long as any code could still arrive.
-      syncAutoReadWindow(requests);
+      void syncAutoReadWindow(requests);
       setPending(selectPendingOtp(requests, dismissed.current));
     });
     void poll();
@@ -72,7 +72,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       sub.remove();
       // Leaving the window open past the screen that opened it would let the
       // receiver examine messages for a scrape nobody is watching any more.
-      syncAutoReadWindow([]);
+      void syncAutoReadWindow([]);
     };
   }, [connection]);
 

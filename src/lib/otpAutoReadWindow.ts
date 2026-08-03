@@ -13,6 +13,7 @@
  */
 import OtpSmsConsentModule from '../../modules/otp-sms-consent/src/OtpSmsConsentModule';
 import type { PendingOtpRequest } from '../api/otp';
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { MAX_EXPECTATION_MS } from './otpExpectedWindow';
 
 /**
@@ -45,15 +46,19 @@ export function autoReadWindowDeadline(
  * Does nothing on a build or platform without the native module, which is the
  * ordinary case: the default build has no receiver to gate.
  *
+ * Only opening is gated on the user's switches. Closing is always allowed, so
+ * a preference turned off mid-window is acted on by the next poll rather than
+ * waiting for the deadline to lapse.
+ *
  * @param pending - Requests the importer reports as awaiting a code.
  * @param now - Current time in epoch milliseconds.
  */
-export function syncAutoReadWindow(
+export async function syncAutoReadWindow(
   pending: readonly PendingOtpRequest[],
   now: number = Date.now(),
-): void {
+): Promise<void> {
   const deadline = autoReadWindowDeadline(pending, now);
-  if (deadline === null) {
+  if (deadline === null || !(await loadBackgroundCaptureAllowed())) {
     OtpSmsConsentModule?.closeAutoReadWindow();
     return;
   }

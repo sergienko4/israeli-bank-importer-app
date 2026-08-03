@@ -12,6 +12,7 @@ import { getPendingOtp, type Session, submitOtp } from '../api/importerClient';
 import { toSession } from '../auth/appSession';
 import { type Connection, loadConnection } from '../auth/connectionStore';
 import { isAutoReadBuild } from './otpAutoReadPermission';
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 
 /** Must match `TASK_NAME` in `OtpSmsAutoReadService.kt`. */
@@ -39,11 +40,18 @@ export function backgroundSession(connection: Connection | null, now: number): S
 /**
  * Handles one message handed over by the native receiver.
  *
+ * The switches are re-read here rather than trusted from the open window. The
+ * window is a deadline on disk that outlives the process, so one opened before
+ * the user changed their mind would otherwise still submit a code.
+ *
  * @param data - The service payload, carrying the message body.
  */
 export async function runOtpSmsTask(data: { readonly body?: string }): Promise<void> {
   const body = data.body;
   if (typeof body !== 'string' || body === '') {
+    return;
+  }
+  if (!(await loadBackgroundCaptureAllowed())) {
     return;
   }
   await autoSubmitFromMessage(body, {

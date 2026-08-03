@@ -1,10 +1,22 @@
-import {
-  AndroidConfig,
-  type AndroidManifest,
-  withAndroidManifest,
-  type ConfigPlugin,
-} from '@expo/config-plugins';
+import type { AndroidManifest, ConfigPlugin } from '@expo/config-plugins';
+import * as configPluginsModule from '@expo/config-plugins';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+/**
+ * The two loaders that read this file disagree about how to reach a CommonJS
+ * module, and `@expo/config-plugins` defines its exports as lazy getters, which
+ * makes the disagreement fatal rather than cosmetic.
+ *
+ * Under the ESM loader `eas update:configure` uses, the getters are invisible,
+ * so named imports fail and only `default` holds the exports. Under the
+ * transpiled CommonJS path `expo config` and `expo prebuild` use, there is no
+ * synthesized `default` at all. Taking whichever exists satisfies both.
+ */
+const configPlugins =
+  (configPluginsModule as typeof configPluginsModule & { default?: typeof configPluginsModule })
+    .default ?? configPluginsModule;
+
+const { AndroidConfig, withAndroidManifest } = configPlugins;
 
 /** The receiver entry shape, taken from the manifest type this plugin edits. */
 type ManifestReceiver = NonNullable<

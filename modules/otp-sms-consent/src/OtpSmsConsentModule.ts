@@ -27,6 +27,46 @@ declare class OtpSmsConsentNativeModule extends NativeModule<{
   openAutoReadWindow(expiresAtMillis: number): void;
   /** Stops the auto-read receiver examining messages. Safe to call when idle. */
   closeAutoReadWindow(): void;
+  /**
+   * Every message held because it arrived before a code was asked for.
+   *
+   * Expired entries are pruned as a side effect, so the answer is always the
+   * set that may still be acted on.
+   */
+  listStashedMessages(): Promise<NativeStashedMessage[]>;
+  /** Drops a held message for good, once its code has been accepted. */
+  consumeStashedMessage(id: string): Promise<void>;
+  /**
+   * Records that a held message was already sent against one request.
+   *
+   * This is what stops a code the importer rejected being sent again, which
+   * would spend the bank's few attempts on an answer known to be wrong.
+   */
+  markStashAttempt(id: string, requestId: string): Promise<void>;
+  /** Forgets every held message. Safe to call when none are held. */
+  clearStash(): Promise<void>;
+  /**
+   * Mirrors the user's auto-read preference natively.
+   *
+   * The receiver consults this before holding anything, so a refusal costs no
+   * JavaScript at all. Passing false also empties the stash. Synchronous
+   * because it must be durable before the next message can arrive.
+   */
+  setStashEnabled(enabled: boolean): void;
+}
+
+/** One held message, exactly as the native record delivers it. */
+export interface NativeStashedMessage {
+  /** Content-derived identity, stable across a redelivered broadcast. */
+  id: string;
+  /** The raw text, unparsed. */
+  body: string;
+  /** Originating address, as the network gave it. */
+  sender: string;
+  /** When the network handed the message over, epoch milliseconds. */
+  receivedAt: number;
+  /** Requests this message has already been submitted against. */
+  attempted: string[];
 }
 
 /**

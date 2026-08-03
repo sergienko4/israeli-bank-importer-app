@@ -1,0 +1,210 @@
+import { STASH_TTL_MS, type StashedMessage } from './otpStash';
+import type { StashDrainPorts } from './otpStashDrain';
+import { drainStash } from './otpStashDrain';
+
+/**
+ * The drain: what happens when a code was already sitting in the stash by the
+ * time the importer asked for one.
+ *
+ * This runs unattended, so the acknowledgement is the security control. A
+ * submitted message must be consumed exactly once, a rejected one must be
+ * recorded so it is never sent again, and a transient failure must leave the
+ * message untouched so a later attempt can still use it.
+ */
+
+const NOW = 1_700_000_000_000;
+const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
+
+/**
+ * Builds a held message, live at {@link NOW} unless overridden.
+ *
+ * @param over - Fields to replace.
+ * @returns The message.
+ */
+function held(over: Partial<StashedMessage> = {}): StashedMessage {
+  return {
+    id: 'msg-1',
+    body: 'Your code is 481920',
+    sender: '+972500000000',
+    receivedAt: NOW - 1000,
+    attempted: [],
+    ...over,
+  };
+}
+
+/**
+ * Builds ports each test overrides, recording every call that matters.
+ *
+ * @param overrides - Ports to replace.
+ * @returns The ports plus the recorded calls.
+ */
+function ports(overrides: Partial<StashDrainPorts> = {}) {
+  const submitted: { id: string; code: string }[] = [];
+  const consumed: string[] = [];
+  const attempts: { id: string; requestId: string }[] = [];
+  const base: StashDrainPorts = {
+    list: () => Promise.resolve([held()]),
+    consume: (id) => {
+      consumed.push(id);
+      return Promise.resolve();
+    },
+    markAttempt: (id, requestId) => {
+      attempts.push({ id, requestId });
+      return Promise.resolve();
+    },
+    loadSession: () => Promise.resolve(SESSION),
+    getPending: () => Promise.resolve([LIVE]),
+    submit: (_session, id, code) => {
+      submitted.push({ id, code });
+      return Promise.resolve({ ok: true });
+    },
+    now: () => NOW,
+    ...overrides,
+  };
+  return { ports: base, submitted, consumed, attempts };
+}
+
+describe('drainStash', () => {
+  it('submits a held code against the pending request and consumes it', async () => {
+    const { ports: p, submitted, consumed, attempts } = ports();
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
+    expect(consumed).toEqual(['msg-1']);
+    expect(attempts).toEqual([]);
+  });
+
+  it('records the attempt and keeps the message when the importer rejects it', async () => {
+    const {
+      ports: p,
+      consumed,
+      attempts,
+    } = ports({
+      submit: () => Promise.resolve({ ok: false, error: 'wrong code' }),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('rejected');
+    expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+    expect(consumed).toEqual([]);
+  });
+
+  it('leaves the message completely untouched when submitting throws', async () => {
+    const {
+      ports: p,
+      consumed,
+      attempts,
+    } = ports({
+      submit: () => Promise.reject(new Error('offline')),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('failed');
+    expect(consumed).toEqual([]);
+    expect(attempts).toEqual([]);
+  });
+
+  it('reaches nothing over the network when the stash is empty', async () => {
+    let reached = false;
+    const { ports: p } = ports({
+      list: () => Promise.resolve([]),
+      loadSession: () => {
+        reached = true;
+        return Promise.resolve(SESSION);
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('empty');
+    expect(reached).toBe(false);
+  });
+
+  it('treats a stash of aged-out messages as empty', async () => {
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve([held({ receivedAt: NOW - STASH_TTL_MS })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('empty');
+    expect(submitted).toEqual([]);
+  });
+
+  it('stops when the device is not paired', async () => {
+    const { ports: p, submitted } = ports({ loadSession: () => Promise.resolve(null) });
+
+    await expect(drainStash(p)).resolves.toBe('no-session');
+    expect(submitted).toEqual([]);
+  });
+
+  it('stops when the importer is not waiting for a code', async () => {
+    const { ports: p, submitted } = ports({ getPending: () => Promise.resolve([]) });
+
+    await expect(drainStash(p)).resolves.toBe('no-pending');
+    expect(submitted).toEqual([]);
+  });
+
+  // Security: an unrelated service's code parses exactly as cleanly as a bank's,
+  // so two live codes must cost the user a few seconds of typing, not a guess.
+  it('submits nothing when two held messages carry different codes', async () => {
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve([held(), held({ id: 'msg-2', body: 'Your code is 300111' })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('ambiguous');
+    expect(submitted).toEqual([]);
+  });
+
+  it('submits once when the same code was delivered twice', async () => {
+    const {
+      ports: p,
+      submitted,
+      consumed,
+    } = ports({
+      list: () => Promise.resolve([held(), held({ id: 'msg-2' })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(submitted).toHaveLength(1);
+    expect(consumed).toEqual(['msg-2']);
+  });
+
+  it('holds messages that carry no code at all without submitting', async () => {
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve([held({ body: 'Mum says call me back' })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('ambiguous');
+    expect(submitted).toEqual([]);
+  });
+
+  // Security: retrying a rejected code against the same request is how the
+  // bank's few attempts get spent in a loop.
+  it('never sends a message twice against the request that already rejected it', async () => {
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve([held({ attempted: ['req-1'] })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('ambiguous');
+    expect(submitted).toEqual([]);
+  });
+
+  it('still offers a message rejected by a different request', async () => {
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve([held({ attempted: ['req-0'] })]),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
+  });
+
+  it('reads the stash once and submits at most one code per run', async () => {
+    let reads = 0;
+    const { ports: p, submitted } = ports({
+      list: () => {
+        reads += 1;
+        return Promise.resolve([held(), held({ id: 'msg-2' }), held({ id: 'msg-3' })]);
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(reads).toBe(1);
+    expect(submitted).toHaveLength(1);
+  });
+});

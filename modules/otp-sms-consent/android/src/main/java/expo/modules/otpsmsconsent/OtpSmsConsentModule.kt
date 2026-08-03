@@ -13,6 +13,8 @@ import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.Exceptions
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.records.Field
+import expo.modules.kotlin.records.Record
 
 /** Identifies our consent dialog among every activity result the app receives. */
 private const val CONSENT_REQUEST_CODE = 41762
@@ -63,6 +65,39 @@ class OtpSmsConsentModule : Module() {
 
     Function("closeAutoReadWindow") {
       SmsExpectation.close(requireContext())
+    }
+
+    // Messages held because they arrived before anything was waiting for a
+    // code. They are read here and decided in JavaScript, where the rule that
+    // says what a code looks like lives and is tested.
+    AsyncFunction("listStashedMessages") {
+      SmsStash.all(requireContext()).map { entry ->
+        StashedMessageRecord(
+          id = entry.id,
+          body = entry.body,
+          sender = entry.sender,
+          receivedAt = entry.receivedAt.toDouble(),
+          attempted = entry.attempted,
+        )
+      }
+    }
+
+    AsyncFunction("consumeStashedMessage") { id: String ->
+      SmsStash.consume(requireContext(), id)
+    }
+
+    AsyncFunction("markStashAttempt") { id: String, requestId: String ->
+      SmsStash.markAttempt(requireContext(), id, requestId)
+    }
+
+    AsyncFunction("clearStash") {
+      SmsStash.clear(requireContext())
+    }
+
+    // Mirrors the user's switches natively, so the receiver can decline to hold
+    // a message without starting JavaScript to ask.
+    Function("setStashEnabled") { enabled: Boolean ->
+      SmsStash.setEnabled(requireContext(), enabled)
     }
 
     OnActivityResult { _, payload ->
@@ -141,6 +176,20 @@ class OtpSmsConsentModule : Module() {
     sendEvent(ON_MESSAGE_EVENT, mapOf("body" to body))
   }
 }
+
+/**
+ * One held message, as JavaScript receives it.
+ *
+ * A record rather than a loose map so the field names are declared in one place
+ * and the TypeScript declaration beside it can be trusted to match.
+ */
+class StashedMessageRecord(
+  @Field val id: String = "",
+  @Field val body: String = "",
+  @Field val sender: String = "",
+  @Field val receivedAt: Double = 0.0,
+  @Field val attempted: List<String> = emptyList(),
+) : Record
 
 /** Turns a play-services candidate broadcast into a consent request. */
 private class ConsentReceiver(private val onConsentIntent: (Intent) -> Unit) : BroadcastReceiver() {

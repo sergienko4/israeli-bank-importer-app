@@ -17,6 +17,16 @@ declare class OtpSmsConsentNativeModule extends NativeModule<{
   startListening(): Promise<void>;
   /** Closes the listening window. Safe to call when none is open. */
   stopListening(): Promise<void>;
+  /**
+   * Lets the auto-read receiver examine messages until `expiresAtMillis`.
+   *
+   * Only meaningful in a build carrying the auto-read receiver; elsewhere it
+   * writes a value nothing reads. Synchronous because it must be durable
+   * before the request that provokes the code is sent.
+   */
+  openAutoReadWindow(expiresAtMillis: number): void;
+  /** Stops the auto-read receiver examining messages. Safe to call when idle. */
+  closeAutoReadWindow(): void;
 }
 
 /**

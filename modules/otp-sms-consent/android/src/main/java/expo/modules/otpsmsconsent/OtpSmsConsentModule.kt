@@ -54,6 +54,17 @@ class OtpSmsConsentModule : Module() {
       stopListening()
     }
 
+    // The auto-read window. Separate from the consent window above: this one
+    // gates a manifest receiver that runs whether or not the app is open, so it
+    // has to outlive this module and is kept on disk rather than in memory.
+    Function("openAutoReadWindow") { expiresAtMillis: Double ->
+      SmsExpectation.open(requireContext(), expiresAtMillis.toLong())
+    }
+
+    Function("closeAutoReadWindow") {
+      SmsExpectation.close(requireContext())
+    }
+
     OnActivityResult { _, payload ->
       if (payload.requestCode == CONSENT_REQUEST_CODE) {
         emitConsentResult(payload.resultCode, payload.data)
@@ -66,7 +77,7 @@ class OtpSmsConsentModule : Module() {
   }
 
   private fun startListening(promise: Promise) {
-    val context = appContext.reactContext ?: throw Exceptions.ReactContextLost()
+    val context = requireContext()
     registerReceiver(context)
     // A null sender means "any number": the importer does not know which of the
     // bank's gateways will send, and the user still approves the actual message.
@@ -80,6 +91,10 @@ class OtpSmsConsentModule : Module() {
         promise.reject(ERROR_CODE, error.message ?: "Could not start SMS consent", error)
       }
   }
+
+  /** The React context, or a typed failure when it has already gone away. */
+  private fun requireContext(): Context =
+    appContext.reactContext ?: throw Exceptions.ReactContextLost()
 
   private fun registerReceiver(context: Context) {
     if (receiver != null) {

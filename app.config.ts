@@ -1,4 +1,15 @@
+import {
+  AndroidConfig,
+  type AndroidManifest,
+  withAndroidManifest,
+  type ConfigPlugin,
+} from '@expo/config-plugins';
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+/** The receiver entry shape, taken from the manifest type this plugin edits. */
+type ManifestReceiver = NonNullable<
+  NonNullable<AndroidManifest['manifest']['application']>[number]['receiver']
+>[number];
 
 /**
  * Dynamic app config. Everything static still lives in `app.json`; this file
@@ -33,6 +44,61 @@ function isAutoReadBuild(): boolean {
   return process.env.OTP_SMS_AUTOREAD === '1';
 }
 
+/** The receiver's fully qualified name, as the merged manifest must spell it. */
+const RECEIVER = 'expo.modules.otpsmsconsent.OtpSmsAutoReadReceiver';
+
+/** The headless service the receiver starts. */
+const SERVICE = 'expo.modules.otpsmsconsent.OtpSmsAutoReadService';
+
+/**
+ * Held by the system alone, so requiring it means only the OS can deliver to
+ * the receiver. Without it any app on the device could forge a message and
+ * feed this one a code of its choosing.
+ */
+const BROADCAST_SMS = 'android.permission.BROADCAST_SMS';
+
+/**
+ * Adds the auto-read receiver and its service to the Android manifest.
+ *
+ * Kept out of the module's own manifest on purpose. That one is merged into
+ * every build, and a receiver present in the default build would make the
+ * "this build cannot read messages" claim rest on the missing permission alone
+ * rather than on there being nothing to run.
+ *
+ * @param config - The config to extend.
+ * @returns The config with the receiver and service declared.
+ */
+const withOtpSmsAutoRead: ConfigPlugin = (config) =>
+  withAndroidManifest(config, (mod) => {
+    const application = AndroidConfig.Manifest.getMainApplicationOrThrow(mod.modResults);
+
+    // Declared separately because the manifest types do not carry
+    // `android:permission` for a receiver, though the format does.
+    const attributes: ManifestReceiver['$'] & { 'android:permission': string } = {
+      'android:name': RECEIVER,
+      // The system sends this broadcast, so it has to be reachable.
+      'android:exported': 'true',
+      'android:permission': BROADCAST_SMS,
+    };
+
+    application.receiver = [
+      ...(application.receiver ?? []),
+      {
+        $: attributes,
+        'intent-filter': [
+          { action: [{ $: { 'android:name': 'android.provider.Telephony.SMS_RECEIVED' } }] },
+        ],
+      },
+    ];
+
+    application.service = [
+      ...(application.service ?? []),
+      { $: { 'android:name': SERVICE, 'android:exported': 'false' } },
+    ];
+
+    return mod;
+  });
+
 /**
  * Merges the build-flag-dependent fields over the static `app.json` config.
  *
@@ -42,7 +108,7 @@ function isAutoReadBuild(): boolean {
 export default ({ config }: ConfigContext): ExpoConfig => {
   const autoRead = isAutoReadBuild();
 
-  return {
+  const resolved: ExpoConfig = {
     ...config,
     name: config.name ?? 'Israeli Bank Importer',
     slug: config.slug ?? 'israeli-bank-importer-app',
@@ -56,4 +122,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       otpSmsAutoRead: autoRead,
     },
   };
+
+  // Applied here rather than listed in `plugins` so the default build's config
+  // never even names it.
+  return autoRead ? withOtpSmsAutoRead(resolved) : resolved;
 };

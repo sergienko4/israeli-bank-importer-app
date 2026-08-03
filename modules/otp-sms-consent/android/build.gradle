@@ -24,8 +24,13 @@ dependencies {
   // dialog we do not control.
   //
   // Held at 18.3.0 on purpose. 18.3.1 is compiled with Kotlin 2.3, and the
-  // Kotlin toolchain Expo SDK 57 pins reads metadata 2.1: it rejects the
+  // Kotlin toolchain Expo SDK 57 pins reads metadata 2.1 -- it rejects the
   // artifact outright, failing compileDebugKotlin. Raise this only after
   // confirming the SDK's Kotlin version has caught up.
   implementation "com.google.android.gms:play-services-auth-api-phone:18.3.0"
+
+  // For HeadlessJsTaskService, which runs the auto-read capture without a
+  // screen. Unversioned, matching every expo module: the React Native gradle
+  // plugin resolves it to the version the app is built against.
+  implementation "com.facebook.react:react-android"
 }

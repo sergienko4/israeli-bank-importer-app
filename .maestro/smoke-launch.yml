@@ -3,12 +3,13 @@
 # startup, which no unit test in this repo can see.
 #
 # `clearState` forces the unconnected path, so the run never depends on a
-# credential or on a reachable importer.
+# credential or on a reachable importer. That path signs in through the
+# importer's own login page in a browser, so the only controls asserted here are
+# the URL field and the button that opens it — there is no password field.
 appId: com.sergienko4.israelibankimporter
 ---
 - launchApp:
     clearState: true
 - assertVisible: 'Bank Importer'
 - assertVisible: 'Importer URL'
-- assertVisible: 'Portal password'
-- assertVisible: 'Connect'
+- assertVisible: 'Sign in'

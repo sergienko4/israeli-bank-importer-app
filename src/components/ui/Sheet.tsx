@@ -3,13 +3,39 @@
  * fading backdrop, with a grab handle and optional title. Stays mounted during
  * the close animation so the exit is smooth. Built on the Animated API + Modal,
  * and honors reduced motion by snapping open/closed.
+ *
+ * The panel is pinned to `bottom: 0`, which is exactly where the keyboard
+ * appears, so it is wrapped in a keyboard-sticky view: without that the OTP
+ * field a caller puts in here is covered by the IME the moment it is focused.
+ *
+ * Being lifted also shrinks the room the panel has to grow into, so its height
+ * cap is measured against the space above the keyboard rather than the whole
+ * window; budgeting against the window pushes a tall panel off the top instead.
+ *
+ * The body scrolls but deliberately does not auto-scroll a focused input into
+ * view: the panel is already translated clear of the IME, so a keyboard-aware
+ * scroller nested here would subtract the keyboard a second time and over-
+ * scroll. Sheets are for short content — a form long enough to need per-field
+ * scrolling belongs on a {@link Screen} instead.
  */
 import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Keyboard,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { KeyboardStickyView, useKeyboardState } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { haptics } from '../../lib/haptics';
+import { computeSheetMaxHeight, computeStickyFooterOffset } from '../../lib/keyboardInset';
 import { useReducedMotion } from '../../lib/useReducedMotion';
 import { durations, easing, motionDuration, spring } from '../../theme/motion';
 import { useTheme } from '../../theme/ThemeContext';
@@ -25,6 +51,9 @@ interface SheetProps {
   children: ReactNode;
 }
 
+/** Leaves the sheet short enough that the screen behind stays recognisable. */
+const SHEET_MAX_HEIGHT_RATIO = 0.8;
+
 /**
  * Renders an animated bottom sheet.
  * @param props - Sheet configuration.
@@ -39,6 +68,8 @@ export function Sheet({
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboardHeight = useKeyboardState((state) => state.height);
   const [mounted, setMounted] = useState(visible);
   const [progress] = useState(() => new Animated.Value(0));
   const previousVisible = useRef(false);
@@ -59,6 +90,9 @@ export function Sheet({
     }
 
     if (!visible && wasVisible) {
+      // Dismiss before animating out: leaving the IME up means it lingers over
+      // whatever screen is revealed behind the closing sheet.
+      Keyboard.dismiss();
       if (reducedMotion) {
         progress.setValue(0);
         setMounted(false);
@@ -96,42 +130,62 @@ export function Sheet({
           onPress={onClose}
         />
       </Animated.View>
-      <Animated.View
-        style={[
-          styles.sheet,
-          {
-            backgroundColor: theme.colors.surface,
-            borderTopLeftRadius: theme.radius.xl,
-            borderTopRightRadius: theme.radius.xl,
-            paddingBottom: (insets.bottom || theme.spacing.md) + theme.spacing.sm,
-            transform: [
-              { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [560, 0] }) },
-            ],
-          },
-        ]}
+      <KeyboardStickyView
+        style={styles.anchor}
+        offset={{ closed: 0, opened: computeStickyFooterOffset(insets.bottom) }}
       >
-        <View style={[styles.handle, { backgroundColor: theme.colors.borderStrong }]} />
-        {title ? (
-          <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>
-            {title}
-          </Text>
-        ) : null}
-        {children}
-      </Animated.View>
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              maxHeight: computeSheetMaxHeight({
+                windowHeight,
+                keyboardHeight,
+                ratio: SHEET_MAX_HEIGHT_RATIO,
+              }),
+              backgroundColor: theme.colors.surface,
+              borderTopLeftRadius: theme.radius.xl,
+              borderTopRightRadius: theme.radius.xl,
+              paddingBottom: (insets.bottom || theme.spacing.md) + theme.spacing.sm,
+              transform: [
+                { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [560, 0] }) },
+              ],
+            },
+          ]}
+        >
+          <View style={[styles.handle, { backgroundColor: theme.colors.borderStrong }]} />
+          {title ? (
+            <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>
+              {title}
+            </Text>
+          ) : null}
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
+        </Animated.View>
+      </KeyboardStickyView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: {
+  anchor: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
+  },
+  sheet: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    maxHeight: '80%',
   },
+  body: { flexShrink: 1 },
+  bodyContent: { flexGrow: 1 },
   handle: {
     width: 40,
     height: 4,

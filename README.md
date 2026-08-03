@@ -173,7 +173,9 @@ A sideloaded app gets no store to update it, so the app looks after itself.
   way. `runtimeVersion` uses the `fingerprint` policy, so those releases publish
   under a new runtime id that installed apps ignore. Instead the app checks the
   GitHub Releases API once per launch and shows a **Download** banner linking to
-  the new APK.
+  the new APK. Keyboard-safe layout is one of these: it is built on
+  [`react-native-keyboard-controller`](https://kirillzyusko.github.io/react-native-keyboard-controller/),
+  a native module, so it reaches you as a new APK rather than as an update.
 
 Both checks are silent when they find nothing, and every failure — offline, rate
 limited, malformed response — is treated as "no update" rather than an error the

@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
@@ -29,17 +30,24 @@ function Root() {
 }
 
 /**
- * App entry point: wraps the tree in the safe-area, theme, and auth providers.
+ * App entry point: wraps the tree in the keyboard, safe-area, theme, and auth
+ * providers.
+ *
+ * `KeyboardProvider` is outermost because it installs the native frame listener
+ * every keyboard-aware view reads from; a provider mounted below a screen only
+ * animates the subtree beneath it.
  * @returns The root app element.
  */
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <Root />
-        </AuthProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <KeyboardProvider>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <Root />
+          </AuthProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </KeyboardProvider>
   );
 }

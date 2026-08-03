@@ -35,6 +35,19 @@ const RN_RESTRICTED_SYNTAX = [
   },
 ];
 
+/**
+ * Keyboard-safe layout is implemented once, in the input primitives, and every
+ * screen inherits it from `Screen`/`Sheet`. A field imported straight from
+ * `react-native` skips that layer and silently reintroduces the bug where the
+ * soft keyboard covers the field being typed into, so the import is banned
+ * outside the primitives themselves (allow-listed in the override block below).
+ */
+const RESTRICTED_TEXT_INPUT_IMPORT = {
+  name: 'react-native',
+  importNames: ['TextInput'],
+  message: 'Use `TextField` (or `FieldInput`) so the input inherits keyboard-safe layout.',
+};
+
 /** Curated, RN-safe SonarJS rules (bug detection + complexity). */
 const SONARJS_RULES = {
   'sonarjs/cognitive-complexity': ['error', 15],
@@ -145,6 +158,7 @@ export default tseslint.config(
         },
       ],
       'no-restricted-syntax': ['error', ...RN_RESTRICTED_SYNTAX],
+      'no-restricted-imports': ['error', { paths: [RESTRICTED_TEXT_INPUT_IMPORT] }],
       '@typescript-eslint/ban-ts-comment': 'error',
       '@typescript-eslint/no-non-null-assertion': 'error',
       'no-nested-ternary': 'error',
@@ -287,6 +301,22 @@ export default tseslint.config(
     files: ['src/api/generated/**/*.ts'],
     rules: {
       'check-file/filename-naming-convention': 'off',
+    },
+  },
+
+  // 4c. Input primitives: the only place a raw `TextInput` may be imported.
+  //     Everything else goes through `TextField` / `FieldInput` so it inherits
+  //     the keyboard-safe layout that `Screen` and `Sheet` provide. `ui/**` is
+  //     the primitive layer; the two files below are the config-form field
+  //     wrappers that the ban's own message points callers at.
+  {
+    files: [
+      'src/components/ui/**/*.tsx',
+      'src/components/FieldInput.tsx',
+      'src/components/SectionForm.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': 'off',
     },
   },
 

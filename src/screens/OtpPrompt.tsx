@@ -2,6 +2,12 @@
  * OTP entry prompt: a spring bottom sheet that appears when the importer is
  * waiting for a bank one-time code (app OTP channel). The user types the code
  * and submits it to the importer, which resumes the blocked bank login.
+ *
+ * The field advertises the platform one-time-code hints so the OS can offer the
+ * incoming bank code as a one-tap suggestion: `sms-otp` (not `2fa-app-otp` —
+ * the code arrives by SMS, not from an authenticator app) drives Android
+ * Autofill, and `oneTimeCode` drives the iOS QuickType bar. Both are hints
+ * only, need no permission, and leave manual entry untouched.
  */
 import { type ReactElement, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -91,6 +97,8 @@ export function OtpPrompt({
         }}
         placeholder="123456"
         keyboardType="number-pad"
+        autoComplete="sms-otp"
+        textContentType="oneTimeCode"
         icon="keypad-outline"
         error={error}
       />

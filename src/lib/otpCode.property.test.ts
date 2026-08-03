@@ -8,7 +8,7 @@
  */
 import * as fc from 'fast-check';
 
-import { isValidOtpCode, normalizeOtpCodeInput } from './otpCode';
+import { isOtpFillEvent, isValidOtpCode, normalizeOtpCodeInput } from './otpCode';
 
 describe('normalizeOtpCodeInput properties', () => {
   it('always yields at most eight ASCII digits', () => {
@@ -75,6 +75,53 @@ describe('isValidOtpCode properties', () => {
         if (/\D/.test(text)) {
           expect(isValidOtpCode(text)).toBe(false);
         }
+      }),
+    );
+  });
+});
+
+describe('isOtpFillEvent properties', () => {
+  const digitString = (min: number, max: number) =>
+    fc
+      .array(fc.integer({ min: 0, max: 9 }), { minLength: min, maxLength: max })
+      .map((digits) => digits.join(''));
+
+  it('never fires while typing, for every code of every length', () => {
+    // Generalises the headline example test: for ANY 4-8 digit code, entering
+    // it one digit at a time must not produce a fill event at any prefix.
+    fc.assert(
+      fc.property(digitString(4, 8), (code) => {
+        for (let index = 0; index < code.length; index += 1) {
+          expect(isOtpFillEvent(code.slice(0, index), code.slice(0, index + 1))).toBe(false);
+        }
+      }),
+    );
+  });
+
+  it('only ever fires on a value that is safe to submit', () => {
+    fc.assert(
+      fc.property(fc.string(), fc.string(), (previous, next) => {
+        if (isOtpFillEvent(previous, next)) {
+          expect(isValidOtpCode(next)).toBe(true);
+        }
+      }),
+    );
+  });
+
+  it('never fires when the value did not grow by at least two digits', () => {
+    fc.assert(
+      fc.property(fc.string(), fc.string(), (previous, next) => {
+        if (next.length - previous.length < 2) {
+          expect(isOtpFillEvent(previous, next)).toBe(false);
+        }
+      }),
+    );
+  });
+
+  it('never throws, whatever pair of values the field produces', () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 4096 }), fc.string({ maxLength: 4096 }), (a, b) => {
+        expect(() => isOtpFillEvent(a, b)).not.toThrow();
       }),
     );
   });

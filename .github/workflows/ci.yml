@@ -36,9 +36,12 @@ jobs:
         run: npm run format:check
       - name: Test with coverage
         run: npm run test:coverage
-      - name: Expo Doctor (advisory)
+      # Blocking, not advisory. Doctor is what catches a dependency drifting
+      # off the Expo SDK line (a missing native peer, or a bump past the SDK
+      # pin). While this ran with continue-on-error it stayed red on main
+      # across several merges without turning a single check red.
+      - name: Expo Doctor
         run: npx --yes expo-doctor@1.20.1
-        continue-on-error: true
       - name: Bundle for iOS + Android
         run: npm run export
       - name: No bundled module shadows a global

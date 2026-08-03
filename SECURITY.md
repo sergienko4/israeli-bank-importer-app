@@ -26,7 +26,12 @@ the importer you point it at. Relevant concerns include:
 
 - Handling of the portal bearer token and stored password (at rest and in
   transit).
-- OTP code handling in the app-based OTP flow.
+- OTP code handling in the app-based OTP flow, including SMS capture. The app
+  holds **no SMS permission**: on Android it uses the SMS User Consent API, so
+  the user approves each individual message in a system dialog and the app can
+  read nothing else. A captured message body is parsed for digits and discarded
+  in the same step — it is never stored, logged, or sent anywhere. Automatic
+  submission is opt-in, bounded to one send per request, and cancellable.
 - Any leakage of credentials/tokens to logs, crash reports, or third parties.
 
 ## Supported versions

@@ -77,6 +77,38 @@ renewing silently.
 
 Upgrading from an older version deletes the portal password it used to store.
 
+## Bank one-time codes
+
+When a bank asks for a one-time code, the importer prompts this app and you
+approve the code on your phone. Getting the code out of an SMS and into the
+prompt is the slow part, so the app helps with it — carefully, because the cost
+of submitting a wrong code is a bank-side attempt, and those run out.
+
+- **The keyboard offers it.** The code field is marked as a one-time-code field,
+  so iOS and Android suggest the code above the keyboard. Nothing is read; the
+  OS does the work and you tap.
+- **Android can read the message, once, with your permission.** If a candidate
+  message arrives while the prompt is open, Android shows *its own* dialog
+  asking whether this app may read that one message. Approve it and the code
+  fills itself. The app holds **no SMS permission** — not `READ_SMS`, not
+  `RECEIVE_SMS` — and cannot read anything you did not just approve. Decline,
+  ignore it, or run a device without Play Services, and you simply type the
+  code as before.
+- **Auto-submit is off until you turn it on.** In **OTP settings** you can let a
+  filled code send itself. It then sends after a three-second countdown you can
+  cancel, at most once per request.
+
+**The risk of auto-submit, plainly.** A code that arrives in a message you did
+not expect is a code someone else asked for. With auto-submit on, approving that
+message spends one of your bank attempts before you have read it. The countdown
+exists so you can stop it, and the once-per-request limit means a burst of
+messages cannot spend several attempts — but the safe setting is off, which is
+why it ships off.
+
+Two limits are worth knowing: the message must arrive **while the prompt is
+open** (a code that landed earlier is typed by hand), and the reading step is
+Android-only — on iOS the keyboard suggestion is the whole feature.
+
 ## Quick start
 
 ```bash
@@ -233,6 +265,9 @@ user cannot act on.
   spring sheets, and skeleton loaders (all reduced-motion aware).
 - ✅ **Navigation & home** — persistent bottom tab bar + glanceable home dashboard.
 - ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
+- ✅ **One-time-code capture** — keyboard autofill everywhere, consent-based SMS
+  reading on Android (no SMS permission), and opt-in auto-submit with a cancel
+  window.
 - ✅ **Seamless reconnect** — biometric-guarded token renewal on session expiry.
 - ✅ **Browser sign-in** — the portal authenticates the user; the app never
   stores a password.

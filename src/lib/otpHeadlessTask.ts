@@ -14,6 +14,7 @@ import { isAutoReadBuild } from './otpAutoReadPermission';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { backgroundSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
+import { drainHeldMessages } from './otpStashRunner';
 
 /** Must match `TASK_NAME` in `OtpSmsAutoReadService.kt`. */
 export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
@@ -24,6 +25,11 @@ export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
  * The switches are re-read here rather than trusted from the open window. The
  * window is a deadline on disk that outlives the process, so one opened before
  * the user changed their mind would otherwise still submit a code.
+ *
+ * A drain follows, because this message may not be the one that answers the
+ * request: an earlier code held before anything asked for it would otherwise
+ * sit there until the next poll, and there may not be one if the app is not
+ * running.
  *
  * @param data - The service payload, carrying the message body.
  */
@@ -41,6 +47,7 @@ export async function runOtpSmsTask(data: { readonly body?: string }): Promise<v
     submit: submitOtp,
     now: Date.now,
   });
+  await drainHeldMessages();
 }
 
 /**

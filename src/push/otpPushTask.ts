@@ -22,6 +22,7 @@ import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { backgroundSession } from '../lib/otpBackgroundSession';
 import { wakeAutoReadWindow } from '../lib/otpPushWake';
+import { drainHeldMessages } from '../lib/otpStashRunner';
 
 /** Identifies the task to both `expo-task-manager` and the OS. */
 export const OTP_PUSH_TASK_NAME = 'OtpPushWake';
@@ -29,15 +30,22 @@ export const OTP_PUSH_TASK_NAME = 'OtpPushWake';
 /**
  * Brings the window up to date using the importer as the only authority.
  *
+ * A code that arrived before the importer asked for it is already being held
+ * natively, and this wake may be the first moment anything can act on it, so
+ * an opened window is immediately followed by a drain.
+ *
  * @returns Nothing; the outcome matters to tests, not to the OS on Android.
  */
 async function handlePush(): Promise<void> {
-  await wakeAutoReadWindow({
+  const outcome = await wakeAutoReadWindow({
     loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
     getPending: getPendingOtp,
     syncWindow: syncAutoReadWindow,
     now: Date.now,
   });
+  if (outcome === 'window-open') {
+    await drainHeldMessages();
+  }
 }
 
 /**

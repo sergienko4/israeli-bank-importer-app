@@ -13,6 +13,7 @@ import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { selectPendingOtp } from '../lib/otpQueue';
+import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -39,6 +40,22 @@ function createPoll(
 }
 
 /**
+ * Reacts to one successful read of the importer's outstanding requests.
+ *
+ * @param requests - Everything the importer currently wants a code for.
+ */
+function handleRequests(requests: PendingOtpRequest[]): void {
+  // Tracks every pending request, not just the one shown: the native receiver
+  // has to stay open as long as any code could still arrive.
+  void syncAutoReadWindow(requests);
+  if (requests.length > 0) {
+    // A code that arrived before the importer asked for it is being held
+    // natively; this is the moment it becomes answerable.
+    void drainHeldMessages();
+  }
+}
+
+/**
  * Provides the next pending OTP request and a way to dismiss the current one.
  * @returns The pending request (or null) and a dismiss callback.
  */
@@ -58,9 +75,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       if (!active) {
         return;
       }
-      // Tracks every pending request, not just the one shown: the native
-      // receiver has to stay open as long as any code could still arrive.
-      void syncAutoReadWindow(requests);
+      handleRequests(requests);
       setPending(selectPendingOtp(requests, dismissed.current));
     });
     void poll();

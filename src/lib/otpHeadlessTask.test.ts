@@ -5,17 +5,21 @@
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 import { OTP_SMS_TASK_NAME, runOtpSmsTask } from './otpHeadlessTask';
+import { drainHeldMessages } from './otpStashRunner';
 
 jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
 jest.mock('./otpBackgroundSubmit', () => ({ autoSubmitFromMessage: jest.fn() }));
+jest.mock('./otpStashRunner', () => ({ drainHeldMessages: jest.fn() }));
 
 const mockAllowed = jest.mocked(loadBackgroundCaptureAllowed);
 const mockSubmit = jest.mocked(autoSubmitFromMessage);
+const mockDrain = jest.mocked(drainHeldMessages);
 
 describe('runOtpSmsTask', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     mockAllowed.mockResolvedValue(true);
+    mockDrain.mockResolvedValue('empty');
   });
 
   it('ignores a payload carrying no body', async () => {
@@ -37,6 +41,20 @@ describe('runOtpSmsTask', () => {
     mockAllowed.mockResolvedValue(false);
     await runOtpSmsTask({ body: 'Your code is 123456' });
     expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('drains messages held before this one', async () => {
+    // This message may not be the one that answers the request. An earlier code
+    // held before anything asked for it would otherwise wait for a poll, and
+    // there is no poll when the app is not running.
+    await runOtpSmsTask({ body: 'Your code is 123456' });
+    expect(mockDrain).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves held messages alone once a switch is off', async () => {
+    mockAllowed.mockResolvedValue(false);
+    await runOtpSmsTask({ body: 'Your code is 123456' });
+    expect(mockDrain).not.toHaveBeenCalled();
   });
 });
 

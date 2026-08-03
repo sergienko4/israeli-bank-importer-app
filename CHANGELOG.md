@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.6](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.5...israeli-bank-importer-app-v0.2.6) (2026-08-03)
+
+
+### Bug Fixes
+
+* **deps:** align pinned packages to Expo SDK 57 ([#73](https://github.com/sergienko4/israeli-bank-importer-app/issues/73)) ([15674a2](https://github.com/sergienko4/israeli-bank-importer-app/commit/15674a28727eb3aaf65809d4a2e094d5460b8438))
+* **deps:** declare react-native-worklets directly ([#71](https://github.com/sergienko4/israeli-bank-importer-app/issues/71)) ([92b3a59](https://github.com/sergienko4/israeli-bank-importer-app/commit/92b3a59d7925fbe61ab2510754c8f90e4d558a30))
+
 ## [0.2.5](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.4...israeli-bank-importer-app-v0.2.5) (2026-08-03)
 
 

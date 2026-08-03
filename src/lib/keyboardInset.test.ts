@@ -30,6 +30,17 @@ describe('computeFocusedFieldOffset', () => {
     ).toBe(12);
     expect(computeFocusedFieldOffset({ footerHeight: -64, extraGap: 12 })).toBe(12);
   });
+
+  it('clamps a sum that overflows even though both terms are finite', () => {
+    // Two finite doubles can still add up to Infinity, and this is the only
+    // place in the module where two measurements are combined.
+    expect(
+      computeFocusedFieldOffset({
+        footerHeight: Number.MAX_VALUE,
+        extraGap: Number.MAX_VALUE,
+      }),
+    ).toBe(0);
+  });
 });
 
 describe('computeStickyFooterOffset', () => {

@@ -42,11 +42,17 @@ function clampMeasurement(value: number): number {
  *
  * The keyboard height is deliberately absent: the keyboard-aware container adds
  * that itself, and this is the extra distance on top of it.
+ *
+ * The sum is clamped as well as its terms. Two individually finite doubles can
+ * still add up to `Infinity`, and an offset is the one place in this module
+ * where two measurements are combined.
  * @param inputs - Measured sticky-cluster height and the desired gap.
  * @returns A non-negative offset in density-independent pixels.
  */
 export function computeFocusedFieldOffset(inputs: Readonly<FocusedFieldOffsetInputs>): number {
-  return clampMeasurement(inputs.footerHeight) + clampMeasurement(inputs.extraGap);
+  const footerHeight = clampMeasurement(inputs.footerHeight);
+  const extraGap = clampMeasurement(inputs.extraGap);
+  return clampMeasurement(footerHeight + extraGap);
 }
 
 /**

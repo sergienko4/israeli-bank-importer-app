@@ -25,8 +25,10 @@ import {
   SkeletonList,
 } from '../components/ui';
 import { haptics } from '../lib/haptics';
+import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoSubmit, saveOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { useTheme } from '../theme/ThemeContext';
+import { AutoReadCard } from './AutoReadCard';
 
 interface Props {
   onBack: () => void;
@@ -261,6 +263,10 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
       {/* Only shown for the app channel: with Telegram the code never reaches
           this field, so an auto-submit switch here would do nothing. */}
       {channel === 'app' ? <AutoSubmitCard /> : null}
+      {/* Auto-read needs somewhere to put the code, so it shares auto-submit's
+          channel condition, and only appears in a build carrying the SMS
+          permission — elsewhere the switch could never work. */}
+      {channel === 'app' && isAutoReadBuild() ? <AutoReadCard /> : null}
     </Screen>
   );
 }

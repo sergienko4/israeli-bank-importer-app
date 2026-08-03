@@ -89,6 +89,37 @@ describe('drainStash', () => {
     expect(consumed).toEqual([]);
   });
 
+  // A 502 from a reverse proxy means the importer never judged the code. Burning
+  // the message on it would throw away a code that is still perfectly good.
+  it.each([500, 502, 503, 504, 408, 429])(
+    'keeps the message when the importer answers %i',
+    async (status) => {
+      const {
+        ports: p,
+        consumed,
+        attempts,
+      } = ports({
+        submit: () => Promise.resolve({ ok: false, error: 'later', status }),
+      });
+
+      await expect(drainStash(p)).resolves.toBe('failed');
+      expect(attempts).toEqual([]);
+      expect(consumed).toEqual([]);
+    },
+  );
+
+  it.each([400, 401, 403, 404, 409, 422])(
+    'records the attempt when the importer answers %i',
+    async (status) => {
+      const { ports: p, attempts } = ports({
+        submit: () => Promise.resolve({ ok: false, error: 'no', status }),
+      });
+
+      await expect(drainStash(p)).resolves.toBe('rejected');
+      expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+    },
+  );
+
   it('leaves the message completely untouched when submitting throws', async () => {
     const {
       ports: p,

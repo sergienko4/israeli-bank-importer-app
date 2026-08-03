@@ -240,6 +240,7 @@ async function toFailure(res: Response): Promise<SaveResult> {
     ok: false,
     error: data.error ?? messageForStatus(res.status),
     errors: data.errors,
+    status: res.status,
   };
 }
 

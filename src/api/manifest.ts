@@ -29,4 +29,12 @@ export interface SaveResult {
   ok: boolean;
   error?: string;
   errors?: string[];
+  /**
+   * The HTTP status behind a failure, where there was one.
+   *
+   * Present so a caller can tell "the importer judged this and said no" from
+   * "the importer never got to judge it". Absent when the failure did not come
+   * from a response at all.
+   */
+  status?: number;
 }

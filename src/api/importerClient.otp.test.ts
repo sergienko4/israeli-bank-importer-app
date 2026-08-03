@@ -71,6 +71,7 @@ describe('setOtpSettings', () => {
       ok: false,
       error: 'bad',
       errors: undefined,
+      status: 400,
     });
   });
 });
@@ -116,6 +117,7 @@ describe('submitOtp', () => {
       ok: false,
       error: 'gone',
       errors: undefined,
+      status: 404,
     });
   });
 });

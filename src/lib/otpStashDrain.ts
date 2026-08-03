@@ -70,9 +70,26 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
       await ports.consume(found.entry.id);
       return 'submitted';
     }
+    if (neverJudged(result.status)) return 'failed';
     await ports.markAttempt(found.entry.id, expectation.requestId);
     return 'rejected';
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * Reports whether a failing status means the code was never actually judged.
+ *
+ * Those failures are the importer's problem, not the code's, so the message
+ * stays held for the next drain. Every other status — including a missing one —
+ * counts as a verdict, because retrying a code the bank already refused spends
+ * one of the few attempts it allows.
+ *
+ * @param status - The HTTP status behind the failure, where there was one.
+ * @returns True when the message should survive to be tried again.
+ */
+function neverJudged(status: number | undefined): boolean {
+  if (status === undefined) return false;
+  return status >= 500 || status === 408 || status === 429;
 }

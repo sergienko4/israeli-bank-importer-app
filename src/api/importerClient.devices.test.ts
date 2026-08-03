@@ -50,6 +50,7 @@ describe('registerDevice', () => {
       ok: false,
       error: 'bad',
       errors: undefined,
+      status: 400,
     });
   });
 });

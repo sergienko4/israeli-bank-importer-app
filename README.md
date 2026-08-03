@@ -120,6 +120,30 @@ That build is a different privacy bargain and the README says so plainly:
 The default build never contains the permission, the receiver, or the service —
 they are added at build time, not merely left unused.
 
+**The window has to be open before the message lands.** The receiver reads a
+deadline the app wrote earlier; if nothing wrote one, the message is dropped,
+and Android never delivers that broadcast again. An app on screen keeps the
+deadline current by polling the importer. An app that is not running cannot, so
+this build also registers a background notification task: a **data-only** push
+starts the process, which then asks the importer what is outstanding and opens
+the window from that answer — never from the push itself, which anyone holding
+this device's push token could forge.
+
+The importer's visible *OTP required* alert cannot do that job. Android hands a
+push carrying a title and body straight to the notification tray without
+starting a terminated app; only a silent one runs a registered task. Until the
+importer sends a silent push alongside the visible alert, a scrape that starts
+while the app is closed still ends with you typing the code.
+
+**Both switches must be on.** Auto-read and auto-submit together, or the
+background path never opens the window at all. With auto-submit off there is no
+screen to confirm a captured code against when a message wakes a dead process,
+and holding the code until you next open the app would break the promise that
+none is ever stored.
+
+Force-stopping the app from Android's settings stops both the receiver and the
+task until you open the app yourself. That is a platform rule, not a setting.
+
 **The risk of auto-submit, plainly.** A code that arrives in a message you did
 not expect is a code someone else asked for. With auto-submit on, approving that
 message spends one of your bank attempts before you have read it. The countdown

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.5](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.4...israeli-bank-importer-app-v0.2.5) (2026-08-03)
+
+
+### Bug Fixes
+
+* **ui:** keep fields visible above the keyboard ([#66](https://github.com/sergienko4/israeli-bank-importer-app/issues/66)) ([b809be4](https://github.com/sergienko4/israeli-bank-importer-app/commit/b809be463860568c7f5a90fc4850329a165b2b55))
+
 ## [0.2.4](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.3...israeli-bank-importer-app-v0.2.4) (2026-08-02)
 
 

@@ -1,0 +1,40 @@
+# Proves the soft keyboard never covers the field being typed into, nor the
+# control that submits it. This is the regression guard for the bug where the
+# IME drew over the OTP input and the code being entered could not be read.
+#
+# Android 15 / RN 0.86 force edge-to-edge, so `adjustResize` no longer shrinks
+# the window and the IME paints on top of the app. Keyboard-safe layout is
+# therefore implemented in `Screen` and `Sheet` rather than by the OS, which is
+# what this flow exercises: focus a field, then assert the submit control is
+# still on screen with the keyboard open.
+#
+# Scoped to the Connect screen because it is the only form reachable without a
+# live importer. `clearState` guarantees the unconnected path. Every other
+# screen is covered by the manual sweep in the plan's `test.md`, which needs a
+# connected importer that this flow deliberately does not require.
+appId: com.sergienko4.israelibankimporter
+---
+- launchApp:
+    clearState: true
+
+# Baseline: the form and its submit control are visible before the IME opens,
+# so a later failure is attributable to the keyboard and not to a broken render.
+- assertVisible: 'Importer URL'
+- assertVisible: 'Sign in'
+
+# Focus the field. `tapOn` raises the IME, which is the moment the bug appeared.
+- tapOn: 'Importer URL'
+
+# The text just typed must be readable: if the IME covered the field this fails.
+- inputText: 'https://importer.example:8080'
+- assertVisible: 'https://importer.example:8080'
+
+# The submit control must stay reachable while the keyboard is open. Before the
+# fix the sticky footer sat behind the IME and this assertion failed.
+- assertVisible: 'Sign in'
+
+# Dismissing the IME must restore the layout rather than leave a gap where the
+# keyboard was.
+- hideKeyboard
+- assertVisible: 'https://importer.example:8080'
+- assertVisible: 'Sign in'

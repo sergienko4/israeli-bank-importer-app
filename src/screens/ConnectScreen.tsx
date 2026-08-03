@@ -42,7 +42,10 @@ export function ConnectScreen(): ReactElement {
   };
 
   return (
-    <Screen contentStyle={styles.content}>
+    <Screen
+      contentStyle={styles.content}
+      notice={message ? <Banner messages={[message]} tone="danger" /> : undefined}
+    >
       <View style={styles.brand}>
         <View
           style={[
@@ -75,8 +78,6 @@ export function ConnectScreen(): ReactElement {
           Signing in opens your importer&apos;s own login page in the browser. Your password is
           never entered here.
         </Text>
-
-        {message ? <Banner messages={[message]} tone="danger" /> : null}
 
         <Button
           title="Sign in"

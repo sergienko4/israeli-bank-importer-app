@@ -98,6 +98,28 @@ of submitting a wrong code is a bank-side attempt, and those run out.
   filled code send itself. It then sends after a three-second countdown you can
   cancel, at most once per request.
 
+Everything above describes the build you install from the releases page, and it
+is the only build this project publishes.
+
+### The zero-touch build
+
+There is a second way to build the app, for people who would rather trade the
+per-message dialog for doing nothing at all. Building with `OTP_SMS_AUTOREAD=1`
+adds the `RECEIVE_SMS` permission and a broadcast receiver, so a code can be
+captured and submitted while the phone is in your pocket — no dialog, no tap.
+
+That build is a different privacy bargain and the README says so plainly:
+
+- It **does** hold an SMS permission, so the sentence above about holding none
+  is not true of it.
+- The receiver still ignores everything unless a scrape is actually waiting for
+  a code: the app opens a deadline before it asks, and the receiver drops every
+  message that arrives outside it.
+- `READ_SMS` stays blocked in both builds, so neither can read your history.
+
+The default build never contains the permission, the receiver, or the service —
+they are added at build time, not merely left unused.
+
 **The risk of auto-submit, plainly.** A code that arrives in a message you did
 not expect is a code someone else asked for. With auto-submit on, approving that
 message spends one of your bank attempts before you have read it. The countdown
@@ -267,7 +289,8 @@ user cannot act on.
 - ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
 - ✅ **One-time-code capture** — keyboard autofill everywhere, consent-based SMS
   reading on Android (no SMS permission), and opt-in auto-submit with a cancel
-  window.
+  window. An optional `OTP_SMS_AUTOREAD=1` build captures the code with no
+  interaction at all.
 - ✅ **Seamless reconnect** — biometric-guarded token renewal on session expiry.
 - ✅ **Browser sign-in** — the portal authenticates the user; the app never
   stores a password.

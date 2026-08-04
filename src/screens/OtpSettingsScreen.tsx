@@ -130,6 +130,10 @@ function AutoSubmitCard(): ReactElement {
               onValueChange={(next) => {
                 void toggle(next);
               }}
+              // The row above is already the switch, so leaving this one exposed
+              // announces the setting twice, the second time unnamed.
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
             />
           }
         />

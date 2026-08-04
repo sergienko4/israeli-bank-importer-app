@@ -14,8 +14,9 @@
  *
  * Notably absent is any keyword requirement ("code", "קוד", "OTP"). Israeli
  * banks word these messages inconsistently and in two scripts, so a keyword
- * list would fail on real messages while adding no protection: the caller
- * already only sees a message the user explicitly handed over.
+ * list would fail on real messages while adding no protection: narrowing to one
+ * unambiguous run of digits is what rejects a message that is not a code, and a
+ * keyword an attacker can simply include adds nothing to it.
  */
 import { isValidOtpCode } from './otpCode';
 

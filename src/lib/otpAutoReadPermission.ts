@@ -69,7 +69,7 @@ export async function requestReceiveSms(): Promise<PermissionOutcome> {
   const status = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS, {
     title: 'Read bank codes from messages',
     message:
-      'This lets the app fill in a bank one-time code by itself. It only looks at a message while a code is outstanding, and never stores it.',
+      'This lets the app fill in a bank one-time code by itself. It never reads your existing messages. A code that arrives before the importer asks for it is kept for ten minutes, then dropped.',
     buttonPositive: 'Allow',
     buttonNegative: 'Not now',
   });

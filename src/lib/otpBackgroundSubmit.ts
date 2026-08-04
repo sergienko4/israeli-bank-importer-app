@@ -53,7 +53,8 @@ export type BackgroundSubmitOutcome =
 /**
  * Attempts to satisfy an outstanding one-time-code request from a message.
  *
- * @param body - The raw SMS text. Read, never stored.
+ * @param body - The raw SMS text. Read and turned into digits here, never
+ * stored by this path.
  * @param ports - The injected outside world.
  * @returns The reason it stopped, or `submitted` when a code was accepted.
  */

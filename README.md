@@ -120,14 +120,28 @@ That build is a different privacy bargain and the README says so plainly:
 The default build never contains the permission, the receiver, or the service —
 they are added at build time, not merely left unused.
 
-**The window has to be open before the message lands.** The receiver reads a
-deadline the app wrote earlier; if nothing wrote one, the message is dropped,
-and Android never delivers that broadcast again. An app on screen keeps the
-deadline current by polling the importer. An app that is not running cannot, so
-this build also registers a background notification task: a **data-only** push
-starts the process, which then asks the importer what is outstanding and opens
-the window from that answer — never from the push itself, which anyone holding
-this device's push token could forge.
+**A code that arrives before the importer asks is held, not lost.** Banks often
+send the code first, and Android delivers that broadcast exactly once. Rather
+than drop it, the receiver keeps the message — raw and unparsed — and the app
+spends it the moment a matching request appears. Nothing is read from your
+inbox to do this: the app still holds `RECEIVE_SMS` and not `READ_SMS`, so the
+only messages it can hold are ones that arrived while it was installed, paired
+and switched on.
+
+What is held, and for how long: the message text, its sender and its arrival
+time, in app-private storage, for **ten minutes**, capped at **ten messages**
+with the oldest dropped first. Turning either switch off empties it in the same
+write that shuts the receiver, and unpairing the device does the same. A held
+message is spent only on a request the importer is actually waiting for, and
+only when the whole message yields exactly one code. Two held messages
+disagreeing about the code means neither is sent and you are asked — an
+ambiguous code is exactly the case worth a human glance.
+
+An app that is not running still has to be woken to notice the request. It does
+that by polling the importer while on screen, and otherwise through a
+background notification task: a **data-only** push starts the process, which
+then asks the importer what is outstanding — never trusting the push itself,
+which anyone holding this device's push token could forge.
 
 The importer's visible *OTP required* alert cannot do that job. Android hands a
 push carrying a title and body straight to the notification tray without
@@ -135,14 +149,16 @@ starting a terminated app; only a silent one runs a registered task. Until the
 importer sends a silent push alongside the visible alert, a scrape that starts
 while the app is closed still ends with you typing the code.
 
+**What still needs you.** Holding rescues the early message only if the app
+gets a chance to run after the request appears — it is on screen, a later
+message wakes it, or a data-only push does. A phone whose app was force-stopped
+from Android's settings, or one that received a single early message and
+nothing since, still ends with you typing the code.
+
 **Both switches must be on.** Auto-read and auto-submit together, or the
 background path never opens the window at all. With auto-submit off there is no
 screen to confirm a captured code against when a message wakes a dead process,
-and holding the code until you next open the app would break the promise that
-none is ever stored.
-
-Force-stopping the app from Android's settings stops both the receiver and the
-task until you open the app yourself. That is a platform rule, not a setting.
+and sending it unconfirmed is the one thing that switch says no to.
 
 **The risk of auto-submit, plainly.** A code that arrives in a message you did
 not expect is a code someone else asked for. With auto-submit on, approving that
@@ -314,7 +330,8 @@ user cannot act on.
 - ✅ **One-time-code capture** — keyboard autofill everywhere, consent-based SMS
   reading on Android (no SMS permission), and opt-in auto-submit with a cancel
   window. An optional `OTP_SMS_AUTOREAD=1` build captures the code with no
-  interaction at all.
+  interaction at all, and holds a code that arrives before the importer asks
+  for it.
 - ✅ **Seamless reconnect** — biometric-guarded token renewal on session expiry.
 - ✅ **Browser sign-in** — the portal authenticates the user; the app never
   stores a password.

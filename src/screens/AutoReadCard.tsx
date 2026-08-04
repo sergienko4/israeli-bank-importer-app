@@ -87,7 +87,7 @@ export function AutoReadCard(): ReactElement {
         <ListRow
           icon="chatbox-ellipses-outline"
           title="Read codes from messages"
-          subtitle="Android will ask to let this app receive SMS. It only looks at a message while a code is outstanding, and never stores one."
+          subtitle="Android will ask to let this app receive SMS. It never reads your existing messages. A code that arrives before the importer asks is kept for ten minutes, then dropped."
           accessibilityRole="switch"
           accessibilityState={{ checked: enabled }}
           accessibilityHint="Reads a bank one-time code from an incoming message automatically."

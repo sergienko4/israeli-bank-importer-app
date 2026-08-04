@@ -87,6 +87,11 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
     const result = await ports.submit(session, expectation.requestId, found.code);
     if (result.ok) {
+      // If both of these writes fail the entry stays spendable and a later drain
+      // can resubmit. Nothing here can close that: both go through the same
+      // native module, so a context that refuses one refuses any record we could
+      // keep instead. It has to be closed by the importer making a submit for a
+      // request id idempotent. Until then the entry expires within the TTL.
       await acknowledgeEach(copies, orElse(drop, spend));
       return 'submitted';
     }

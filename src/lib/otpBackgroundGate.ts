@@ -12,30 +12,46 @@
  * screen to fill in, and holding the code until one appears would store a
  * one-time code the app promises never to keep. The foreground consent prompt
  * already serves that combination, so the background window simply stays shut.
+ *
+ * The channel is the third condition, and it is not a switch the user moves
+ * here. When the importer collects codes over Telegram it never asks this app
+ * for one, so a message read on this device could never be spent — and the two
+ * switches are hidden on that channel, which would otherwise leave a receiver
+ * collecting bank messages with nothing on screen to turn it off.
  */
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
+import { loadOtpChannelIsApp } from './otpChannelStore';
 
 /**
- * Whether the two user-controlled switches together permit background capture.
+ * Whether the user's switches and the active channel together permit capture.
  *
  * @param autoRead - Whether the user allows codes to be read from messages.
  * @param autoSubmit - Whether the user allows a code to be sent unconfirmed.
- * @returns True only when both are on.
+ * @param channelIsApp - Whether the importer collects codes in this app.
+ * @returns True only when all three are on.
  */
-export function backgroundCaptureAllowed(autoRead: boolean, autoSubmit: boolean): boolean {
-  return autoRead && autoSubmit;
+export function backgroundCaptureAllowed(
+  autoRead: boolean,
+  autoSubmit: boolean,
+  channelIsApp: boolean,
+): boolean {
+  return autoRead && autoSubmit && channelIsApp;
 }
 
 /**
- * Reads both stored preferences and applies {@link backgroundCaptureAllowed}.
+ * Reads the stored preferences and applies {@link backgroundCaptureAllowed}.
  *
- * Both stores resolve to off when unreadable, so a broken keystore closes the
+ * Every store resolves to off when unreadable, so a broken keystore closes the
  * window rather than leaving an SMS-reading path running unseen.
  *
- * @returns True only when the user has enabled auto-read and auto-submit.
+ * @returns True only when both switches are on and the channel is this app.
  */
 export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
-  const [autoRead, autoSubmit] = await Promise.all([loadOtpAutoRead(), loadOtpAutoSubmit()]);
-  return backgroundCaptureAllowed(autoRead, autoSubmit);
+  const [autoRead, autoSubmit, channelIsApp] = await Promise.all([
+    loadOtpAutoRead(),
+    loadOtpAutoSubmit(),
+    loadOtpChannelIsApp(),
+  ]);
+  return backgroundCaptureAllowed(autoRead, autoSubmit, channelIsApp);
 }

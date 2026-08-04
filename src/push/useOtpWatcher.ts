@@ -12,6 +12,7 @@ import { getPendingOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
+import { refreshOtpChannel } from '../lib/otpChannelSync';
 import { selectPendingOtp } from '../lib/otpQueue';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
@@ -71,6 +72,10 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       return undefined;
     }
     let active = true;
+    // Once per connection, not per poll: the channel can be changed from the
+    // importer's own UI, and off the app channel the switches that would close
+    // capture are hidden, so this is the only thing that reconciles it.
+    void refreshOtpChannel(connection);
     const poll = createPoll(connection, (requests) => {
       if (!active) {
         return;

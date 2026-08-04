@@ -113,9 +113,11 @@ That build is a different privacy bargain and the README says so plainly:
 - It **does** hold an SMS permission, so the sentence above about holding none
   is not true of it.
 - The receiver still ignores everything unless a scrape is waiting for a code or
-  is about to be: the app opens a deadline before it asks, messages arriving
-  inside it are submitted, and a code arriving earlier is held for ten minutes
-  and dropped after that. Nothing else is kept.
+  is about to be: the app opens a deadline before it asks, and a code arriving
+  earlier is held for ten minutes and dropped after that. A message arriving
+  inside the deadline is submitted only when a request is still waiting and the
+  message yields exactly one code; one that yields none, or two that disagree,
+  is dropped. Nothing else is kept.
 - `READ_SMS` stays blocked in both builds, so neither can read your history.
 
 The default build never contains the permission, the receiver, or the service —

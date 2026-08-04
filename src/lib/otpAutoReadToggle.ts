@@ -97,21 +97,24 @@ export interface AutoReadStatePorts {
  * be stored before it is pushed, or pushing it would switch capture back on.
  *
  * @param ports - The injected store, permission check and gate.
- * @returns True only when the setting and the permission agree.
+ * @returns True only when the setting and the permission agree and the device
+ *   was successfully settled to match; false on any failure along the way.
  */
 export async function resolveAutoRead(ports: AutoReadStatePorts): Promise<boolean> {
-  const [stored, granted] = await Promise.all([ports.stored(), ports.granted()]);
-  if (!stored) return false;
-  // A check that could not run has not told us the permission is gone, and
-  // what follows would wipe the messages being held on the strength of it.
-  if (granted === null) return false;
-
   try {
+    const [stored, granted] = await Promise.all([ports.stored(), ports.granted()]);
+    if (!stored) return false;
+    // A check that could not run has not told us the permission is gone, and
+    // what follows would wipe the messages being held on the strength of it.
+    if (granted === null) return false;
+
     if (!granted) await ports.persist(false);
     await ports.applyGate();
+    return granted;
   } catch {
-    // Nothing here changes what the switch should show, which is the state the
-    // device is in either way. The next mount tries again.
+    // Nothing was reconciled, so nothing can be claimed. Showing on here would
+    // be the failure this whole function exists to prevent: a switch promising
+    // codes are handled while the receiver may be off. The next mount retries.
+    return false;
   }
-  return granted;
 }

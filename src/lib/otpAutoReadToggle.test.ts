@@ -108,10 +108,27 @@ describe('resolveAutoRead', () => {
     expect(gates()).toBe(1);
   });
 
-  it('still shows on when that push fails', async () => {
+  // Nothing was reconciled, so nothing can be claimed. Showing on here would be
+  // the exact failure the gate push exists to prevent: a switch that promises
+  // codes are handled while the receiver may be off.
+  it('shows off when that push fails', async () => {
     const { ports: p } = statePorts({ applyGate: () => Promise.reject(new Error('no context')) });
 
-    await expect(resolveAutoRead(p)).resolves.toBe(true);
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+  });
+
+  it('shows off rather than throwing when a port cannot be read', async () => {
+    const {
+      ports: p,
+      written,
+      gates,
+    } = statePorts({
+      stored: () => Promise.reject(new Error('keystore locked')),
+    });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+    expect(written).toEqual([]);
+    expect(gates()).toBe(0);
   });
 
   // The permission check answers false both for "revoked" and for "could not

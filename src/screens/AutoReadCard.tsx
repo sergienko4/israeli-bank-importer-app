@@ -8,7 +8,7 @@
  * The decision logic itself is in `otpAutoReadToggle`, tested without a device;
  * this file is the presentation of it.
  */
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Banner, Card, ListRow } from '../components/ui';
@@ -40,6 +40,9 @@ export function AutoReadCard(): ReactElement {
   const theme = useTheme();
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A tap decides the switch from the device itself, so once one has happened
+  // the answer this effect is still waiting for is a snapshot from before it.
+  const toggled = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -48,7 +51,7 @@ export function AutoReadCard(): ReactElement {
       // without this preference hearing about it. Showing the switch on while
       // no message can reach the app would be a promise the app cannot keep.
       const [stored, granted] = await Promise.all([loadOtpAutoRead(), hasReceiveSms()]);
-      if (active) {
+      if (active && !toggled.current) {
         setEnabled(stored && granted);
       }
     };
@@ -63,6 +66,7 @@ export function AutoReadCard(): ReactElement {
       return;
     }
     setError(null);
+    toggled.current = true;
     const result = await setAutoReadEnabled(next, {
       request: requestReceiveSms,
       persist: saveOtpAutoRead,

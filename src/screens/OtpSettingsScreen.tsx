@@ -9,7 +9,7 @@
  * the field on this phone, not how the account behaves.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { getOtpSettings, setOtpSettings } from '../api/importerClient';
@@ -68,12 +68,15 @@ function AutoSubmitCard(): ReactElement {
   const theme = useTheme();
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A tap decides the switch from the device itself, so once one has happened
+  // the answer this effect is still waiting for is a snapshot from before it.
+  const toggled = useRef(false);
 
   useEffect(() => {
     let active = true;
     const run = async (): Promise<void> => {
       const stored = await loadOtpAutoSubmit();
-      if (active) {
+      if (active && !toggled.current) {
         setEnabled(stored);
       }
     };
@@ -91,6 +94,7 @@ function AutoSubmitCard(): ReactElement {
     }
     setEnabled(next);
     setError(null);
+    toggled.current = true;
     try {
       await saveOtpAutoSubmit(next);
       // The receiver reads a flag rather than the preference, so moving the

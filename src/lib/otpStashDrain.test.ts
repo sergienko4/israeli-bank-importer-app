@@ -271,6 +271,18 @@ describe('drainStash', () => {
     expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
   });
 
+  // A copy marked spent because its delete failed is deliberately still offered
+  // to `stashedCopiesOf`, so a later accepted drain retries the delete and the
+  // raw message body finally leaves the device. Filtering it here would strand
+  // that body in storage for the rest of the hold with no path left to remove it.
+  it('retries the delete on a copy it could only mark spent', async () => {
+    const entries = [held({ id: 'msg-1', attempted: [STASH_SPENT] }), held({ id: 'msg-2' })];
+    const { ports: p, consumed } = ports({ list: () => Promise.resolve(entries) });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(consumed).toEqual(['msg-1', 'msg-2']);
+  });
+
   it('marks a spent copy it could not drop', async () => {
     const { ports: p, attempts } = ports({
       consume: () => Promise.reject(new Error('write failed')),

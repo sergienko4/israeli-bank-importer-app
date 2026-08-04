@@ -9,7 +9,13 @@
 import * as fc from 'fast-check';
 
 import { extractOtpCode } from './otpMessage';
-import { liveStashEntries, selectStashedCode, STASH_TTL_MS, type StashedMessage } from './otpStash';
+import {
+  liveStashEntries,
+  selectStashedCode,
+  STASH_SPENT,
+  STASH_TTL_MS,
+  type StashedMessage,
+} from './otpStash';
 
 const NOW = 1_785_265_164_486;
 const REQUEST_ID = 'req-1';
@@ -19,7 +25,7 @@ const messageArb: fc.Arbitrary<StashedMessage> = fc.record({
   body: fc.oneof(fc.string(), fc.stringMatching(/^[ A-Za-z]{0,20}\d{4,8}[ A-Za-z]{0,20}$/)),
   sender: fc.string(),
   receivedAt: fc.integer({ min: NOW - 2 * STASH_TTL_MS, max: NOW }),
-  attempted: fc.array(fc.constantFrom(REQUEST_ID, 'req-other'), { maxLength: 3 }),
+  attempted: fc.array(fc.constantFrom(REQUEST_ID, 'req-other', STASH_SPENT), { maxLength: 3 }),
 });
 
 const stashArb = fc.array(messageArb, { maxLength: 6 });
@@ -61,6 +67,19 @@ describe('selectStashedCode properties', () => {
         const found = selectStashedCode(entries, REQUEST_ID, NOW);
         if (found !== null) {
           expect(found.entry.attempted).not.toContain(REQUEST_ID);
+        }
+      }),
+    );
+  });
+
+  // The one marker that outlives the request it was written for: a code the
+  // importer accepted is spent for everybody, whichever request is asking.
+  it('never returns a message whose code has already been spent', () => {
+    fc.assert(
+      fc.property(stashArb, (entries) => {
+        const found = selectStashedCode(entries, REQUEST_ID, NOW);
+        if (found !== null) {
+          expect(found.entry.attempted).not.toContain(STASH_SPENT);
         }
       }),
     );

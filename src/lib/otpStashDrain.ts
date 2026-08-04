@@ -15,11 +15,12 @@
  * nothing at all, leaving the message usable once the network comes back.
  *
  * Because it is the security control, one acknowledgement that fails may not
- * abandon the copies behind it, and each falls back to the other. What it falls
- * back to differs by outcome, because the scopes differ: an accepted code is
- * marked spent for every request, since the code itself is used up, while a
- * rejected one is only recorded against the request that rejected it. Either
- * way the code leaves circulation, which is the whole point of the step.
+ * abandon the copies behind it, and each falls back to the other. What that
+ * buys differs by outcome, because the scopes differ: an accepted code is
+ * marked spent and leaves circulation entirely, while a rejected one leaves
+ * circulation only for the request that rejected it — a later request asks a
+ * different question, and a "your request is gone" refusal must not burn a code
+ * the bank itself never saw.
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
@@ -53,8 +54,9 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  *
  * `empty` means nothing is being held. `ambiguous` covers every other reason a
  * held message was not chosen: none carries a code, one was already sent
- * against this request, or several carry different codes. They are all the same
- * answer to the user — type it yourself — and none of them is worth retrying.
+ * against this request, every copy is already spent, or several carry different
+ * codes. They are all the same answer to the user — type it yourself — and none
+ * of them is worth retrying.
  */
 export type StashDrainOutcome =
   'empty' | 'ambiguous' | 'no-session' | 'no-pending' | 'submitted' | 'rejected' | 'failed';

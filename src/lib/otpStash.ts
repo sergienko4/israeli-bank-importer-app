@@ -88,6 +88,12 @@ export function liveStashEntries(
  * that is a message whose answer is already spent, and after a rejected one it
  * is the entry the next drain picks up to send the same wrong code again.
  *
+ * Unlike {@link selectStashedCode} this deliberately still returns a copy
+ * marked {@link STASH_SPENT}. That marker only exists because the delete that
+ * should have removed the message failed, so a later drain accepting the same
+ * code is the one remaining chance to retry it and get the raw message body off
+ * the device. Filtering here would strand that body for the rest of the hold.
+ *
  * @param entries - Everything currently held.
  * @param code - The code that was submitted.
  * @param now - Current time in epoch milliseconds.

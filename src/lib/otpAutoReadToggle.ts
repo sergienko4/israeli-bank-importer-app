@@ -69,6 +69,23 @@ export async function setAutoReadEnabled(
   }
 }
 
+/**
+ * The state the switch should settle into after a transition.
+ *
+ * `failed` is the one answer that carries no information about the device: the
+ * write threw, so the stored value is still whatever it was. Moving the switch
+ * would claim a change that never happened, and for a failed turn-off it would
+ * claim reading has stopped while the receiver is still listening.
+ *
+ * @param result - What the transition reported.
+ * @param shown - What the switch was showing before it ran.
+ * @returns The state to show.
+ */
+export function settledSwitchState(result: AutoReadToggleResult, shown: boolean): boolean {
+  if (result === 'failed') return shown;
+  return result === 'enabled';
+}
+
 /** Everything reading the current state needs from the outside world. */
 export interface AutoReadStatePorts {
   /** Reads the stored setting from the device's secure store. */

@@ -1,5 +1,5 @@
 import type { AutoReadStatePorts, AutoReadTogglePorts } from './otpAutoReadToggle';
-import { resolveAutoRead, setAutoReadEnabled } from './otpAutoReadToggle';
+import { resolveAutoRead, setAutoReadEnabled, settledSwitchState } from './otpAutoReadToggle';
 
 /**
  * Turning auto-read on is the moment the app asks for a permission that lets it
@@ -95,6 +95,27 @@ function statePorts(overrides: Partial<AutoReadStatePorts> = {}) {
   };
   return { ports: base, written, gates: () => gated };
 }
+
+describe('settledSwitchState', () => {
+  it('follows a transition that reached the device', () => {
+    expect(settledSwitchState('enabled', false)).toBe(true);
+    expect(settledSwitchState('disabled', true)).toBe(false);
+  });
+
+  it('shows off when the permission was refused', () => {
+    // Both of these store false before returning, so the device really is off.
+    expect(settledSwitchState('denied', true)).toBe(false);
+    expect(settledSwitchState('blocked', true)).toBe(false);
+  });
+
+  // Turning off is the dangerous direction: the write threw, so the setting is
+  // still on and the receiver is still reading. A switch that moved to off here
+  // would tell the user reading had stopped while it had not.
+  it('leaves the switch alone when nothing was written', () => {
+    expect(settledSwitchState('failed', true)).toBe(true);
+    expect(settledSwitchState('failed', false)).toBe(false);
+  });
+});
 
 describe('resolveAutoRead', () => {
   // Not a no-op: either preference read failing makes the gate compute false

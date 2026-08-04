@@ -15,7 +15,7 @@ import { Banner, Card, ListRow } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { checkReceiveSms, requestReceiveSms } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoRead, saveOtpAutoRead } from '../lib/otpAutoReadStore';
-import { resolveAutoRead, setAutoReadEnabled } from '../lib/otpAutoReadToggle';
+import { resolveAutoRead, setAutoReadEnabled, settledSwitchState } from '../lib/otpAutoReadToggle';
 import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -81,8 +81,9 @@ export function AutoReadCard(): ReactElement {
     // switch has to move the flag too. Turning it off empties the stash.
     await applyStashGate();
     // The result decides the switch, not the tap: a refused permission has to
-    // leave it off rather than showing a state the device never reached.
-    setEnabled(result === 'enabled');
+    // leave it off rather than showing a state the device never reached, and a
+    // failed write has to leave it where it was rather than claiming a change.
+    setEnabled(settledSwitchState(result, enabled));
     if (result === 'enabled' || result === 'disabled') {
       haptics.success();
       return;

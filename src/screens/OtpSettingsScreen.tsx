@@ -58,6 +58,18 @@ interface ChannelLoad {
   readonly reload: () => void;
 }
 
+/** A finished channel read, tagged with the request that produced it. */
+interface ChannelResult {
+  /** The session the read was made for. */
+  readonly connection: Session | null;
+  /** Which attempt this answers, so a retry supersedes the one before it. */
+  readonly reloadKey: number;
+  /** The channel the importer reported, or null when the read failed. */
+  readonly channel: OtpChannel | null;
+  /** Why the read failed, or null. */
+  readonly error: string | null;
+}
+
 const CHOICES: Choice[] = [
   {
     channel: 'app',
@@ -174,14 +186,19 @@ function AutoSubmitCard(): ReactElement {
  * has already moved on: the SMS receiver reads that cache with no session, and
  * the switches that would otherwise close it are hidden off the app channel.
  *
+ * The outcome is stored against the request that produced it rather than reset
+ * before each attempt. A result belonging to an earlier connection or reload
+ * then reads as still loading, so a sign-in after a failed load cannot leave
+ * the old error rendered over a screen that has since loaded.
+ *
  * @param connection - The active importer session, or null when signed out.
  * @returns The loaded channel, the request state, and a way to try again.
  */
 function useOtpChannel(connection: Session | null): ChannelLoad {
-  const [channel, setChannel] = useState<OtpChannel | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ChannelResult | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const current =
+    result !== null && result.connection === connection && result.reloadKey === reloadKey;
 
   useEffect(() => {
     if (!connection) {
@@ -189,20 +206,17 @@ function useOtpChannel(connection: Session | null): ChannelLoad {
     }
     let active = true;
     const run = async (): Promise<void> => {
+      const done = (channel: OtpChannel | null, error: string | null): void => {
+        if (active) {
+          setResult({ connection, reloadKey, channel, error });
+        }
+      };
       try {
         const settings = await getOtpSettings(connection);
         await cacheOtpChannel(settings.channel);
-        if (active) {
-          setChannel(settings.channel);
-        }
+        done(settings.channel, null);
       } catch (e) {
-        if (active) {
-          setError(e instanceof Error ? e.message : 'Failed to load OTP settings.');
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
+        done(null, e instanceof Error ? e.message : 'Failed to load OTP settings.');
       }
     };
     void run();
@@ -211,13 +225,20 @@ function useOtpChannel(connection: Session | null): ChannelLoad {
     };
   }, [connection, reloadKey]);
 
+  const setChannel = (next: OtpChannel | null): void => {
+    setResult({ connection, reloadKey, channel: next, error: null });
+  };
   const reload = (): void => {
-    setError(null);
-    setLoading(true);
     setReloadKey((key) => key + 1);
   };
 
-  return { channel, loading, error, setChannel, reload };
+  return {
+    channel: current ? result.channel : null,
+    loading: !current,
+    error: current ? result.error : null,
+    setChannel,
+    reload,
+  };
 }
 
 /**

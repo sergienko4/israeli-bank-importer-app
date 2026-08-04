@@ -4,9 +4,17 @@
  *
  * The point of resolving it in one pure function is that the fallback is
  * impossible to get wrong by accident: reaching {@link OtpCaptureMode}
- * `autoread` needs three unrelated things to agree, and shutting any one of
+ * `autoread` needs four unrelated things to agree, and shutting any one of
  * them lands on the flow that asks the user per message.
+ *
+ * The modes are alternatives, not layers. Running the consent flow alongside a
+ * live auto-read window would show the user a dialog asking to read a message
+ * whose code the receiver has already sent — a decision with nothing left to
+ * decide, in a feature whose whole point is that it needs no decision.
  */
+import { hasReceiveSms, isAutoReadBuild } from './otpAutoReadPermission';
+import { loadOtpAutoRead } from './otpAutoReadStore';
+import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
 
 /** How a one-time code reaches the OTP field. */
 export type OtpCaptureMode =
@@ -23,6 +31,14 @@ export interface OtpCaptureGates {
   readonly autoReadBuild: boolean;
   /** Whether the user turned auto-read on. Off by default. */
   readonly autoReadEnabled: boolean;
+  /**
+   * Whether the user also allows a code to be sent unconfirmed.
+   *
+   * Required because it is what opens the native window: with it off the
+   * receiver never delivers, so treating this as `autoread` would suppress the
+   * consent flow in favour of a path that does nothing.
+   */
+  readonly autoSubmitEnabled: boolean;
   /** Whether Android has granted `RECEIVE_SMS`. Revocable at any time. */
   readonly smsPermissionGranted: boolean;
   /** Whether the per-message consent flow can run on this device. */
@@ -39,8 +55,38 @@ export interface OtpCaptureGates {
  * @returns The mode to use now. Re-resolve after any of the gates can change.
  */
 export function resolveOtpCaptureMode(gates: OtpCaptureGates): OtpCaptureMode {
-  if (gates.autoReadBuild && gates.autoReadEnabled && gates.smsPermissionGranted) {
+  if (
+    gates.autoReadBuild &&
+    gates.autoReadEnabled &&
+    gates.autoSubmitEnabled &&
+    gates.smsPermissionGranted
+  ) {
     return 'autoread';
   }
   return gates.consentAvailable ? 'consent' : 'manual';
+}
+
+/**
+ * Reads every gate on this device and resolves the mode in force now.
+ *
+ * Each source resolves to its closed value when it cannot be read, so an
+ * unreadable preference or a device that will not answer about permissions
+ * lands on the flow that asks the user rather than on a silent one.
+ *
+ * @param consentAvailable - Whether this platform has the consent module.
+ * @returns The mode to use for the request currently on screen.
+ */
+export async function loadOtpCaptureMode(consentAvailable: boolean): Promise<OtpCaptureMode> {
+  const [autoReadEnabled, autoSubmitEnabled, smsPermissionGranted] = await Promise.all([
+    loadOtpAutoRead(),
+    loadOtpAutoSubmit(),
+    hasReceiveSms(),
+  ]);
+  return resolveOtpCaptureMode({
+    autoReadBuild: isAutoReadBuild(),
+    autoReadEnabled,
+    autoSubmitEnabled,
+    smsPermissionGranted,
+    consentAvailable,
+  });
 }

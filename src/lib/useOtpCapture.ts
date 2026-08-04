@@ -7,11 +7,17 @@
  * read them for the few seconds it is asking for a code. Everything that
  * decides what a message means lives in {@link startOtpCapture}, where it is
  * tested without a device.
+ *
+ * It also owns *whether* to listen at all. When the native auto-read window is
+ * live the receiver already answers the same message, so opening a consent
+ * window too would ask the user to approve reading a code that has already
+ * been sent. {@link loadOtpCaptureMode} is what draws that line.
  */
 import { useEffect, useRef } from 'react';
 
 import OtpSmsConsentModule from '../../modules/otp-sms-consent/src/OtpSmsConsentModule';
 import { type OtpCaptureSource, startOtpCapture } from './otpCapture';
+import { loadOtpCaptureMode } from './otpCaptureMode';
 import { createSmsConsentSource } from './smsConsentSource';
 
 /**
@@ -39,8 +45,21 @@ export function useOtpCapture(active: boolean, onCode: (code: string) => void): 
     if (!active) {
       return undefined;
     }
-    return startOtpCapture(platformSource, (code: string) => {
-      deliver.current(code);
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    // Resolving the mode is asynchronous, so the window may be closed before
+    // the answer arrives; `cancelled` is what stops it opening after the fact.
+    void loadOtpCaptureMode(OtpSmsConsentModule !== null).then((mode) => {
+      if (cancelled || mode !== 'consent') {
+        return;
+      }
+      stop = startOtpCapture(platformSource, (code: string) => {
+        deliver.current(code);
+      });
     });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
   }, [active]);
 }

@@ -40,6 +40,26 @@ export function isAutoReadBuild(): boolean {
 }
 
 /**
+ * Whether Android has already granted permission to receive SMS.
+ *
+ * Asks without showing anything, so it is safe to call while deciding how to
+ * capture a code. Answers false off Android and on any failure, which lands
+ * the caller on the flow that asks the user rather than on a silent one.
+ *
+ * @returns True only when the grant is currently in force.
+ */
+export async function hasReceiveSms(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
+  } catch {
+    // A device that will not answer is treated as a refusal: the cost is a
+    // consent dialog the user taps, against silently capturing nothing.
+    return false;
+  }
+}
+
+/**
  * Asks Android for permission to receive SMS, showing the system dialog.
  *
  * @returns The user's answer, or `denied` on any platform without the dialog.

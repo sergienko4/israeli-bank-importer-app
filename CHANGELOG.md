@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.7](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.6...israeli-bank-importer-app-v0.2.7) (2026-08-04)
+
+
+### Features
+
+* **otp:** capture bank SMS one-time codes ([#76](https://github.com/sergienko4/israeli-bank-importer-app/issues/76)) ([54a7d72](https://github.com/sergienko4/israeli-bank-importer-app/commit/54a7d72d8f171d4c522ae23563af23f4048f5321))
+
 ## [0.2.6](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.5...israeli-bank-importer-app-v0.2.6) (2026-08-03)
 
 

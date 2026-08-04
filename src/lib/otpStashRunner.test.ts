@@ -63,7 +63,7 @@ describe('createSerialDrain', () => {
     await expect(createSerialDrain(run)()).resolves.toBe('submitted');
   });
 
-  it('joins a drain already running instead of starting a second', async () => {
+  it('never runs two drains at the same time', async () => {
     // The poll fires every five seconds and a submit can outlast that. Two
     // drains at once would pick the same held message and spend one of the
     // bank's few attempts on a code it has already been sent.
@@ -77,10 +77,52 @@ describe('createSerialDrain', () => {
 
     const first = drain();
     const second = drain();
-    release('submitted');
-
-    await expect(Promise.all([first, second])).resolves.toEqual(['submitted', 'submitted']);
     expect(run).toHaveBeenCalledTimes(1);
+
+    release('submitted');
+    await expect(first).resolves.toBe('submitted');
+    await expect(second).resolves.toBe('submitted');
+  });
+
+  it('drains once more for a caller that arrived mid-run', async () => {
+    // The running drain read the stash before that caller arrived, so a message
+    // captured since is not in the list it is working from. On the headless
+    // path there is no next poll tick to rescue it: the task runs once and the
+    // app is not open.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const outcomes: StashRunOutcome[] = ['empty', 'submitted'];
+    const run = jest.fn<Promise<StashRunOutcome>, []>().mockImplementation(async () => {
+      if (run.mock.calls.length === 1) await held;
+      return outcomes.shift() ?? 'empty';
+    });
+    const drain = createSerialDrain(run);
+
+    const running = drain();
+    const waiting = drain();
+    release();
+
+    await expect(running).resolves.toBe('empty');
+    await expect(waiting).resolves.toBe('submitted');
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces every caller that arrived mid-run into one follow-up', async () => {
+    let release: (outcome: StashRunOutcome) => void = () => undefined;
+    const run = jest.fn<Promise<StashRunOutcome>, []>().mockReturnValue(
+      new Promise<StashRunOutcome>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const drain = createSerialDrain(run);
+
+    const calls = [drain(), drain(), drain(), drain()];
+    release('empty');
+
+    await Promise.all(calls);
+    expect(run).toHaveBeenCalledTimes(2);
   });
 
   it('runs again once the previous drain has finished', async () => {

@@ -42,12 +42,17 @@ export async function runStashDrain(ports: StashRunnerPorts): Promise<StashRunOu
 }
 
 /**
- * Wraps a drain so at most one runs at a time.
+ * Wraps a drain so at most one runs at a time, and no work is left behind.
  *
  * The foreground poll fires every few seconds and a submit can outlast that.
  * Two drains at once would select the same held message and spend one of the
  * bank's few attempts re-sending a code it has already been given, so a caller
- * arriving mid-run joins that run rather than starting another.
+ * arriving mid-run waits.
+ *
+ * It waits for a *further* run rather than for the one already going, because
+ * that run read the stash before the caller arrived: a message captured since
+ * is not in the list it is working from. Every mid-run caller shares that one
+ * follow-up, so a burst of poll ticks still costs a single extra drain.
  *
  * @param run - The drain to serialise.
  * @returns A drain that is safe to call from a timer.
@@ -56,12 +61,42 @@ export function createSerialDrain(
   run: () => Promise<StashRunOutcome>,
 ): () => Promise<StashRunOutcome> {
   let inFlight: Promise<StashRunOutcome> | null = null;
-  return () => {
-    inFlight ??= run().finally(() => {
-      inFlight = null;
-    });
-    return inFlight;
+  let queued: Promise<StashRunOutcome> | null = null;
+
+  const start = (): Promise<StashRunOutcome> => {
+    const started = run();
+    const clear = (): void => {
+      if (inFlight === started) inFlight = null;
+    };
+    inFlight = started;
+    started.then(clear, clear);
+    return started;
   };
+
+  return () => {
+    if (queued !== null) return queued;
+    if (inFlight === null) return start();
+    queued = settled(inFlight).then(() => {
+      queued = null;
+      return start();
+    });
+    return queued;
+  };
+}
+
+/**
+ * Waits for a run to finish, whether it produced an outcome or threw.
+ *
+ * @param promise - The run being waited on.
+ */
+async function settled(promise: Promise<StashRunOutcome>): Promise<void> {
+  try {
+    await promise;
+  } catch {
+    // Whoever started that run owns its failure. The follow-up only needs to
+    // know the slot is free, and refusing to run because the previous drain
+    // threw would strand the message the caller arrived to collect.
+  }
 }
 
 /**

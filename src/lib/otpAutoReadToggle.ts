@@ -73,8 +73,8 @@ export async function setAutoReadEnabled(
 export interface AutoReadStatePorts {
   /** Reads the stored setting from the device's secure store. */
   readonly stored: () => Promise<boolean>;
-  /** Asks Android whether the SMS permission is still held. */
-  readonly granted: () => Promise<boolean>;
+  /** Asks Android whether the SMS permission is held, or null if it cannot say. */
+  readonly granted: () => Promise<boolean | null>;
   /** Writes the setting to the device's secure store. */
   readonly persist: (enabled: boolean) => Promise<void>;
   /** Pushes the stored preferences down to the native capture flag. */
@@ -82,14 +82,19 @@ export interface AutoReadStatePorts {
 }
 
 /**
- * Reads the state the switch should open in, repairing it if it drifted.
+ * Reads the state the switch should open in, and settles the device to match.
  *
- * A permission can be taken away from system settings while the app is not
- * running, which leaves a setting claiming more than it is allowed — the case
- * the toggle rule exists to prevent. Showing "off" is not enough on its own,
- * because the native side is still holding messages on the strength of the
- * stored value; the stored value has to go first, and only then does pushing
- * the gate down turn capture off and clear what it is holding.
+ * Two things can drift apart while the app is not running, in both directions.
+ * A permission can be taken away from system settings, leaving a setting that
+ * claims more than it is allowed. And the native capture flag is derived from
+ * the stored preferences, which read as false whenever the keystore is briefly
+ * unreadable, so a single unlucky read can switch capture off underneath a
+ * setting that still says on — silently, permanently, and invisibly to a user
+ * who has been told codes are handled for them.
+ *
+ * So this is the one place both are put right. Order matters on the way down:
+ * the gate reads the preferences and never the permission, so the repair has to
+ * be stored before it is pushed, or pushing it would switch capture back on.
  *
  * @param ports - The injected store, permission check and gate.
  * @returns True only when the setting and the permission agree.
@@ -97,13 +102,16 @@ export interface AutoReadStatePorts {
 export async function resolveAutoRead(ports: AutoReadStatePorts): Promise<boolean> {
   const [stored, granted] = await Promise.all([ports.stored(), ports.granted()]);
   if (!stored) return false;
-  if (granted) return true;
+  // A check that could not run has not told us the permission is gone, and
+  // what follows would wipe the messages being held on the strength of it.
+  if (granted === null) return false;
 
   try {
-    await ports.persist(false);
+    if (!granted) await ports.persist(false);
     await ports.applyGate();
   } catch {
-    // The switch shows off either way, which is the state the device is in.
+    // Nothing here changes what the switch should show, which is the state the
+    // device is in either way. The next mount tries again.
   }
-  return false;
+  return granted;
 }

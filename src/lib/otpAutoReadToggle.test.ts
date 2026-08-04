@@ -97,10 +97,30 @@ function statePorts(overrides: Partial<AutoReadStatePorts> = {}) {
 }
 
 describe('resolveAutoRead', () => {
-  it('shows on when the setting and the permission agree', async () => {
+  // Not a no-op: either preference read failing makes the gate compute false
+  // and switch capture off while both stored values still say on. Nothing else
+  // ever puts it back, so without this the switch reads on over a dead receiver.
+  it('pushes the stored setting back down when it and the permission agree', async () => {
     const { ports: p, written, gates } = statePorts();
 
     await expect(resolveAutoRead(p)).resolves.toBe(true);
+    expect(written).toEqual([]);
+    expect(gates()).toBe(1);
+  });
+
+  it('still shows on when that push fails', async () => {
+    const { ports: p } = statePorts({ applyGate: () => Promise.reject(new Error('no context')) });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(true);
+  });
+
+  // The permission check answers false both for "revoked" and for "could not
+  // ask", and the repair below wipes every held message. Acting on the second
+  // would throw away an opt-in the user never withdrew.
+  it('changes nothing when the permission could not be determined', async () => {
+    const { ports: p, written, gates } = statePorts({ granted: () => Promise.resolve(null) });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
     expect(written).toEqual([]);
     expect(gates()).toBe(0);
   });
@@ -122,6 +142,26 @@ describe('resolveAutoRead', () => {
     await expect(resolveAutoRead(p)).resolves.toBe(false);
     expect(written).toEqual([false]);
     expect(gates()).toBe(1);
+  });
+
+  // The gate reads the preferences and never the permission, so syncing it
+  // while the store still says "on" would switch capture back on.
+  it('writes the repair before pushing it down', async () => {
+    const order: string[] = [];
+    const { ports: p } = statePorts({
+      granted: () => Promise.resolve(false),
+      persist: () => {
+        order.push('persist');
+        return Promise.resolve();
+      },
+      applyGate: () => {
+        order.push('gate');
+        return Promise.resolve(true);
+      },
+    });
+
+    await resolveAutoRead(p);
+    expect(order).toEqual(['persist', 'gate']);
   });
 
   it('still shows off when the repair cannot be written', async () => {

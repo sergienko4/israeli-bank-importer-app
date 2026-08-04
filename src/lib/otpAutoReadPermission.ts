@@ -40,6 +40,25 @@ export function isAutoReadBuild(): boolean {
 }
 
 /**
+ * Whether Android has granted permission to receive SMS, or cannot say.
+ *
+ * The distinction matters to anything that would *act* on a missing grant: a
+ * check that could not run is not evidence the user withdrew anything, and
+ * treating it as one throws away an opt-in and every message being held.
+ *
+ * @returns True or false when Android answered, null when it would not.
+ */
+export async function checkReceiveSms(): Promise<boolean | null> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
+  } catch {
+    // No answer is its own state here, distinct from a refusal.
+    return null;
+  }
+}
+
+/**
  * Whether Android has already granted permission to receive SMS.
  *
  * Asks without showing anything, so it is safe to call while deciding how to
@@ -49,14 +68,7 @@ export function isAutoReadBuild(): boolean {
  * @returns True only when the grant is currently in force.
  */
 export async function hasReceiveSms(): Promise<boolean> {
-  if (Platform.OS !== 'android') return false;
-  try {
-    return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECEIVE_SMS);
-  } catch {
-    // A device that will not answer is treated as a refusal: the cost is a
-    // consent dialog the user taps, against silently capturing nothing.
-    return false;
-  }
+  return (await checkReceiveSms()) === true;
 }
 
 /**

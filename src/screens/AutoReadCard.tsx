@@ -13,7 +13,7 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Banner, Card, ListRow } from '../components/ui';
 import { haptics } from '../lib/haptics';
-import { hasReceiveSms, requestReceiveSms } from '../lib/otpAutoReadPermission';
+import { checkReceiveSms, requestReceiveSms } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoRead, saveOtpAutoRead } from '../lib/otpAutoReadStore';
 import { resolveAutoRead, setAutoReadEnabled } from '../lib/otpAutoReadToggle';
 import { applyStashGate } from '../lib/otpStashGate';
@@ -53,7 +53,7 @@ export function AutoReadCard(): ReactElement {
       // after the writes rather than before them.
       const on = await resolveAutoRead({
         stored: loadOtpAutoRead,
-        granted: hasReceiveSms,
+        granted: checkReceiveSms,
         persist: saveOtpAutoRead,
         applyGate: applyStashGate,
       });

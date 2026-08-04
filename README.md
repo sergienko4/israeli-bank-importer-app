@@ -112,9 +112,10 @@ That build is a different privacy bargain and the README says so plainly:
 
 - It **does** hold an SMS permission, so the sentence above about holding none
   is not true of it.
-- The receiver still ignores everything unless a scrape is actually waiting for
-  a code: the app opens a deadline before it asks, and the receiver drops every
-  message that arrives outside it.
+- The receiver still ignores everything unless a scrape is waiting for a code or
+  is about to be: the app opens a deadline before it asks, messages arriving
+  inside it are submitted, and a code arriving earlier is held for ten minutes
+  and dropped after that. Nothing else is kept.
 - `READ_SMS` stays blocked in both builds, so neither can read your history.
 
 The default build never contains the permission, the receiver, or the service —
@@ -167,9 +168,12 @@ exists so you can stop it, and the once-per-request limit means a burst of
 messages cannot spend several attempts — but the safe setting is off, which is
 why it ships off.
 
-Two limits are worth knowing: the message must arrive **while the prompt is
-open** (a code that landed earlier is typed by hand), and the reading step is
-Android-only — on iOS the keyboard suggestion is the whole feature.
+Two limits are worth knowing. On the default build the message must arrive
+**while the prompt is open** — the consent dialog is what reads it, so a code
+that landed before the importer asked is typed by hand. The auto-read build
+holds that early message instead, under the ten-minute limit above. And the
+reading step is Android-only either way: on iOS the keyboard suggestion is the
+whole feature.
 
 ## Quick start
 

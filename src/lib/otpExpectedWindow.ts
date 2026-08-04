@@ -1,14 +1,19 @@
 import type { PendingOtpRequest } from '../api/otp';
 
 /**
- * The window during which an arriving message may be examined.
+ * The window during which an arriving message may answer a request right away.
  *
  * This is the containment rule for SMS auto-read. Holding `RECEIVE_SMS` means
  * Android hands the app every message — other banks, other services' codes,
  * private conversations. What keeps that from mattering is that a message is
- * only ever parsed while a request the user's own bank login triggered is
- * still outstanding. At any other moment the receiver returns having read
- * nothing, which is also why it costs no battery and makes no network call.
+ * only ever handed to JavaScript, and so only ever submitted, while a request
+ * the user's own bank login triggered is still outstanding.
+ *
+ * Outside the window the receiver does not go silent entirely: with capture
+ * switched on it may put a message carrying a code into the bounded native
+ * stash, so a code that arrives before the importer asks for one is not lost.
+ * Nothing is submitted from there until a request appears and this window
+ * decides which one it answers.
  */
 
 /**

@@ -8,11 +8,12 @@ import {
 /**
  * The expectation window is the containment rule for SMS auto-read: with
  * `RECEIVE_SMS` granted the receiver is handed every message, and this is what
- * decides that almost all of them are never looked at.
+ * decides that almost all of them are never acted on.
  *
- * A message is only ever parsed while a bank request the user themselves
- * triggered is outstanding. Outside that window the receiver returns having
- * read nothing.
+ * A message is only ever handed to JavaScript, and so only ever submitted,
+ * while a bank request the user themselves triggered is outstanding. Outside
+ * that window a message carrying a code may still be put into the bounded
+ * native stash, where nothing happens to it until a request appears.
  */
 
 const NOW = 1_700_000_000_000;

@@ -15,10 +15,11 @@
  * nothing at all, leaving the message usable once the network comes back.
  *
  * Because it is the security control, one acknowledgement that fails may not
- * abandon the copies behind it, and each falls back to the other: a message
- * that cannot be dropped is recorded instead, and one that cannot be recorded
- * is dropped. Either outcome takes the code out of circulation, which is the
- * whole point of the step.
+ * abandon the copies behind it, and each falls back to the other. What it falls
+ * back to differs by outcome, because the scopes differ: an accepted code is
+ * marked spent for every request, since the code itself is used up, while a
+ * rejected one is only recorded against the request that rejected it. Either
+ * way the code leaves circulation, which is the whole point of the step.
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
@@ -27,6 +28,7 @@ import { pickExpectation } from './otpExpectedWindow';
 import {
   liveStashEntries,
   selectStashedCode,
+  STASH_SPENT,
   stashedCopiesOf,
   type StashedMessage,
 } from './otpStash';
@@ -80,9 +82,10 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const copies = stashedCopiesOf(live, found.code, ports.now());
     const drop = (id: string): Promise<void> => ports.consume(id);
     const record = (id: string): Promise<void> => ports.markAttempt(id, expectation.requestId);
+    const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
     const result = await ports.submit(session, expectation.requestId, found.code);
     if (result.ok) {
-      await acknowledgeEach(copies, orElse(drop, record));
+      await acknowledgeEach(copies, orElse(drop, spend));
       return 'submitted';
     }
     if (neverJudged(result.status)) return 'failed';

@@ -1,4 +1,10 @@
-import { liveStashEntries, selectStashedCode, STASH_TTL_MS, type StashedMessage } from './otpStash';
+import {
+  liveStashEntries,
+  selectStashedCode,
+  STASH_SPENT,
+  STASH_TTL_MS,
+  type StashedMessage,
+} from './otpStash';
 
 const NOW = 1_785_265_164_486;
 
@@ -38,6 +44,12 @@ describe('liveStashEntries', () => {
 });
 
 describe('selectStashedCode', () => {
+  // The one marker that outlives the request it was written for: a code the
+  // importer has accepted is spent for every request, not only that one.
+  it('skips a message marked spent, whichever request is asking', () => {
+    expect(selectStashedCode([entry({ attempted: [STASH_SPENT] })], 'req-9', NOW)).toBeNull();
+  });
+
   it('returns the code when exactly one message carries one', () => {
     const found = selectStashedCode([entry()], 'req-1', NOW);
     expect(found?.code).toBe('482913');

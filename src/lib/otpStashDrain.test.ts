@@ -1,4 +1,4 @@
-import { STASH_TTL_MS, type StashedMessage } from './otpStash';
+import { STASH_SPENT, STASH_TTL_MS, type StashedMessage } from './otpStash';
 import type { StashDrainPorts } from './otpStashDrain';
 import { drainStash } from './otpStashDrain';
 
@@ -248,15 +248,36 @@ describe('drainStash', () => {
     expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
   });
 
-  // Dropping the message is what stops a spent code being offered again, so a
-  // drop that fails has to leave a record behind rather than nothing at all.
-  it('records the request against a spent copy it could not drop', async () => {
+  // The drop is what stops a spent code being offered again, so a drop that
+  // fails has to leave behind a marker no later request can look past.
+  it('never offers a code again once the importer has accepted it', async () => {
+    const entries = [held()];
+    const pending = [LIVE];
+    const { ports: p, submitted } = ports({
+      list: () => Promise.resolve(entries),
+      getPending: () => Promise.resolve(pending),
+      consume: () => Promise.reject(new Error('write failed')),
+      markAttempt: (id, requestId) => {
+        entries[0] = { ...held(), attempted: [...entries[0].attempted, requestId] };
+        return Promise.resolve();
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+
+    // A second scrape asks, so the request-specific record would not save us.
+    pending[0] = { ...LIVE, id: 'req-2' };
+    await expect(drainStash(p)).resolves.toBe('ambiguous');
+    expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
+  });
+
+  it('marks a spent copy it could not drop', async () => {
     const { ports: p, attempts } = ports({
       consume: () => Promise.reject(new Error('write failed')),
     });
 
     await expect(drainStash(p)).resolves.toBe('submitted');
-    expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+    expect(attempts).toEqual([{ id: 'msg-1', requestId: STASH_SPENT }]);
   });
 
   // One stubborn copy used to abandon every copy behind it, which is the
@@ -273,7 +294,7 @@ describe('drainStash', () => {
 
     await expect(drainStash(p)).resolves.toBe('submitted');
     expect(tried).toEqual(['msg-1', 'msg-2']);
-    expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+    expect(attempts).toEqual([{ id: 'msg-1', requestId: STASH_SPENT }]);
   });
 
   // A rejected code is worthless, so failing to record it is a reason to drop

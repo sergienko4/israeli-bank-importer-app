@@ -25,6 +25,20 @@ import { extractOtpCode } from './otpMessage';
 export const STASH_TTL_MS = 10 * 60 * 1000;
 
 /**
+ * The marker that takes a held message out of circulation for good.
+ *
+ * `attempted` normally names a request a message was sent to, which stops only
+ * that request choosing it again. That is the right scope for a rejection — a
+ * later request asks a different question — but the wrong one for a code the
+ * importer has accepted: that message is spent for everybody, and the only
+ * reason it still exists is that the write meant to delete it failed.
+ *
+ * Marking it with a value the importer cannot issue says so durably, through
+ * the same single native write, and needs nothing new stored anywhere.
+ */
+export const STASH_SPENT = '*spent*';
+
+/**
  * A message held natively because no code was being waited for when it arrived.
  *
  * The native side caps how many of these exist at once and evicts the oldest,
@@ -87,6 +101,10 @@ export function stashedCopiesOf(
   return liveStashEntries(entries, now).filter((entry) => extractOtpCode(entry.body) === code);
 }
 
+function spent(entry: StashedMessage): boolean {
+  return entry.attempted.includes(STASH_SPENT);
+}
+
 /**
  * Chooses the code that may answer one request, if it is unambiguous.
  *
@@ -96,6 +114,8 @@ export function stashedCopiesOf(
  * the live messages carry more than one distinct code — an unrelated service's
  * one-time code parses exactly as cleanly as a bank's — nothing is chosen at
  * all, which costs the user a few seconds of typing and never an attempt.
+ *
+ * A message marked {@link STASH_SPENT} is skipped whoever is asking.
  *
  * @param entries - Everything currently held.
  * @param requestId - The request a code would be submitted against.
@@ -108,7 +128,7 @@ export function selectStashedCode(
   now: number,
 ): StashedCode | null {
   const candidates = liveStashEntries(entries, now)
-    .filter((entry) => !entry.attempted.includes(requestId))
+    .filter((entry) => !spent(entry) && !entry.attempted.includes(requestId))
     .map((entry) => ({ entry, code: extractOtpCode(entry.body) }))
     .filter((candidate): candidate is StashedCode => candidate.code !== null);
   if (new Set(candidates.map((candidate) => candidate.code)).size !== 1) {

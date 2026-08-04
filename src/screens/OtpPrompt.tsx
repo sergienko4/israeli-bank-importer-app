@@ -72,6 +72,9 @@ async function sendCode(session: Session, requestId: string, code: string): Prom
 function useAutoSubmitPreference(visible: boolean): boolean {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
+    if (!visible) {
+      return undefined;
+    }
     let active = true;
     const run = async (): Promise<void> => {
       const stored = await loadOtpAutoSubmit();
@@ -192,8 +195,13 @@ export function OtpPrompt({
   // finishes that request by hand.
   const autoUsedForRequest = useRef<string | null>(null);
 
+  // The countdown and the button can both reach `submit` in the same tick, and
+  // `submitting` does not become true until React re-renders. A ref closes that
+  // gap, which is worth a bank attempt.
+  const inFlight = useRef(false);
+
   const submit = async (candidate: string): Promise<void> => {
-    if (submitting) {
+    if (inFlight.current) {
       return;
     }
     const trimmed = normalizeOtpCodeInput(candidate);
@@ -206,9 +214,11 @@ export function OtpPrompt({
       setError('Reconnect to the importer, then enter the code again.');
       return;
     }
+    inFlight.current = true;
     setSubmitting(true);
     setError(null);
     const failure = await sendCode(connection, request.id, trimmed);
+    inFlight.current = false;
     setSubmitting(false);
     if (failure !== null) {
       haptics.warning();

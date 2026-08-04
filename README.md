@@ -163,6 +163,14 @@ background path never opens the window at all. With auto-submit off there is no
 screen to confirm a captured code against when a message wakes a dead process,
 and sending it unconfirmed is the one thing that switch says no to.
 
+**And only while this app collects the codes.** Both switches are hidden when
+OTP delivery is set to Telegram, because the importer then never asks this app
+for a code and a captured message could never be spent. Hiding them alone would
+leave the receiver running with nothing on screen to stop it, so the channel is
+part of the same gate: choosing Telegram shuts the receiver and empties anything
+held, and the app re-checks the channel each time it connects — so changing it
+from the importer's own web UI stops capture here too.
+
 **The risk of auto-submit, plainly.** A code that arrives in a message you did
 not expect is a code someone else asked for. With auto-submit on, approving that
 message spends one of your bank attempts before you have read it. The countdown

@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
+import type { Session } from '../api/importerClient';
 import { getOtpSettings, setOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
@@ -27,6 +28,7 @@ import {
 import { haptics } from '../lib/haptics';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoSubmit, saveOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
+import { cacheOtpChannel } from '../lib/otpChannelSync';
 import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 import { AutoReadCard } from './AutoReadCard';
@@ -40,6 +42,32 @@ interface Choice {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
+}
+
+/** What the screen needs from the channel load, so the load can be reused. */
+interface ChannelLoad {
+  /** The importer's channel, or null until the first read lands. */
+  readonly channel: OtpChannel | null;
+  /** Whether the first read is still outstanding. */
+  readonly loading: boolean;
+  /** Why the read failed, or null. */
+  readonly error: string | null;
+  /** Applies a channel the user just chose, before the importer confirms it. */
+  readonly setChannel: (channel: OtpChannel | null) => void;
+  /** Tries the read again. */
+  readonly reload: () => void;
+}
+
+/** A finished channel read, tagged with the request that produced it. */
+interface ChannelResult {
+  /** The session the read was made for. */
+  readonly connection: Session | null;
+  /** Which attempt this answers, so a retry supersedes the one before it. */
+  readonly reloadKey: number;
+  /** The channel the importer reported, or null when the read failed. */
+  readonly channel: OtpChannel | null;
+  /** Why the read failed, or null. */
+  readonly error: string | null;
 }
 
 const CHOICES: Choice[] = [
@@ -152,18 +180,25 @@ function AutoSubmitCard(): ReactElement {
 }
 
 /**
- * Renders the OTP delivery settings screen.
- * @param props - Callback to return to the previous screen.
- * @returns The settings screen element.
+ * Loads the importer's OTP channel and keeps the device cache in step with it.
+ *
+ * Kept out of the screen because the cache write matters even when the screen
+ * has already moved on: the SMS receiver reads that cache with no session, and
+ * the switches that would otherwise close it are hidden off the app channel.
+ *
+ * The outcome is stored against the request that produced it rather than reset
+ * before each attempt. A result belonging to an earlier connection or reload
+ * then reads as still loading, so a sign-in after a failed load cannot leave
+ * the old error rendered over a screen that has since loaded.
+ *
+ * @param connection - The active importer session, or null when signed out.
+ * @returns The loaded channel, the request state, and a way to try again.
  */
-export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
-  const theme = useTheme();
-  const { connection } = useAuth();
-  const [channel, setChannel] = useState<OtpChannel | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+function useOtpChannel(connection: Session | null): ChannelLoad {
+  const [result, setResult] = useState<ChannelResult | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const current =
+    result !== null && result.connection === connection && result.reloadKey === reloadKey;
 
   useEffect(() => {
     if (!connection) {
@@ -171,19 +206,17 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
     }
     let active = true;
     const run = async (): Promise<void> => {
+      const done = (channel: OtpChannel | null, error: string | null): void => {
+        if (active) {
+          setResult({ connection, reloadKey, channel, error });
+        }
+      };
       try {
         const settings = await getOtpSettings(connection);
-        if (active) {
-          setChannel(settings.channel);
-        }
+        await cacheOtpChannel(settings.channel);
+        done(settings.channel, null);
       } catch (e) {
-        if (active) {
-          setError(e instanceof Error ? e.message : 'Failed to load OTP settings.');
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
+        done(null, e instanceof Error ? e.message : 'Failed to load OTP settings.');
       }
     };
     void run();
@@ -192,11 +225,32 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
     };
   }, [connection, reloadKey]);
 
+  const setChannel = (next: OtpChannel | null): void => {
+    setResult({ connection, reloadKey, channel: next, error: null });
+  };
   const reload = (): void => {
-    setError(null);
-    setLoading(true);
     setReloadKey((key) => key + 1);
   };
+
+  return {
+    channel: current ? result.channel : null,
+    loading: !current,
+    error: current ? result.error : null,
+    setChannel,
+    reload,
+  };
+}
+
+/**
+ * Renders the OTP delivery settings screen.
+ * @param props - Callback to return to the previous screen.
+ * @returns The settings screen element.
+ */
+export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
+  const theme = useTheme();
+  const { connection } = useAuth();
+  const { channel, loading, error, setChannel, reload } = useOtpChannel(connection);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const choose = async (next: OtpChannel): Promise<void> => {
     if (!connection || next === channel) {
@@ -208,6 +262,9 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
     try {
       const result = await setOtpSettings(connection, next);
       if (result.ok) {
+        // Moving off the app channel hides both switches, so this is what stops
+        // the receiver: without it, capture would keep running unreachable.
+        await cacheOtpChannel(next);
         haptics.success();
       } else {
         setChannel(previous);

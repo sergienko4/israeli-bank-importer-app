@@ -1,0 +1,20 @@
+<!--
+  Deliberately empty, and it must stay that way.
+
+  Two capture paths live in this module, and neither belongs here:
+
+  1. SMS User Consent, the default. It needs no permission at all: play
+     services shows the user a dialog for each candidate message, and the app
+     only ever sees a message the user approved.
+
+  2. Auto-read, which does need a receiver, a service, and the RECEIVE_SMS
+     permission. Those are added by the `withOtpSmsAutoRead` config plugin in
+     `app.config.ts`, and only for a build made with OTP_SMS_AUTOREAD=1.
+     Declaring them here would instead put them in every build, including the
+     default one, which is the single thing that plugin exists to prevent.
+
+  So if a *_SMS permission, receiver, or service ever appears in this file,
+  something has regressed and must be reverted.
+-->
+<manifest>
+</manifest>

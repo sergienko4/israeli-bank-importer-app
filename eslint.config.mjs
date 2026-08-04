@@ -99,6 +99,10 @@ export default tseslint.config(
       '.expo/**',
       'node_modules/**',
       'coverage/**',
+      // Internal notes and local proof harnesses; git-ignored, never shipped.
+      'tasks/**',
+      'android/**',
+      'ios/**',
       'babel.config.js',
       'metro.config.js',
       '*.config.js',

@@ -1,0 +1,33 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.otpsmsconsent'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.otpsmsconsent"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}
+
+dependencies {
+  // SMS User Consent API. Deliberately NOT play-services-auth: this module
+  // never asks for a phone number, and it must never pull in an SMS
+  // permission. Consent is granted per message, by the user, in a system
+  // dialog we do not control.
+  //
+  // Held at 18.3.0 on purpose. 18.3.1 is compiled with Kotlin 2.3, and the
+  // Kotlin toolchain Expo SDK 57 pins reads metadata 2.1 -- it rejects the
+  // artifact outright, failing compileDebugKotlin. Raise this only after
+  // confirming the SDK's Kotlin version has caught up.
+  implementation "com.google.android.gms:play-services-auth-api-phone:18.3.0"
+
+  // For HeadlessJsTaskService, which runs the auto-read capture without a
+  // screen. Unversioned, matching every expo module: the React Native gradle
+  // plugin resolves it to the version the app is built against.
+  implementation "com.facebook.react:react-android"
+}

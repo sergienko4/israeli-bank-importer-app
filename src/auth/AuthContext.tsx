@@ -25,6 +25,7 @@ import {
   setReauthHandler,
   setSessionGuard,
 } from '../api/importerClient';
+import { forgetHeldMessages } from '../lib/otpStashGate';
 import { getPushToken } from '../push/pushRegistration';
 import { signIn } from './appAuthFlow';
 import { isExpiring, refreshConnection, toSession } from './appSession';
@@ -122,6 +123,9 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
 
   const forget = useCallback(async (reason?: string) => {
     await clearConnection();
+    // Held messages were captured for an importer this app can no longer
+    // reach, so nothing will ever be able to spend them.
+    await forgetHeldMessages();
     setConnection(null);
     setSessionExpired(false);
     setEndedReason(reason ?? null);

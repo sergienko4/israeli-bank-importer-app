@@ -77,6 +77,106 @@ renewing silently.
 
 Upgrading from an older version deletes the portal password it used to store.
 
+## Bank one-time codes
+
+When a bank asks for a one-time code, the importer prompts this app and you
+approve the code on your phone. Getting the code out of an SMS and into the
+prompt is the slow part, so the app helps with it — carefully, because the cost
+of submitting a wrong code is a bank-side attempt, and those run out.
+
+- **The keyboard offers it.** The code field is marked as a one-time-code field,
+  so iOS and Android suggest the code above the keyboard. Nothing is read; the
+  OS does the work and you tap.
+- **Android can read the message, once, with your permission.** If a candidate
+  message arrives while the prompt is open, Android shows *its own* dialog
+  asking whether this app may read that one message. Approve it and the code
+  fills itself. The app holds **no SMS permission** — not `READ_SMS`, not
+  `RECEIVE_SMS` — and cannot read anything you did not just approve. Decline,
+  ignore it, or run a device without Play Services, and you simply type the
+  code as before.
+- **Auto-submit is off until you turn it on.** In **OTP settings** you can let a
+  filled code send itself. It then sends after a three-second countdown you can
+  cancel, at most once per request.
+
+Everything above describes the build you install from the releases page, and it
+is the only build this project publishes.
+
+### The zero-touch build
+
+There is a second way to build the app, for people who would rather trade the
+per-message dialog for doing nothing at all. Building with `OTP_SMS_AUTOREAD=1`
+adds the `RECEIVE_SMS` permission and a broadcast receiver, so a code can be
+captured and submitted while the phone is in your pocket — no dialog, no tap.
+
+That build is a different privacy bargain and the README says so plainly:
+
+- It **does** hold an SMS permission, so the sentence above about holding none
+  is not true of it.
+- The receiver still ignores everything unless a scrape is waiting for a code or
+  is about to be: the app opens a deadline before it asks, and a code arriving
+  earlier is held for ten minutes and dropped after that. A message arriving
+  inside the deadline is submitted only when a request is still waiting and the
+  message yields exactly one code; one that yields none, or two that disagree,
+  is dropped. Nothing else is kept.
+- `READ_SMS` stays blocked in both builds, so neither can read your history.
+
+The default build never contains the permission, the receiver, or the service —
+they are added at build time, not merely left unused.
+
+**A code that arrives before the importer asks is held, not lost.** Banks often
+send the code first, and Android delivers that broadcast exactly once. Rather
+than drop it, the receiver keeps the message — raw and unparsed — and the app
+spends it the moment a matching request appears. Nothing is read from your
+inbox to do this: the app still holds `RECEIVE_SMS` and not `READ_SMS`, so the
+only messages it can hold are ones that arrived while it was installed, paired
+and switched on.
+
+What is held, and for how long: the message text, its sender and its arrival
+time, in app-private storage, for **ten minutes**, capped at **ten messages**
+with the oldest dropped first. Turning either switch off empties it in the same
+write that shuts the receiver, and unpairing the device does the same. A held
+message is spent only on a request the importer is actually waiting for, and
+only when the whole message yields exactly one code. Two held messages
+disagreeing about the code means neither is sent and you are asked — an
+ambiguous code is exactly the case worth a human glance.
+
+An app that is not running still has to be woken to notice the request. It does
+that by polling the importer while on screen, and otherwise through a
+background notification task: a **data-only** push starts the process, which
+then asks the importer what is outstanding — never trusting the push itself,
+which anyone holding this device's push token could forge.
+
+The importer's visible *OTP required* alert cannot do that job. Android hands a
+push carrying a title and body straight to the notification tray without
+starting a terminated app; only a silent one runs a registered task. Until the
+importer sends a silent push alongside the visible alert, a scrape that starts
+while the app is closed still ends with you typing the code.
+
+**What still needs you.** Holding rescues the early message only if the app
+gets a chance to run after the request appears — it is on screen, a later
+message wakes it, or a data-only push does. A phone whose app was force-stopped
+from Android's settings, or one that received a single early message and
+nothing since, still ends with you typing the code.
+
+**Both switches must be on.** Auto-read and auto-submit together, or the
+background path never opens the window at all. With auto-submit off there is no
+screen to confirm a captured code against when a message wakes a dead process,
+and sending it unconfirmed is the one thing that switch says no to.
+
+**The risk of auto-submit, plainly.** A code that arrives in a message you did
+not expect is a code someone else asked for. With auto-submit on, approving that
+message spends one of your bank attempts before you have read it. The countdown
+exists so you can stop it, and the once-per-request limit means a burst of
+messages cannot spend several attempts — but the safe setting is off, which is
+why it ships off.
+
+Two limits are worth knowing. On the default build the message must arrive
+**while the prompt is open** — the consent dialog is what reads it, so a code
+that landed before the importer asked is typed by hand. The auto-read build
+holds that early message instead, under the ten-minute limit above. And the
+reading step is Android-only either way: on iOS the keyboard suggestion is the
+whole feature.
+
 ## Quick start
 
 ```bash
@@ -233,6 +333,11 @@ user cannot act on.
   spring sheets, and skeleton loaders (all reduced-motion aware).
 - ✅ **Navigation & home** — persistent bottom tab bar + glanceable home dashboard.
 - ✅ **App-based OTP** — approve bank OTP codes in the app instead of Telegram.
+- ✅ **One-time-code capture** — keyboard autofill everywhere, consent-based SMS
+  reading on Android (no SMS permission), and opt-in auto-submit with a cancel
+  window. An optional `OTP_SMS_AUTOREAD=1` build captures the code with no
+  interaction at all, and holds a code that arrives before the importer asks
+  for it.
 - ✅ **Seamless reconnect** — biometric-guarded token renewal on session expiry.
 - ✅ **Browser sign-in** — the portal authenticates the user; the app never
   stores a password.

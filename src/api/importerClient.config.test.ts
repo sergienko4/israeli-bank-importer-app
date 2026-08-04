@@ -91,7 +91,7 @@ describe('saveConfig', () => {
   it('surfaces validation errors on 400', async () => {
     stubFetch(400, { error: 'Invalid', errors: ['bad field'] });
     const result = await saveConfig(session, { a: 1 });
-    expect(result).toEqual({ ok: false, error: 'Invalid', errors: ['bad field'] });
+    expect(result).toEqual({ ok: false, error: 'Invalid', errors: ['bad field'], status: 400 });
   });
 });
 
@@ -106,7 +106,7 @@ describe('removeBank', () => {
   it('reports a failure body from the importer', async () => {
     stubFetch(400, { error: 'nope' });
     const result = await removeBank(session, 'discount');
-    expect(result).toEqual({ ok: false, error: 'nope', errors: undefined });
+    expect(result).toEqual({ ok: false, error: 'nope', errors: undefined, status: 400 });
   });
 });
 

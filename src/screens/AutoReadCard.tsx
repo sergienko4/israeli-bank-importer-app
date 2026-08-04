@@ -13,7 +13,7 @@ import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { Banner, Card, ListRow } from '../components/ui';
 import { haptics } from '../lib/haptics';
-import { requestReceiveSms } from '../lib/otpAutoReadPermission';
+import { hasReceiveSms, requestReceiveSms } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoRead, saveOtpAutoRead } from '../lib/otpAutoReadStore';
 import { setAutoReadEnabled } from '../lib/otpAutoReadToggle';
 import { applyStashGate } from '../lib/otpStashGate';
@@ -44,9 +44,12 @@ export function AutoReadCard(): ReactElement {
   useEffect(() => {
     let active = true;
     const run = async (): Promise<void> => {
-      const stored = await loadOtpAutoRead();
+      // Both, because the permission can be revoked from Android Settings
+      // without this preference hearing about it. Showing the switch on while
+      // no message can reach the app would be a promise the app cannot keep.
+      const [stored, granted] = await Promise.all([loadOtpAutoRead(), hasReceiveSms()]);
       if (active) {
-        setEnabled(stored);
+        setEnabled(stored && granted);
       }
     };
     void run();

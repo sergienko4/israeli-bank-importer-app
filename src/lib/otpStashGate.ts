@@ -24,24 +24,39 @@ export interface StashGatePorts {
   readonly setEnabled: (enabled: boolean) => void;
 }
 
+/** What a sync ended up doing, so a caller can tell "off" from "never written". */
+export interface StashGateResult {
+  /** Whether holding ended up allowed. */
+  readonly allowed: boolean;
+  /**
+   * Whether the flag now holds what the preferences asked for.
+   *
+   * False covers both a write that threw and a fail-closed fallback, because
+   * neither leaves the flag standing for the switches. A caller that reports
+   * the user's state needs this rather than {@link StashGateResult.allowed},
+   * which is legitimately false whenever the other switch is off.
+   */
+  readonly pushed: boolean;
+}
+
 /**
  * Writes the user's current answer where the receiver can read it.
  *
  * @param ports - The injected preferences and native flag.
- * @returns Whether holding ended up allowed.
+ * @returns What ended up allowed, and whether the flag was actually written.
  */
-export async function syncStashGate(ports: StashGatePorts): Promise<boolean> {
+export async function syncStashGate(ports: StashGatePorts): Promise<StashGateResult> {
   try {
     const allowed = await ports.isAllowed();
     ports.setEnabled(allowed);
-    return allowed;
+    return { allowed, pushed: true };
   } catch {
     try {
       ports.setEnabled(false);
     } catch {
       // No receiver to tell, so there is nothing holding anything either.
     }
-    return false;
+    return { allowed: false, pushed: false };
   }
 }
 
@@ -50,9 +65,9 @@ export async function syncStashGate(ports: StashGatePorts): Promise<boolean> {
  *
  * Called from each switch, so the receiver's answer never lags the user's.
  *
- * @returns Whether holding ended up allowed.
+ * @returns What ended up allowed, and whether the flag was actually written.
  */
-export async function applyStashGate(): Promise<boolean> {
+export async function applyStashGate(): Promise<StashGateResult> {
   return syncStashGate({
     isAllowed: loadBackgroundCaptureAllowed,
     setEnabled: stash.setEnabled,

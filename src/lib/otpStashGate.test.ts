@@ -20,13 +20,13 @@ function ports(allowed: boolean): {
 describe('syncStashGate', () => {
   it('lets the receiver hold messages while both switches are on', async () => {
     const p = ports(true);
-    await expect(syncStashGate(p)).resolves.toBe(true);
+    await expect(syncStashGate(p)).resolves.toEqual({ allowed: true, pushed: true });
     expect(p.setEnabled).toHaveBeenCalledWith(true);
   });
 
   it('stops the receiver holding messages once a switch is off', async () => {
     const p = ports(false);
-    await expect(syncStashGate(p)).resolves.toBe(false);
+    await expect(syncStashGate(p)).resolves.toEqual({ allowed: false, pushed: true });
     expect(p.setEnabled).toHaveBeenCalledWith(false);
   });
 
@@ -35,7 +35,7 @@ describe('syncStashGate', () => {
     // collecting messages the user may already have said no to.
     const p = ports(true);
     p.isAllowed.mockRejectedValue(new Error('keystore unavailable'));
-    await expect(syncStashGate(p)).resolves.toBe(false);
+    await expect(syncStashGate(p)).resolves.toEqual({ allowed: false, pushed: false });
     expect(p.setEnabled).toHaveBeenCalledWith(false);
   });
 
@@ -44,6 +44,18 @@ describe('syncStashGate', () => {
     p.setEnabled.mockImplementation(() => {
       throw new Error('no native module');
     });
-    await expect(syncStashGate(p)).resolves.toBe(false);
+    await expect(syncStashGate(p)).resolves.toEqual({ allowed: false, pushed: false });
+  });
+
+  // The fallback writes "off" rather than what the preferences asked for, so the
+  // flag no longer stands for the switches. Calling that a push would let the
+  // auto-read switch claim a receiver that is holding nothing.
+  it('does not call a fallback write a push', async () => {
+    const p = ports(true);
+    p.setEnabled.mockImplementationOnce(() => {
+      throw new Error('no context');
+    });
+    await expect(syncStashGate(p)).resolves.toEqual({ allowed: false, pushed: false });
+    expect(p.setEnabled).toHaveBeenNthCalledWith(2, false);
   });
 });

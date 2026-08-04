@@ -89,7 +89,7 @@ function statePorts(overrides: Partial<AutoReadStatePorts> = {}) {
     },
     applyGate: () => {
       gated += 1;
-      return Promise.resolve(true);
+      return Promise.resolve({ pushed: true });
     },
     ...overrides,
   };
@@ -113,6 +113,16 @@ describe('resolveAutoRead', () => {
   // codes are handled while the receiver may be off.
   it('shows off when that push fails', async () => {
     const { ports: p } = statePorts({ applyGate: () => Promise.reject(new Error('no context')) });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+  });
+
+  // The gate swallows a failed native write and resolves rather than rejecting,
+  // so the answer above is unreachable through the real port. This is the shape
+  // the device actually reports: the flag was never written, and a switch that
+  // read on here would promise a receiver that is not listening.
+  it('shows off when the flag was never written', async () => {
+    const { ports: p } = statePorts({ applyGate: () => Promise.resolve({ pushed: false }) });
 
     await expect(resolveAutoRead(p)).resolves.toBe(false);
   });
@@ -173,7 +183,7 @@ describe('resolveAutoRead', () => {
       },
       applyGate: () => {
         order.push('gate');
-        return Promise.resolve(true);
+        return Promise.resolve({ pushed: true });
       },
     });
 

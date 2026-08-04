@@ -78,7 +78,7 @@ export interface AutoReadStatePorts {
   /** Writes the setting to the device's secure store. */
   readonly persist: (enabled: boolean) => Promise<void>;
   /** Pushes the stored preferences down to the native capture flag. */
-  readonly applyGate: () => Promise<unknown>;
+  readonly applyGate: () => Promise<{ readonly pushed: boolean }>;
 }
 
 /**
@@ -109,7 +109,10 @@ export async function resolveAutoRead(ports: AutoReadStatePorts): Promise<boolea
     if (granted === null) return false;
 
     if (!granted) await ports.persist(false);
-    await ports.applyGate();
+    // The gate reports rather than throws, so asking it whether the write landed
+    // is the only way to tell a flag the receiver will read from one that was
+    // never written.
+    if (!(await ports.applyGate()).pushed) return false;
     return granted;
   } catch {
     // Nothing was reconciled, so nothing can be claimed. Showing on here would

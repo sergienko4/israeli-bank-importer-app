@@ -96,8 +96,15 @@ class OtpSmsConsentModule : Module() {
 
     // Mirrors the user's switches natively, so the receiver can decline to hold
     // a message without starting JavaScript to ask.
+    //
+    // Switching capture off also shuts the auto-read window, because the window
+    // is a deadline on disk that can outlive the decision by up to ten minutes.
+    // Leaving it open would keep messages flowing to JavaScript after the user
+    // said no; closing both in one call means neither path survives the other.
     Function("setStashEnabled") { enabled: Boolean ->
-      SmsStash.setEnabled(requireContext(), enabled)
+      val context = requireContext()
+      SmsStash.setEnabled(context, enabled)
+      if (!enabled) SmsExpectation.close(context)
     }
 
     OnActivityResult { _, payload ->

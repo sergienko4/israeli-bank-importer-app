@@ -48,8 +48,7 @@ export async function syncStashGate(ports: StashGatePorts): Promise<boolean> {
 /**
  * Syncs the flag on this device.
  *
- * Called on app start and after either switch moves, so the receiver's answer
- * never lags the user's.
+ * Called from each switch, so the receiver's answer never lags the user's.
  *
  * @returns Whether holding ended up allowed.
  */

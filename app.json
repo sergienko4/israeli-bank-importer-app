@@ -3,7 +3,7 @@
     "name": "Israeli Bank Importer",
     "slug": "israeli-bank-importer-app",
     "owner": "sergienko4",
-    "version": "0.2.7",
+    "version": "0.2.8",
     "runtimeVersion": {
       "policy": "fingerprint"
     },

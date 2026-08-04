@@ -38,7 +38,7 @@ export async function runOtpSmsTask(data: { readonly body?: string }): Promise<v
   if (typeof body !== 'string' || body === '') {
     return;
   }
-  if (!(await loadBackgroundCaptureAllowed())) {
+  if (!(await allowed())) {
     return;
   }
   await autoSubmitFromMessage(body, {
@@ -48,6 +48,23 @@ export async function runOtpSmsTask(data: { readonly body?: string }): Promise<v
     now: Date.now,
   });
   await drainHeldMessages();
+}
+
+/**
+ * Reads the switches, treating a failure to read them as a no.
+ *
+ * Nothing here has a screen to report a problem on, and an unreadable
+ * preference is not permission. Containing the failure also keeps it from
+ * rejecting the whole task, which would skip the drain that follows.
+ *
+ * @returns True only when both switches are readable and on.
+ */
+async function allowed(): Promise<boolean> {
+  try {
+    return await loadBackgroundCaptureAllowed();
+  } catch {
+    return false;
+  }
 }
 
 /**

@@ -51,6 +51,15 @@ describe('runOtpSmsTask', () => {
     expect(mockDrain).toHaveBeenCalledTimes(1);
   });
 
+  it('stays quiet when reading the switches fails', async () => {
+    // An unreadable preference is not permission, and letting the failure out
+    // would reject the whole task and skip the drain below it.
+    mockAllowed.mockRejectedValue(new Error('keystore locked'));
+    await expect(runOtpSmsTask({ body: 'Your code is 123456' })).resolves.toBeUndefined();
+    expect(mockSubmit).not.toHaveBeenCalled();
+    expect(mockDrain).not.toHaveBeenCalled();
+  });
+
   it('leaves held messages alone once a switch is off', async () => {
     mockAllowed.mockResolvedValue(false);
     await runOtpSmsTask({ body: 'Your code is 123456' });

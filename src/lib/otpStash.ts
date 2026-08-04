@@ -93,7 +93,12 @@ export function selectStashedCode(
   if (new Set(candidates.map((candidate) => candidate.code)).size !== 1) {
     return null;
   }
-  return candidates.reduce((newest, candidate) =>
-    candidate.entry.receivedAt >= newest.entry.receivedAt ? candidate : newest,
+  // Seeded with null rather than relying on the check above guaranteeing a
+  // first element: the guarantee holds, but it is one indirection away from
+  // the call and an empty reduce throws rather than returning nothing.
+  return candidates.reduce<StashedCode | null>(
+    (newest, candidate) =>
+      newest === null || candidate.entry.receivedAt >= newest.entry.receivedAt ? candidate : newest,
+    null,
   );
 }

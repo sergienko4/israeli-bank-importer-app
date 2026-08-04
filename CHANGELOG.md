@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.8](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.7...israeli-bank-importer-app-v0.2.8) (2026-08-04)
+
+
+### Bug Fixes
+
+* **otp:** gate SMS capture on the app OTP channel ([#78](https://github.com/sergienko4/israeli-bank-importer-app/issues/78)) ([9da9d10](https://github.com/sergienko4/israeli-bank-importer-app/commit/9da9d1094e1b435f481f5c40e7b0f91443f8d5a7))
+
 ## [0.2.7](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.6...israeli-bank-importer-app-v0.2.7) (2026-08-04)
 
 

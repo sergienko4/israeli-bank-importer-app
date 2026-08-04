@@ -1,5 +1,5 @@
-import type { AutoReadTogglePorts } from './otpAutoReadToggle';
-import { setAutoReadEnabled } from './otpAutoReadToggle';
+import type { AutoReadStatePorts, AutoReadTogglePorts } from './otpAutoReadToggle';
+import { resolveAutoRead, setAutoReadEnabled } from './otpAutoReadToggle';
 
 /**
  * Turning auto-read on is the moment the app asks for a permission that lets it
@@ -68,5 +68,69 @@ describe('setAutoReadEnabled', () => {
     const { ports: p } = ports({ persist: () => Promise.reject(new Error('keystore locked')) });
 
     await expect(setAutoReadEnabled(true, p)).resolves.toBe('failed');
+  });
+});
+
+/**
+ * Builds the ports the first read of the switch needs.
+ *
+ * @param overrides - Ports to replace.
+ * @returns The ports plus the recorded writes and gate calls.
+ */
+function statePorts(overrides: Partial<AutoReadStatePorts> = {}) {
+  const written: boolean[] = [];
+  let gated = 0;
+  const base: AutoReadStatePorts = {
+    stored: () => Promise.resolve(true),
+    granted: () => Promise.resolve(true),
+    persist: (enabled: boolean) => {
+      written.push(enabled);
+      return Promise.resolve();
+    },
+    applyGate: () => {
+      gated += 1;
+      return Promise.resolve(true);
+    },
+    ...overrides,
+  };
+  return { ports: base, written, gates: () => gated };
+}
+
+describe('resolveAutoRead', () => {
+  it('shows on when the setting and the permission agree', async () => {
+    const { ports: p, written, gates } = statePorts();
+
+    await expect(resolveAutoRead(p)).resolves.toBe(true);
+    expect(written).toEqual([]);
+    expect(gates()).toBe(0);
+  });
+
+  it('shows off when the setting is off, without touching anything', async () => {
+    const { ports: p, written, gates } = statePorts({ stored: () => Promise.resolve(false) });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+    expect(written).toEqual([]);
+    expect(gates()).toBe(0);
+  });
+
+  // Android tells the app nothing when a grant is taken away in Settings, so
+  // this is the only moment the stored setting can be caught claiming more than
+  // the permission allows. Leaving it would also leave the receiver's flag on.
+  it('turns the setting off when the permission was revoked behind its back', async () => {
+    const { ports: p, written, gates } = statePorts({ granted: () => Promise.resolve(false) });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+    expect(written).toEqual([false]);
+    expect(gates()).toBe(1);
+  });
+
+  it('still shows off when the repair cannot be written', async () => {
+    const { ports: p, gates } = statePorts({
+      granted: () => Promise.resolve(false),
+      persist: () => Promise.reject(new Error('keystore locked')),
+    });
+
+    await expect(resolveAutoRead(p)).resolves.toBe(false);
+    expect(gates()).toBe(0);
   });
 });

@@ -68,3 +68,42 @@ export async function setAutoReadEnabled(
     return 'failed';
   }
 }
+
+/** Everything reading the current state needs from the outside world. */
+export interface AutoReadStatePorts {
+  /** Reads the stored setting from the device's secure store. */
+  readonly stored: () => Promise<boolean>;
+  /** Asks Android whether the SMS permission is still held. */
+  readonly granted: () => Promise<boolean>;
+  /** Writes the setting to the device's secure store. */
+  readonly persist: (enabled: boolean) => Promise<void>;
+  /** Pushes the stored preferences down to the native capture flag. */
+  readonly applyGate: () => Promise<unknown>;
+}
+
+/**
+ * Reads the state the switch should open in, repairing it if it drifted.
+ *
+ * A permission can be taken away from system settings while the app is not
+ * running, which leaves a setting claiming more than it is allowed — the case
+ * the toggle rule exists to prevent. Showing "off" is not enough on its own,
+ * because the native side is still holding messages on the strength of the
+ * stored value; the stored value has to go first, and only then does pushing
+ * the gate down turn capture off and clear what it is holding.
+ *
+ * @param ports - The injected store, permission check and gate.
+ * @returns True only when the setting and the permission agree.
+ */
+export async function resolveAutoRead(ports: AutoReadStatePorts): Promise<boolean> {
+  const [stored, granted] = await Promise.all([ports.stored(), ports.granted()]);
+  if (!stored) return false;
+  if (granted) return true;
+
+  try {
+    await ports.persist(false);
+    await ports.applyGate();
+  } catch {
+    // The switch shows off either way, which is the state the device is in.
+  }
+  return false;
+}

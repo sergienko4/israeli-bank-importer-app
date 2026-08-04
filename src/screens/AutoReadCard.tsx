@@ -15,7 +15,7 @@ import { Banner, Card, ListRow } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { hasReceiveSms, requestReceiveSms } from '../lib/otpAutoReadPermission';
 import { loadOtpAutoRead, saveOtpAutoRead } from '../lib/otpAutoReadStore';
-import { setAutoReadEnabled } from '../lib/otpAutoReadToggle';
+import { resolveAutoRead, setAutoReadEnabled } from '../lib/otpAutoReadToggle';
 import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -47,12 +47,18 @@ export function AutoReadCard(): ReactElement {
   useEffect(() => {
     let active = true;
     const run = async (): Promise<void> => {
-      // Both, because the permission can be revoked from Android Settings
-      // without this preference hearing about it. Showing the switch on while
-      // no message can reach the app would be a promise the app cannot keep.
-      const [stored, granted] = await Promise.all([loadOtpAutoRead(), hasReceiveSms()]);
+      // The permission can be revoked from Android Settings without this
+      // preference hearing about it, so the resolve may repair the stored value
+      // and the native flag before answering — hence the second guard, taken
+      // after the writes rather than before them.
+      const on = await resolveAutoRead({
+        stored: loadOtpAutoRead,
+        granted: hasReceiveSms,
+        persist: saveOtpAutoRead,
+        applyGate: applyStashGate,
+      });
       if (active && !toggled.current) {
-        setEnabled(stored && granted);
+        setEnabled(on);
       }
     };
     void run();

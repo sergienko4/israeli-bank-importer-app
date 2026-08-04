@@ -26,7 +26,7 @@ const mockAllowed = jest.mocked(loadBackgroundCaptureAllowed);
 const NOW = 1_700_000_000_000;
 
 function request(id: string, msFromNow: number): PendingOtpRequest {
-  return { id, deadline: NOW + msFromNow } as PendingOtpRequest;
+  return { id, bankId: 'onezero', createdAt: NOW, deadline: NOW + msFromNow };
 }
 
 describe('autoReadWindowDeadline', () => {
@@ -81,6 +81,27 @@ describe('syncAutoReadWindow', () => {
   it('closes the window when nothing is pending, without consulting the switches', async () => {
     mockAllowed.mockResolvedValue(true);
     await syncAutoReadWindow([], NOW);
+    expect(mockCloseWindow).toHaveBeenCalledTimes(1);
+    expect(mockAllowed).not.toHaveBeenCalled();
+  });
+
+  it('lets the newest call win when an older one is still reading the switches', async () => {
+    // The poll and the screen teardown both call this. If the teardown's close
+    // lands first, the poll's stale open must not put the window back and leave
+    // the receiver examining messages for a scrape nobody is watching.
+    let allow: (value: boolean) => void = () => undefined;
+    mockAllowed.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        allow = resolve;
+      }),
+    );
+
+    const stale = syncAutoReadWindow([request('a', 60_000)], NOW);
+    await syncAutoReadWindow([], NOW);
+    allow(true);
+    await stale;
+
+    expect(mockOpenWindow).not.toHaveBeenCalled();
     expect(mockCloseWindow).toHaveBeenCalledTimes(1);
   });
 });

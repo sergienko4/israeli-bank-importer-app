@@ -14,6 +14,12 @@
  * bank's handful of attempts get spent in a loop. A transient failure records
  * nothing at all, leaving the message usable once the network comes back.
  *
+ * Because it is the security control, one acknowledgement that fails may not
+ * abandon the copies behind it, and each falls back to the other: a message
+ * that cannot be dropped is recorded instead, and one that cannot be recorded
+ * is dropped. Either outcome takes the code out of circulation, which is the
+ * whole point of the step.
+ *
  * Message bodies are read here and never persisted or logged by this module.
  */
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
@@ -72,17 +78,43 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     if (found === null) return 'ambiguous';
 
     const copies = stashedCopiesOf(live, found.code, ports.now());
+    const drop = (id: string): Promise<void> => ports.consume(id);
+    const record = (id: string): Promise<void> => ports.markAttempt(id, expectation.requestId);
     const result = await ports.submit(session, expectation.requestId, found.code);
     if (result.ok) {
-      await acknowledgeEach(copies, (id) => ports.consume(id));
+      await acknowledgeEach(copies, orElse(drop, record));
       return 'submitted';
     }
     if (neverJudged(result.status)) return 'failed';
-    await acknowledgeEach(copies, (id) => ports.markAttempt(id, expectation.requestId));
+    await acknowledgeEach(copies, orElse(record, drop));
     return 'rejected';
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * Pairs an acknowledgement with the one to fall back on when it fails.
+ *
+ * The two are interchangeable for this purpose: dropping a message and marking
+ * it both stop a later drain choosing it, and after the importer has judged the
+ * code, keeping the message has no value left to protect.
+ *
+ * @param primary - What this acknowledgement is meant to do.
+ * @param fallback - What to do instead when that fails.
+ * @returns An acknowledgement for one held message.
+ */
+function orElse(
+  primary: (id: string) => Promise<void>,
+  fallback: (id: string) => Promise<void>,
+): (id: string) => Promise<void> {
+  return async (id) => {
+    try {
+      await primary(id);
+    } catch {
+      await fallback(id);
+    }
+  };
 }
 
 /**
@@ -100,9 +132,28 @@ async function acknowledgeEach(
   acknowledge: (id: string) => Promise<void>,
 ): Promise<void> {
   await copies.reduce(
-    (previous, copy) => previous.then(() => acknowledge(copy.id)),
+    (previous, copy) => previous.then(() => attempted(acknowledge(copy.id))),
     Promise.resolve(),
   );
+}
+
+/**
+ * Waits for one acknowledgement, treating a failure as done with.
+ *
+ * A copy that cannot be acknowledged even by the fallback must not strand the
+ * copies behind it, and must not turn an accepted code into a reported failure:
+ * the importer has that code either way, and saying otherwise is how it comes
+ * to be sent twice. What is left behind expires with the rest of the stash.
+ *
+ * @param promise - The acknowledgement in flight.
+ */
+async function attempted(promise: Promise<void>): Promise<void> {
+  try {
+    await promise;
+  } catch {
+    // Deliberately nothing: both ways of taking the message out of circulation
+    // have already been tried.
+  }
 }
 
 /**

@@ -248,6 +248,46 @@ describe('drainStash', () => {
     expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
   });
 
+  // Dropping the message is what stops a spent code being offered again, so a
+  // drop that fails has to leave a record behind rather than nothing at all.
+  it('records the request against a spent copy it could not drop', async () => {
+    const { ports: p, attempts } = ports({
+      consume: () => Promise.reject(new Error('write failed')),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+  });
+
+  // One stubborn copy used to abandon every copy behind it, which is the
+  // leftover twin this path exists to remove.
+  it('acknowledges the copies behind one that refuses', async () => {
+    const tried: string[] = [];
+    const { ports: p, attempts } = ports({
+      list: () => Promise.resolve([held({ id: 'msg-1' }), held({ id: 'msg-2' })]),
+      consume: (id) => {
+        tried.push(id);
+        return id === 'msg-1' ? Promise.reject(new Error('write failed')) : Promise.resolve();
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(tried).toEqual(['msg-1', 'msg-2']);
+    expect(attempts).toEqual([{ id: 'msg-1', requestId: 'req-1' }]);
+  });
+
+  // A rejected code is worthless, so failing to record it is a reason to drop
+  // it rather than a reason to leave it where the next drain can find it.
+  it('drops a rejected copy it could not record', async () => {
+    const { ports: p, consumed } = ports({
+      submit: () => Promise.resolve({ ok: false, error: 'wrong code' }),
+      markAttempt: () => Promise.reject(new Error('write failed')),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('rejected');
+    expect(consumed).toEqual(['msg-1']);
+  });
+
   it('reads the stash once and submits at most one code per run', async () => {
     let reads = 0;
     const { ports: p, submitted } = ports({

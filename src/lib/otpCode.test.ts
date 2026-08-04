@@ -37,6 +37,12 @@ describe('isOtpFillEvent', () => {
     expect(isOtpFillEvent('12', '123456')).toBe(true);
   });
 
+  it('fires on the smallest insertion a keystroke cannot produce', () => {
+    // Two digits at once is the boundary: one is a key press, two can only come
+    // from a paste, an autofill suggestion, or an SMS capture.
+    expect(isOtpFillEvent('1234', '123456')).toBe(true);
+  });
+
   it('does not fire when the filled value is not a submittable code', () => {
     expect(isOtpFillEvent('', '123')).toBe(false);
     expect(isOtpFillEvent('', '123456789')).toBe(false);

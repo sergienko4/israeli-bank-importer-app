@@ -6,7 +6,7 @@ const NOW = 1_700_000_000_000;
 const session: Session = { baseUrl: 'https://importer.local', token: 'tok' };
 
 function request(id: string, msFromNow: number): PendingOtpRequest {
-  return { id, deadline: NOW + msFromNow } as PendingOtpRequest;
+  return { id, bankId: 'onezero', createdAt: NOW, deadline: NOW + msFromNow };
 }
 
 function ports(overrides: Partial<PushWakePorts> = {}): PushWakePorts {

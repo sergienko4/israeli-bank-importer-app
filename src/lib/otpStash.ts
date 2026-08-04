@@ -67,6 +67,27 @@ export function liveStashEntries(
 }
 
 /**
+ * Finds every held message carrying one code.
+ *
+ * Banks resend, so one code can sit in two messages. Acknowledging only the
+ * copy that happened to be chosen leaves its twin live: after an accepted code
+ * that is a message whose answer is already spent, and after a rejected one it
+ * is the entry the next drain picks up to send the same wrong code again.
+ *
+ * @param entries - Everything currently held.
+ * @param code - The code that was submitted.
+ * @param now - Current time in epoch milliseconds.
+ * @returns Every live message whose body carries that code.
+ */
+export function stashedCopiesOf(
+  entries: readonly StashedMessage[],
+  code: string,
+  now: number,
+): StashedMessage[] {
+  return liveStashEntries(entries, now).filter((entry) => extractOtpCode(entry.body) === code);
+}
+
+/**
  * Chooses the code that may answer one request, if it is unambiguous.
  *
  * Two rules make this safe to run without anyone watching. A message already

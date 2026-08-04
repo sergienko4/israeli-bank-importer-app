@@ -89,6 +89,22 @@ describe('drainStash', () => {
     expect(consumed).toEqual([]);
   });
 
+  // Without this the next drain picks the unmarked twin and sends the same
+  // rejected code again, spending another of the bank's few attempts.
+  it('records the attempt against every held copy of a rejected code', async () => {
+    const { ports: p, attempts } = ports({
+      list: () =>
+        Promise.resolve([
+          held({ id: 'msg-1', receivedAt: NOW - 2000 }),
+          held({ id: 'msg-2', body: 'Code: 481920 (resent)' }),
+        ]),
+      submit: () => Promise.resolve({ ok: false, error: 'wrong code' }),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('rejected');
+    expect(attempts.map((attempt) => attempt.id).sort()).toEqual(['msg-1', 'msg-2']);
+  });
+
   // A 502 from a reverse proxy means the importer never judged the code. Burning
   // the message on it would throw away a code that is still perfectly good.
   it.each([500, 502, 503, 504, 408, 429])(
@@ -182,18 +198,25 @@ describe('drainStash', () => {
     expect(submitted).toEqual([]);
   });
 
-  it('submits once when the same code was delivered twice', async () => {
+  // Banks resend, so one code can sit in two messages. Acknowledging only the
+  // copy that happened to be chosen leaves its twin live, carrying a code whose
+  // answer is already spent.
+  it('submits once and consumes every copy when the same code arrived twice', async () => {
     const {
       ports: p,
       submitted,
       consumed,
     } = ports({
-      list: () => Promise.resolve([held(), held({ id: 'msg-2' })]),
+      list: () =>
+        Promise.resolve([
+          held({ receivedAt: NOW - 2000 }),
+          held({ id: 'msg-2', body: 'Code: 481920 (resent)' }),
+        ]),
     });
 
     await expect(drainStash(p)).resolves.toBe('submitted');
     expect(submitted).toHaveLength(1);
-    expect(consumed).toEqual(['msg-2']);
+    expect(consumed.sort()).toEqual(['msg-1', 'msg-2']);
   });
 
   it('holds messages that carry no code at all without submitting', async () => {

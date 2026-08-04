@@ -7,17 +7,23 @@
  * no UI attached and possibly with the app killed.
  *
  * That makes the acknowledgement the security control rather than bookkeeping.
- * A submitted message is consumed, so the same code cannot be sent again. A
- * rejected one is recorded against the request that rejected it, because
- * retrying a wrong code is how the bank's handful of attempts get spent in a
- * loop. A transient failure records nothing at all, leaving the message usable
- * once the network comes back.
+ * A submitted code is consumed from every message carrying it, so it cannot be
+ * sent again — banks resend, and a leftover copy is a spent answer still on
+ * offer. A rejected code is recorded against the request that rejected it, on
+ * every copy for the same reason, because retrying a wrong code is how the
+ * bank's handful of attempts get spent in a loop. A transient failure records
+ * nothing at all, leaving the message usable once the network comes back.
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
 import { pickExpectation } from './otpExpectedWindow';
-import { liveStashEntries, selectStashedCode, type StashedMessage } from './otpStash';
+import {
+  liveStashEntries,
+  selectStashedCode,
+  stashedCopiesOf,
+  type StashedMessage,
+} from './otpStash';
 
 /**
  * Everything the drain needs from the outside world.
@@ -65,17 +71,38 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const found = selectStashedCode(live, expectation.requestId, ports.now());
     if (found === null) return 'ambiguous';
 
+    const copies = stashedCopiesOf(live, found.code, ports.now());
     const result = await ports.submit(session, expectation.requestId, found.code);
     if (result.ok) {
-      await ports.consume(found.entry.id);
+      await acknowledgeEach(copies, (id) => ports.consume(id));
       return 'submitted';
     }
     if (neverJudged(result.status)) return 'failed';
-    await ports.markAttempt(found.entry.id, expectation.requestId);
+    await acknowledgeEach(copies, (id) => ports.markAttempt(id, expectation.requestId));
     return 'rejected';
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * Acknowledges held messages one after another.
+ *
+ * Sequential on purpose: every native acknowledgement rewrites the whole stored
+ * list, so two of them in flight at once can lose one of the two edits — which
+ * is the entry left behind that this exists to remove.
+ *
+ * @param copies - The messages to acknowledge.
+ * @param acknowledge - What to do with each one's id.
+ */
+async function acknowledgeEach(
+  copies: readonly StashedMessage[],
+  acknowledge: (id: string) => Promise<void>,
+): Promise<void> {
+  await copies.reduce(
+    (previous, copy) => previous.then(() => acknowledge(copy.id)),
+    Promise.resolve(),
+  );
 }
 
 /**

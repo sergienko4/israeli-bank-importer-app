@@ -9,7 +9,7 @@
 
   2. Auto-read, which does need a receiver, a service, and the RECEIVE_SMS
      permission. Those are added by the `withOtpSmsAutoRead` config plugin in
-     `app.config.ts`, and left out of a build made with OTP_SMS_AUTOREAD=0.
+     `app.config.ts`, and only in a build made with OTP_SMS_AUTOREAD=1.
      Declaring them here would put them in every build unconditionally, which
      takes that choice away — the single thing that plugin exists to preserve.
 

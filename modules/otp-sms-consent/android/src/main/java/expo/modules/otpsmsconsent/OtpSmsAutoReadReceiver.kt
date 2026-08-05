@@ -41,11 +41,12 @@ private const val HELD_RATHER_THAN_PASSED = ""
 /**
  * Hands an arriving one-time code to JavaScript with the user doing nothing.
  *
- * This receiver is absent from a build made with `OTP_SMS_AUTOREAD=0`; the
+ * This receiver is present only in a build made with `OTP_SMS_AUTOREAD=1`; the
  * config plugin adds it to the manifest alongside the `RECEIVE_SMS` permission
- * the system requires before it will deliver the broadcast, so in that build the
- * class is compiled but unreachable. Declaring the permission is not holding it
- * either: nothing arrives here until the user turns auto-read on and grants it.
+ * the system requires before it will deliver the broadcast, so in a released
+ * build the class is compiled but unreachable. Declaring the permission is not
+ * holding it either: nothing arrives here until the user turns auto-read on and
+ * grants it.
  *
  * `SMS_RECEIVED_ACTION` is on Android's exemption list for implicit broadcasts,
  * so a manifest entry still wakes the app even when its process is not running.

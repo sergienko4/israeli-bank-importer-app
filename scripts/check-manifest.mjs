@@ -112,7 +112,7 @@ function check(condition, description) {
 }
 
 /**
- * Asserts the manifest of a build that may capture codes.
+ * Asserts the manifest of an opt-in build, which may capture codes.
  *
  * @param {object} config - The introspected config.
  */
@@ -125,7 +125,7 @@ function checkAutoReadBuild(config) {
 
   check(
     config.extra?.otpSmsAutoRead === true,
-    'extra.otpSmsAutoRead should be true by default, so the app enables the feature',
+    'extra.otpSmsAutoRead should be true when the build set OTP_SMS_AUTOREAD=1',
   );
   check(
     permissions.filter((name) => name === RECEIVE_SMS).length === 1,
@@ -171,7 +171,10 @@ function checkAutoReadBuild(config) {
 }
 
 /**
- * Asserts the manifest of a build that opted out.
+ * Asserts the manifest of the default build, which ships without the permission.
+ *
+ * Play Protect refuses to install a sideloaded APK that declares an SMS
+ * permission, so this is the build every release attaches.
  *
  * @param {object} config - The introspected config.
  */
@@ -181,19 +184,19 @@ function checkOptOutBuild(config) {
 
   check(
     config.extra?.otpSmsAutoRead === false,
-    'extra.otpSmsAutoRead should be false when the build set OTP_SMS_AUTOREAD=0',
+    'extra.otpSmsAutoRead should be false by default, so the app hides the feature',
   );
   check(
     !permissions.includes(RECEIVE_SMS),
-    `${RECEIVE_SMS} should be absent from an opted-out build`,
+    `${RECEIVE_SMS} should be absent from the default build, which Play Protect would otherwise refuse to install`,
   );
   check(
     names(manifest.application[0], 'receiver').every((name) => name !== RECEIVER),
-    'the receiver should be absent from an opted-out build, so there is nothing to run',
+    'the receiver should be absent from the default build, so there is nothing to run',
   );
   check(
     names(manifest.application[0], 'service').every((name) => name !== SERVICE),
-    'the service should be absent from an opted-out build, so there is nothing to start',
+    'the service should be absent from the default build, so there is nothing to start',
   );
 }
 
@@ -225,13 +228,13 @@ try {
     );
     process.exitCode = 1;
   } else {
-    const autoRead = resolveConfig(undefined);
-    checkAutoReadBuild(autoRead);
-    checkBothBuilds(autoRead, 'default');
+    const shipped = resolveConfig(undefined);
+    checkOptOutBuild(shipped);
+    checkBothBuilds(shipped, 'default');
 
-    const optOut = resolveConfig('0');
-    checkOptOutBuild(optOut);
-    checkBothBuilds(optOut, 'opted-out');
+    const optIn = resolveConfig('1');
+    checkAutoReadBuild(optIn);
+    checkBothBuilds(optIn, 'opted-in');
 
     if (failures.length > 0) {
       console.error(

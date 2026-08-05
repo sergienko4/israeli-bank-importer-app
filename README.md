@@ -96,8 +96,9 @@ of submitting a wrong code is a bank-side attempt, and those run out.
 - **Auto-submit is off until you turn it on.** In **OTP settings** you can let a
   filled code send itself. It then sends after a three-second countdown you can
   cancel, at most once per request.
-- **Zero-touch capture is off until you turn it on.** Also in **OTP settings**,
-  and the only part of any of this that involves an SMS permission — see below.
+- **Zero-touch capture is not in the released APK.** It is the only part of any
+  of this that needs an SMS permission, and that permission is what makes an APK
+  impossible to install — see below.
 
 ### Zero-touch capture
 
@@ -106,13 +107,24 @@ in OTP settings removes that: Android asks for `RECEIVE_SMS`, and once you grant
 it a code can be captured and submitted while the phone is in your pocket and
 the app is closed — no dialog, no tap.
 
-That is a different privacy bargain, so it is worth being plain about what
-installing the app does and does not do on its own:
+That is a different privacy bargain, and it is also one you have to build for
+yourself.
 
-- The released build **declares** `RECEIVE_SMS`, so you will see it listed among
-  the app's permissions before you have agreed to anything. Declaring is not
-  holding: it is a runtime permission, nothing is granted until you turn the
-  switch on and approve Android's dialog, and until then the receiver is inert.
+**The released APK does not include it.** Google Play Protect's enhanced fraud
+protection refuses to install a sideloaded app that declares an SMS permission,
+and offers no way past the warning, so a release that declared `RECEIVE_SMS`
+could not be installed by tapping the APK at all. The feature's code is still
+here and still tested; only the manifest declaration is withheld. To use it,
+build with `OTP_SMS_AUTOREAD=1` and install that APK with `adb install`, which
+does not consult Play Protect. In the released build the app simply has to be on
+screen when the code arrives, which is what everything above covers.
+
+The rest of this section describes that opt-in build:
+
+- It **declares** `RECEIVE_SMS`, so you will see it listed among the app's
+  permissions before you have agreed to anything. Declaring is not holding: it is
+  a runtime permission, nothing is granted until you turn the switch on and
+  approve Android's dialog, and until then the receiver is inert.
 - Turning either switch back off stops the app acting on messages, and erases
   everything being held in the same write. The Android grant itself outlives the
   switch — the app cannot hand a permission back, so it stays listed as granted
@@ -125,9 +137,10 @@ installing the app does and does not do on its own:
 - `READ_SMS` is blocked outright in every build, so none of this can reach your
   message history — only messages arriving while the app is installed, paired
   and switched on.
-- Building with `OTP_SMS_AUTOREAD=0` leaves the permission, the receiver and the
-  service out of the APK altogether, for anyone who would rather they were not
-  there to switch on. That build is otherwise identical.
+- Leaving `OTP_SMS_AUTOREAD` unset — the default, and what every release is built
+  from — leaves the permission, the receiver and the service out of the APK
+  altogether. That build is otherwise identical, and it hides the switch rather
+  than offering one that could never work.
 
 **A code that arrives before the importer asks is held, not lost.** Banks often
 send the code first, and Android delivers that broadcast exactly once. Rather

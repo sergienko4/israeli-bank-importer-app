@@ -67,28 +67,40 @@ type ManifestApplication = Parameters<
 /**
  * Whether this build may capture one-time codes without a per-message tap.
  *
- * On by default, and deliberately not something a workflow has to remember to
- * set. `eas build` resolves the app config on an EAS builder while `eas update`
- * resolves it on a GitHub runner, so a value carried in the environment would
- * have to be repeated in four workflows. Missing one would not fail: the two
- * would simply resolve to different configs, and under the `fingerprint`
- * runtime version policy a different config is a different runtime id, so
- * updates would quietly stop reaching the binary. A committed default cannot
- * drift apart that way.
+ * Off by default, because declaring `RECEIVE_SMS` makes the APK impossible to
+ * install. Google Play Protect's enhanced fraud protection hard-blocks the
+ * sideloaded installation of any app declaring an SMS permission — there is no
+ * "install anyway" — and a GitHub release APK is a sideload by definition. The
+ * permission is also outside what Google Play grants to an app that is not the
+ * device's default SMS handler, so publishing to the store would not recover it
+ * either. A default of "on" therefore ships a release nobody can install, which
+ * is what happened in `v0.2.9`.
  *
- * @returns True unless the build opted out with `OTP_SMS_AUTOREAD=0`.
+ * Everything the feature needs is still compiled in and still tested; only the
+ * manifest declaration is withheld. Build with `OTP_SMS_AUTOREAD=1` to get it
+ * back, and install that APK over `adb`, which does not consult Play Protect.
+ *
+ * Set it for `eas update` as well as for the build if you do. `eas build`
+ * resolves this config on one machine and `eas update` on another, and under the
+ * `fingerprint` runtime version policy a different config is a different runtime
+ * id — so setting it for only one of the two would leave updates unable to reach
+ * the binary. Leaving it unset everywhere, which is the default, cannot drift
+ * that way.
+ *
+ * @returns True only when the build opted in with `OTP_SMS_AUTOREAD=1`.
  */
 function isAutoReadBuild(): boolean {
-  return process.env.OTP_SMS_AUTOREAD !== '0';
+  return process.env.OTP_SMS_AUTOREAD === '1';
 }
 
 /**
  * Adds the auto-read receiver and its service to the Android manifest.
  *
  * Kept out of the module's own manifest on purpose. That one is merged into
- * every build, and a receiver present in a build made with `OTP_SMS_AUTOREAD=0`
- * would make the "this build cannot read messages" claim rest on the missing
- * permission alone rather than on there being nothing to run.
+ * every build, and a receiver present in a build made without
+ * `OTP_SMS_AUTOREAD=1` would make the "this build cannot read messages" claim
+ * rest on the missing permission alone rather than on there being nothing to
+ * run.
  *
  * Each entry replaces any earlier one of the same name rather than being added
  * beside it. Prebuild is not always run against an empty folder, and two

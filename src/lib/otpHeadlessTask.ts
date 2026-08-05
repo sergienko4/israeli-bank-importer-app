@@ -16,7 +16,7 @@ import { backgroundSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage, type BackgroundSubmitOutcome } from './otpBackgroundSubmit';
 import { settleWithin, TASK_BUDGET_MS } from './otpDeadline';
 import { retryUntilAnswered } from './otpRetry';
-import { drainHeldMessages } from './otpStashRunner';
+import { drainHeldMessages, type RemainingBudget } from './otpStashRunner';
 
 /** Must match `TASK_NAME` in `OtpSmsAutoReadService.kt`. */
 export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
@@ -50,15 +50,20 @@ export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
  * @param data - The service payload, carrying the message body if there is one.
  */
 export async function runOtpSmsTask(data: { readonly body?: string }): Promise<void> {
-  await settleWithin(capture(data.body), TASK_BUDGET_MS);
+  const deadline = Date.now() + TASK_BUDGET_MS;
+  await settleWithin(
+    capture(data.body, () => deadline - Date.now()),
+    TASK_BUDGET_MS,
+  );
 }
 
 /**
  * Spends the captured code, whichever way the receiver delivered it.
  *
  * @param body - The message text, when the receiver passed one over.
+ * @param left - How long this task has before it must return.
  */
-async function capture(body: string | undefined): Promise<void> {
+async function capture(body: string | undefined, left: RemainingBudget): Promise<void> {
   if (!(await allowed())) {
     return;
   }
@@ -66,10 +71,10 @@ async function capture(body: string | undefined): Promise<void> {
     await retryUntilAnswered({ attempt: () => submitBody(body), wait: sleep, now: Date.now });
     // An earlier held message may be the one that answers the next request, and
     // nothing else will look at it if the process stops here.
-    await drainHeldMessages();
+    await drainHeldMessages(left);
     return;
   }
-  await retryUntilAnswered({ attempt: drainHeldMessages, wait: sleep, now: Date.now });
+  await retryUntilAnswered({ attempt: () => drainHeldMessages(left), wait: sleep, now: Date.now });
 }
 
 /**

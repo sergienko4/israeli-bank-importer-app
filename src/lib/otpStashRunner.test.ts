@@ -64,9 +64,11 @@ describe('runStashDrain', () => {
 });
 
 describe('createSerialDrain', () => {
+  const full = (): number => TASK_BUDGET_MS;
+
   it('runs the drain', async () => {
     const run = jest.fn<Promise<StashRunOutcome>, []>().mockResolvedValue('submitted');
-    await expect(createSerialDrain(run)()).resolves.toBe('submitted');
+    await expect(createSerialDrain(run)(full)).resolves.toBe('submitted');
   });
 
   it('never runs two drains at the same time', async () => {
@@ -81,8 +83,8 @@ describe('createSerialDrain', () => {
     );
     const drain = createSerialDrain(run);
 
-    const first = drain();
-    const second = drain();
+    const first = drain(full);
+    const second = drain(full);
     expect(run).toHaveBeenCalledTimes(1);
 
     release('submitted');
@@ -106,8 +108,8 @@ describe('createSerialDrain', () => {
     });
     const drain = createSerialDrain(run);
 
-    const running = drain();
-    const waiting = drain();
+    const running = drain(full);
+    const waiting = drain(full);
     release();
 
     await expect(running).resolves.toBe('empty');
@@ -124,7 +126,7 @@ describe('createSerialDrain', () => {
     );
     const drain = createSerialDrain(run);
 
-    const calls = [drain(), drain(), drain(), drain()];
+    const calls = [drain(full), drain(full), drain(full), drain(full)];
     release('empty');
 
     await Promise.all(calls);
@@ -134,8 +136,8 @@ describe('createSerialDrain', () => {
   it('runs again once the previous drain has finished', async () => {
     const run = jest.fn<Promise<StashRunOutcome>, []>().mockResolvedValue('empty');
     const drain = createSerialDrain(run);
-    await drain();
-    await drain();
+    await drain(full);
+    await drain(full);
     expect(run).toHaveBeenCalledTimes(2);
   });
 
@@ -144,9 +146,9 @@ describe('createSerialDrain', () => {
     // slot forever and silently stop every later drain.
     const run = jest.fn<Promise<StashRunOutcome>, []>().mockRejectedValueOnce(new Error('boom'));
     const drain = createSerialDrain(run);
-    await expect(drain()).rejects.toThrow('boom');
+    await expect(drain(full)).rejects.toThrow('boom');
     run.mockResolvedValue('empty');
-    await expect(drain()).resolves.toBe('empty');
+    await expect(drain(full)).resolves.toBe('empty');
   });
 
   it('is not left jammed by a drain that never answers', async () => {
@@ -162,10 +164,10 @@ describe('createSerialDrain', () => {
         .mockResolvedValue('empty');
       const drain = createSerialDrain(run);
 
-      void drain();
+      void drain(full);
       await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
 
-      await expect(drain()).resolves.toBe('empty');
+      await expect(drain(full)).resolves.toBe('empty');
       expect(run).toHaveBeenCalledTimes(2);
     } finally {
       jest.useRealTimers();
@@ -182,8 +184,8 @@ describe('createSerialDrain', () => {
         .mockResolvedValue('submitted');
       const drain = createSerialDrain(run);
 
-      void drain();
-      const waiting = drain();
+      void drain(full);
+      const waiting = drain(full);
       await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
 
       await expect(waiting).resolves.toBe('submitted');
@@ -212,11 +214,11 @@ describe('createSerialDrain', () => {
         });
       const drain = createSerialDrain(run);
 
-      void drain();
+      void drain(full);
       expect(leases[0]?.stillOwned()).toBe(true);
       expect(leases[0]?.remainingMs()).toBe(TASK_BUDGET_MS);
       await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
-      await drain();
+      await drain(full);
 
       expect(leases[0]?.stillOwned()).toBe(false);
       expect(leases[0]?.remainingMs()).toBeLessThanOrEqual(0);
@@ -224,5 +226,33 @@ describe('createSerialDrain', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('leases no longer than the caller has left', async () => {
+    // The lease bounds the send, and the send has to finish recording what it
+    // did while the caller is still alive to let it. A caller most of the way
+    // through its own budget that handed out a full lease would be promising
+    // time it does not have, and the acknowledgement would be the thing lost.
+    const leases: DrainLease[] = [];
+    const run = jest.fn<Promise<StashRunOutcome>, [DrainLease]>().mockImplementation((lease) => {
+      leases.push(lease);
+      return Promise.resolve('empty');
+    });
+
+    await createSerialDrain(run)(() => 4_000);
+
+    expect(leases[0]?.remainingMs()).toBeLessThanOrEqual(4_000);
+  });
+
+  it('leases nothing to a caller with nothing left', async () => {
+    const leases: DrainLease[] = [];
+    const run = jest.fn<Promise<StashRunOutcome>, [DrainLease]>().mockImplementation((lease) => {
+      leases.push(lease);
+      return Promise.resolve('empty');
+    });
+
+    await createSerialDrain(run)(() => -1_000);
+
+    expect(leases[0]?.remainingMs()).toBeLessThanOrEqual(0);
   });
 });

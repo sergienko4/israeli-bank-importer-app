@@ -64,6 +64,17 @@ export interface DrainLease {
 }
 
 /**
+ * How long the caller can keep the process alive for a drain.
+ *
+ * A drain outliving its caller is the one thing the lease exists to prevent, so
+ * the lease cannot be longer than the caller's own remaining time. A headless
+ * task holds a wake lock only until it returns; a drain still acknowledging
+ * after that is doing so on borrowed time, and a process killed mid-write
+ * leaves a code that may have been taken still on offer.
+ */
+export type RemainingBudget = () => number;
+
+/**
  * Wraps a drain so at most one runs at a time, and no work is left behind.
  *
  * The foreground poll fires every few seconds and a submit can outlast that.
@@ -86,20 +97,24 @@ export interface DrainLease {
  * send is covered by the send's own deadline, which the run takes from what is
  * left of the lease so that the two together always fit inside it.
  *
+ * The lease is the shorter of that cap and what the caller has left, so the
+ * chain from the caller's own deadline down to the send holds end to end.
+ *
  * @param run - The drain to serialise, given its lease on the lock.
  * @returns A drain that is safe to call from a timer.
  */
 export function createSerialDrain(
   run: (lease: DrainLease) => Promise<StashRunOutcome>,
-): () => Promise<StashRunOutcome> {
+): (budget: RemainingBudget) => Promise<StashRunOutcome> {
   let inFlight: Promise<StashRunOutcome> | null = null;
   let queued: Promise<StashRunOutcome> | null = null;
   let generation = 0;
 
-  const start = (): Promise<StashRunOutcome> => {
+  const start = (budget: RemainingBudget): Promise<StashRunOutcome> => {
     generation += 1;
     const mine = generation;
-    const expiresAt = Date.now() + TASK_BUDGET_MS;
+    const grant = granted(budget);
+    const expiresAt = Date.now() + grant;
     const started = run({
       stillOwned: () => generation === mine,
       remainingMs: () => expiresAt - Date.now(),
@@ -108,40 +123,52 @@ export function createSerialDrain(
       if (inFlight === started) inFlight = null;
     };
     inFlight = started;
-    void settleWithin(started, TASK_BUDGET_MS).then(clear);
+    void settleWithin(started, grant).then(clear);
     return started;
   };
 
-  return () => {
+  return (budget) => {
     if (queued !== null) return queued;
-    if (inFlight === null) return start();
-    queued = settleWithin(inFlight, TASK_BUDGET_MS).then(() => {
+    if (inFlight === null) return start(budget);
+    queued = settleWithin(inFlight, granted(budget)).then(() => {
       queued = null;
-      return start();
+      return start(budget);
     });
     return queued;
   };
 }
 
 /**
+ * The lease a run may be given, being the shorter of the two limits on it.
+ *
+ * @param budget - What the caller has left.
+ * @returns Milliseconds, never negative and never past the drain's own cap.
+ */
+function granted(budget: RemainingBudget): number {
+  return Math.max(0, Math.min(TASK_BUDGET_MS, budget()));
+}
+
+/**
  * Drains held messages using this device's real stash and importer.
  *
+ * @param budget - How long the caller can keep the process alive.
  * @returns What the drain decided, or `not-allowed` when it never ran.
  */
-export const drainHeldMessages: () => Promise<StashRunOutcome> = createSerialDrain((lease) =>
-  runStashDrain({
-    isAllowed: loadBackgroundCaptureAllowed,
-    drain: () =>
-      drainStash({
-        loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
-        getPending: getPendingOtp,
-        submit: submitOtp,
-        now: Date.now,
-        list: stash.list,
-        consume: stash.consume,
-        markAttempt: stash.markAttempt,
-        stillOwned: lease.stillOwned,
-        remainingMs: lease.remainingMs,
-      }),
-  }),
-);
+export const drainHeldMessages: (budget: RemainingBudget) => Promise<StashRunOutcome> =
+  createSerialDrain((lease) =>
+    runStashDrain({
+      isAllowed: loadBackgroundCaptureAllowed,
+      drain: () =>
+        drainStash({
+          loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
+          getPending: getPendingOtp,
+          submit: submitOtp,
+          now: Date.now,
+          list: stash.list,
+          consume: stash.consume,
+          markAttempt: stash.markAttempt,
+          stillOwned: lease.stillOwned,
+          remainingMs: lease.remainingMs,
+        }),
+    }),
+  );

@@ -21,6 +21,7 @@ import { loadConnection } from '../auth/connectionStore';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { backgroundSession } from '../lib/otpBackgroundSession';
+import { TASK_BUDGET_MS } from '../lib/otpDeadline';
 import { wakeAutoReadWindow } from '../lib/otpPushWake';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
@@ -44,7 +45,9 @@ async function handlePush(): Promise<void> {
     now: Date.now,
   });
   if (outcome === 'window-open') {
-    await drainHeldMessages();
+    // The push wake has no deadline of its own beyond the one the OS enforces,
+    // so the drain's own cap is the limit.
+    await drainHeldMessages(() => TASK_BUDGET_MS);
   }
 }
 

@@ -6,7 +6,7 @@ import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 import { TASK_BUDGET_MS } from './otpDeadline';
 import { OTP_SMS_TASK_NAME, runOtpSmsTask } from './otpHeadlessTask';
-import { RETRY_INTERVAL_MS } from './otpRetry';
+import { RETRY_INTERVAL_MS, RETRY_WINDOW_MS } from './otpRetry';
 import { drainHeldMessages } from './otpStashRunner';
 
 jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
@@ -113,6 +113,26 @@ describe('runOtpSmsTask', () => {
     mockAllowed.mockResolvedValue(false);
     await runOtpSmsTask({ body: 'Your code is 123456' });
     expect(mockDrain).not.toHaveBeenCalled();
+  });
+
+  it('gives the drain only what is left of its own budget', async () => {
+    // The wake lock lasts as long as this task does, so a drain still writing
+    // after it returns is writing on borrowed time. A code the importer may
+    // have taken, left unrecorded because the process died mid-write, is a code
+    // the next wake-up offers all over again.
+    jest.useFakeTimers();
+    try {
+      mockSubmit.mockResolvedValue('no-pending');
+      const running = runOtpSmsTask({ body: 'Your code is 123456' });
+      await jest.advanceTimersByTimeAsync(RETRY_WINDOW_MS);
+      await running;
+
+      const left = mockDrain.mock.calls[0]?.[0];
+      expect(left()).toBeLessThanOrEqual(TASK_BUDGET_MS - RETRY_WINDOW_MS);
+      expect(left()).toBeGreaterThan(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('returns when its budget runs out rather than waiting for a hung importer', async () => {

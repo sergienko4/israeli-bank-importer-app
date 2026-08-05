@@ -13,6 +13,7 @@ import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { refreshOtpChannel } from '../lib/otpChannelSync';
+import { TASK_BUDGET_MS } from '../lib/otpDeadline';
 import { selectPendingOtp } from '../lib/otpQueue';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
@@ -51,8 +52,9 @@ function handleRequests(requests: PendingOtpRequest[]): void {
   void syncAutoReadWindow(requests);
   if (requests.length > 0) {
     // A code that arrived before the importer asked for it is being held
-    // natively; this is the moment it becomes answerable.
-    void drainHeldMessages();
+    // natively; this is the moment it becomes answerable. Nothing is holding
+    // the process open on a timer here, so the drain's own cap is the limit.
+    void drainHeldMessages(() => TASK_BUDGET_MS);
   }
 }
 

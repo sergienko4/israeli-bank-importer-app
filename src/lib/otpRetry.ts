@@ -39,10 +39,11 @@ export interface RetryPorts<T extends RetryableOutcome> {
  * Whether another look could plausibly reach a different answer.
  *
  * `no-pending` is the ordering this exists for: the request may still be on its
- * way. `failed` is a read that never reached the importer, which leaves the code
- * unspent. Every other outcome is settled — the code was sent, judged, was never
- * there, or *may* have been taken with only the answer lost — and asking again
- * could only spend one of the bank's few attempts on an answer already known.
+ * way. `failed` is a read that never reached the importer, or a send the
+ * importer answered without judging, which either way leaves the code unspent.
+ * Every other outcome is settled — the code was sent, judged, was never there,
+ * or *may* have been taken with only the answer lost — and asking again could
+ * only spend one of the bank's few attempts on an answer already known.
  *
  * @param outcome - What the last look decided.
  * @returns True when another attempt is worth making.

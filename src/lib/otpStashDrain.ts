@@ -27,7 +27,7 @@
  * Message bodies are read here and never persisted or logged by this module.
  */
 import type { SaveResult } from '../api/manifest';
-import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
+import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
 import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import {
@@ -259,20 +259,4 @@ async function attempted(promise: Promise<void>): Promise<void> {
     // Deliberately nothing: both ways of taking the message out of circulation
     // have already been tried.
   }
-}
-
-/**
- * Reports whether a failing status means the code was never actually judged.
- *
- * Those failures are the importer's problem, not the code's, so the message
- * stays held for the next drain. Every other status — including a missing one —
- * counts as a verdict, because retrying a code the bank already refused spends
- * one of the few attempts it allows.
- *
- * @param status - The HTTP status behind the failure, where there was one.
- * @returns True when the message should survive to be tried again.
- */
-function neverJudged(status: number | undefined): boolean {
-  if (status === undefined) return false;
-  return status >= 500 || status === 408 || status === 429;
 }

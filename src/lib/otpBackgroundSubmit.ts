@@ -105,6 +105,27 @@ async function intendedRequest(
 }
 
 /**
+ * Reports whether a failing status means the code was never actually judged.
+ *
+ * Those failures are the importer's problem, not the code's, so the code stays
+ * spendable and the caller may offer it again. Every other status — including a
+ * missing one — counts as a verdict, because retrying a code the bank already
+ * refused spends one of the few attempts it allows.
+ *
+ * Lives here rather than beside either caller because both submission paths
+ * have to read a refusal the same way. One treating a 503 as a verdict while
+ * the other treats it as a hiccup would make a code's fate depend on which
+ * wake-up happened to pick it up.
+ *
+ * @param status - The HTTP status behind the failure, where there was one.
+ * @returns True when the code should survive to be tried again.
+ */
+export function neverJudged(status: number | undefined): boolean {
+  if (status === undefined) return false;
+  return status >= 500 || status === 408 || status === 429;
+}
+
+/**
  * Gives the code to the importer, and reports what became of it.
  *
  * A throw here is *not* reported as a failure. The request was already on its
@@ -114,10 +135,14 @@ async function intendedRequest(
  * failure would invite a caller to send the same code again, and a bank grants
  * only a handful of attempts before it locks the request out.
  *
+ * A refusal the importer never made is separated out for the opposite reason. A
+ * 503 says the code was not looked at, so reporting it as a refusal would strand
+ * an unspent code over an outage that clears in seconds.
+ *
  * @param ports - The injected outside world.
  * @param target - The session and request the code answers.
  * @param code - The digits taken from the message.
- * @returns Whether the code was accepted, refused, or left in doubt.
+ * @returns Whether the code was accepted, refused, unjudged, or left in doubt.
  */
 async function send(
   ports: BackgroundSubmitPorts,
@@ -126,7 +151,8 @@ async function send(
 ): Promise<BackgroundSubmitOutcome> {
   try {
     const result = await ports.submit(target.session, target.requestId, code);
-    return result.ok ? 'submitted' : 'rejected';
+    if (result.ok) return 'submitted';
+    return neverJudged(result.status) ? 'failed' : 'rejected';
   } catch {
     return 'unknown';
   }

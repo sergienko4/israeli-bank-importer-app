@@ -80,6 +80,22 @@ describe('worthRetrying', () => {
   it('stops when the message carried no code, however often it is read', () => {
     expect(worthRetrying('no-code')).toBe(false);
   });
+
+  it('stops when the importer may already have taken the code', () => {
+    // A send that threw was already on its way. Asking again could hand the bank
+    // a second attempt at a code it has arguably already been given, and a bank
+    // grants only a handful before it locks the request out.
+    expect(worthRetrying('unknown')).toBe(false);
+  });
+});
+
+describe('the retry window against the task budget', () => {
+  it('keeps the last look inside the budget the task gives itself', () => {
+    // The window bounds when a look may start, not when it finishes, and the
+    // calls underneath have no deadline of their own — so the budget has to be
+    // the longer of the two. The budget's own ceiling is pinned beside it.
+    expect(RETRY_WINDOW_MS).toBeLessThan(TASK_BUDGET_MS);
+  });
 });
 
 describe('retryUntilAnswered', () => {
@@ -105,20 +121,6 @@ describe('retryUntilAnswered', () => {
     const spent = p.waits.reduce((total, ms) => total + ms, 0);
     expect(spent).toBeLessThan(RETRY_WINDOW_MS);
     expect(spent + RETRY_INTERVAL_MS).toBeGreaterThanOrEqual(RETRY_WINDOW_MS);
-  });
-
-  it('stops when the importer may already have taken the code', () => {
-    // A send that threw was already on its way. Asking again could hand the bank
-    // a second attempt at a code it has arguably already been given, and a bank
-    // grants only a handful before it locks the request out.
-    expect(worthRetrying('unknown')).toBe(false);
-  });
-
-  it('keeps the last look inside the budget the task gives itself', () => {
-    // The window bounds when a look may start, not when it finishes, and the
-    // calls underneath have no deadline of their own — so the budget has to be
-    // the longer of the two. The budget's own ceiling is pinned beside it.
-    expect(RETRY_WINDOW_MS).toBeLessThan(TASK_BUDGET_MS);
   });
 
   it('stops the moment a code is refused, without spending another attempt', async () => {

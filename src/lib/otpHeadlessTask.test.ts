@@ -127,7 +127,8 @@ describe('runOtpSmsTask', () => {
       await jest.advanceTimersByTimeAsync(RETRY_WINDOW_MS);
       await running;
 
-      const left = mockDrain.mock.calls[0]?.[0];
+      expect(mockDrain).toHaveBeenCalledTimes(1);
+      const [left] = mockDrain.mock.calls[0];
       expect(left()).toBeLessThanOrEqual(TASK_BUDGET_MS - RETRY_WINDOW_MS);
       expect(left()).toBeGreaterThan(0);
     } finally {

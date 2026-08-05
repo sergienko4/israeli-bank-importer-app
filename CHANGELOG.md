@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.9...israeli-bank-importer-app-v0.2.10) (2026-08-05)
+
+
+### Bug Fixes
+
+* drop RECEIVE_SMS so the APK can be installed ([#82](https://github.com/sergienko4/israeli-bank-importer-app/issues/82)) ([3f0fef2](https://github.com/sergienko4/israeli-bank-importer-app/commit/3f0fef263e7b902147887853b3bbb952e0a99862))
+
 ## [0.2.9](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.8...israeli-bank-importer-app-v0.2.9) (2026-08-05)
 
 

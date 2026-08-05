@@ -46,6 +46,12 @@ jobs:
         run: npm run export
       - name: No bundled module shadows a global
         run: npm run check:bundle
+      # The SMS auto-read wiring lives in app.config.ts, which no test can
+      # import, so this is the only gate that sees whether the permission and
+      # the receiver actually reach the manifest. The feature shipped once
+      # without them and every other check was green.
+      - name: Manifest wires up SMS auto-read
+        run: npm run check:manifest
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

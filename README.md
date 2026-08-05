@@ -96,8 +96,8 @@ of submitting a wrong code is a bank-side attempt, and those run out.
 - **Auto-submit is off until you turn it on.** In **OTP settings** you can let a
   filled code send itself. It then sends after a three-second countdown you can
   cancel, at most once per request.
-- **Zero-touch capture is not in the released APK.** It is the only part of any
-  of this that needs an SMS permission, and that permission is what makes an APK
+- **Zero-touch capture is not in the released APK.** It is the only part of this
+  that needs an SMS permission, and that permission is what makes an APK
   impossible to install — see below.
 
 ### Zero-touch capture
@@ -114,10 +114,31 @@ yourself.
 protection refuses to install a sideloaded app that declares an SMS permission,
 and offers no way past the warning, so a release that declared `RECEIVE_SMS`
 could not be installed by tapping the APK at all. The feature's code is still
-here and still tested; only the manifest declaration is withheld. To use it,
-build with `OTP_SMS_AUTOREAD=1` and install that APK with `adb install`, which
-does not consult Play Protect. In the released build the app simply has to be on
-screen when the code arrives, which is what everything above covers.
+here and still tested; only the manifest declaration is withheld. In the
+released build the app simply has to be on screen when the code arrives, which
+is what everything above covers.
+
+To build one that does include it, add the flag to the `apk` profile in
+`eas.json`. A shell variable will not do: the build resolves this config on an
+EAS builder rather than on your machine, so the value has to travel with the
+profile.
+
+```json
+"apk": {
+  "autoIncrement": true,
+  "channel": "production",
+  "env": { "OTP_SMS_AUTOREAD": "1" },
+  "android": { "buildType": "apk" }
+}
+```
+
+Then build it, download the artifact, and install it over `adb` — which does
+not consult Play Protect, and is the whole reason this is installable at all:
+
+```sh
+eas build --platform android --profile apk
+adb install -r ./path/to/the-downloaded.apk
+```
 
 The rest of this section describes that opt-in build:
 

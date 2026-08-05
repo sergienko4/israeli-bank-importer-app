@@ -12,6 +12,7 @@ import { getPendingOtp, submitOtp } from '../api/importerClient';
 import { loadConnection } from '../auth/connectionStore';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { backgroundSession } from './otpBackgroundSession';
+import { settleWithin, TASK_BUDGET_MS } from './otpDeadline';
 import { drainStash, type StashDrainOutcome } from './otpStashDrain';
 import { stash } from './otpStashSource';
 
@@ -42,6 +43,27 @@ export async function runStashDrain(ports: StashRunnerPorts): Promise<StashRunOu
 }
 
 /**
+ * What a run is told about its own claim on the drain.
+ *
+ * Both answers come from the same lease because they bound the same thing from
+ * two directions: whether a newer run has taken over, and how long there is
+ * before one can.
+ */
+export interface DrainLease {
+  /**
+   * Whether this run is still the one the caller is waiting on.
+   *
+   * A run whose own step outlasted the lock has been superseded, and is working
+   * from a list of held messages read before the run that replaced it existed.
+   * Sending from that list would offer a code the newer run may already have
+   * sent.
+   */
+  readonly stillOwned: () => boolean;
+  /** How long is left before the lock behind this run is released. */
+  readonly remainingMs: () => number;
+}
+
+/**
  * Wraps a drain so at most one runs at a time, and no work is left behind.
  *
  * The foreground poll fires every few seconds and a submit can outlast that.
@@ -54,29 +76,46 @@ export async function runStashDrain(ports: StashRunnerPorts): Promise<StashRunOu
  * is not in the list it is working from. Every mid-run caller shares that one
  * follow-up, so a burst of poll ticks still costs a single extra drain.
  *
- * @param run - The drain to serialise.
+ * Waiting is bounded, because a drain can hang: nothing underneath it has a
+ * deadline. An unbounded wait would hand every later caller — the poll and
+ * every future wake-up alike — a promise that never settles, so one stuck
+ * request would quietly stop held messages being drained for the life of the
+ * process. Releasing the lock lets a second drain reach the same message, so
+ * each run is given a lease and stops rather than send once it has run out of
+ * it. That covers a run stuck anywhere before the send; a run stuck *in* the
+ * send is covered by the send's own deadline, which the run takes from what is
+ * left of the lease so that the two together always fit inside it.
+ *
+ * @param run - The drain to serialise, given its lease on the lock.
  * @returns A drain that is safe to call from a timer.
  */
 export function createSerialDrain(
-  run: () => Promise<StashRunOutcome>,
+  run: (lease: DrainLease) => Promise<StashRunOutcome>,
 ): () => Promise<StashRunOutcome> {
   let inFlight: Promise<StashRunOutcome> | null = null;
   let queued: Promise<StashRunOutcome> | null = null;
+  let generation = 0;
 
   const start = (): Promise<StashRunOutcome> => {
-    const started = run();
+    generation += 1;
+    const mine = generation;
+    const expiresAt = Date.now() + TASK_BUDGET_MS;
+    const started = run({
+      stillOwned: () => generation === mine,
+      remainingMs: () => expiresAt - Date.now(),
+    });
     const clear = (): void => {
       if (inFlight === started) inFlight = null;
     };
     inFlight = started;
-    started.then(clear, clear);
+    void settleWithin(started, TASK_BUDGET_MS).then(clear);
     return started;
   };
 
   return () => {
     if (queued !== null) return queued;
     if (inFlight === null) return start();
-    queued = settled(inFlight).then(() => {
+    queued = settleWithin(inFlight, TASK_BUDGET_MS).then(() => {
       queued = null;
       return start();
     });
@@ -85,26 +124,11 @@ export function createSerialDrain(
 }
 
 /**
- * Waits for a run to finish, whether it produced an outcome or threw.
- *
- * @param promise - The run being waited on.
- */
-async function settled(promise: Promise<StashRunOutcome>): Promise<void> {
-  try {
-    await promise;
-  } catch {
-    // Whoever started that run owns its failure. The follow-up only needs to
-    // know the slot is free, and refusing to run because the previous drain
-    // threw would strand the message the caller arrived to collect.
-  }
-}
-
-/**
  * Drains held messages using this device's real stash and importer.
  *
  * @returns What the drain decided, or `not-allowed` when it never ran.
  */
-export const drainHeldMessages: () => Promise<StashRunOutcome> = createSerialDrain(() =>
+export const drainHeldMessages: () => Promise<StashRunOutcome> = createSerialDrain((lease) =>
   runStashDrain({
     isAllowed: loadBackgroundCaptureAllowed,
     drain: () =>
@@ -116,6 +140,8 @@ export const drainHeldMessages: () => Promise<StashRunOutcome> = createSerialDra
         list: stash.list,
         consume: stash.consume,
         markAttempt: stash.markAttempt,
+        stillOwned: lease.stillOwned,
+        remainingMs: lease.remainingMs,
       }),
   }),
 );

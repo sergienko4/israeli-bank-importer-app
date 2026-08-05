@@ -5,8 +5,14 @@
  * them, so the switches have to be re-read at the moment of use rather than
  * trusted from whenever the capture happened.
  */
+import { TASK_BUDGET_MS } from './otpDeadline';
 import type { StashDrainOutcome } from './otpStashDrain';
-import { createSerialDrain, runStashDrain, type StashRunOutcome } from './otpStashRunner';
+import {
+  createSerialDrain,
+  type DrainLease,
+  runStashDrain,
+  type StashRunOutcome,
+} from './otpStashRunner';
 
 function ports(
   allowed: boolean,
@@ -141,5 +147,82 @@ describe('createSerialDrain', () => {
     await expect(drain()).rejects.toThrow('boom');
     run.mockResolvedValue('empty');
     await expect(drain()).resolves.toBe('empty');
+  });
+
+  it('is not left jammed by a drain that never answers', async () => {
+    // Nothing underneath the drain has a deadline of its own, so an importer
+    // that accepts the connection and then says nothing would otherwise pin the
+    // slot for the life of the process — quietly stopping every later poll tick
+    // and every later wake-up from draining anything at all.
+    jest.useFakeTimers();
+    try {
+      const run = jest
+        .fn<Promise<StashRunOutcome>, []>()
+        .mockReturnValueOnce(new Promise<StashRunOutcome>(() => undefined))
+        .mockResolvedValue('empty');
+      const drain = createSerialDrain(run);
+
+      void drain();
+      await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
+
+      await expect(drain()).resolves.toBe('empty');
+      expect(run).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('lets a caller that arrived mid-run stop waiting for one that hangs', async () => {
+    // That caller is usually the wake-up itself, which has a budget to keep.
+    jest.useFakeTimers();
+    try {
+      const run = jest
+        .fn<Promise<StashRunOutcome>, []>()
+        .mockReturnValueOnce(new Promise<StashRunOutcome>(() => undefined))
+        .mockResolvedValue('submitted');
+      const drain = createSerialDrain(run);
+
+      void drain();
+      const waiting = drain();
+      await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
+
+      await expect(waiting).resolves.toBe('submitted');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('tells a hung run it no longer owns the drain once its replacement starts', async () => {
+    // The hung run read the stash before its replacement existed, so its list
+    // is stale. Without this it would resume and offer a code the newer run may
+    // already have sent — trading a drain that dies for the life of the process
+    // against the same code going to the bank twice.
+    jest.useFakeTimers();
+    try {
+      const leases: DrainLease[] = [];
+      const run = jest
+        .fn<Promise<StashRunOutcome>, [DrainLease]>()
+        .mockImplementationOnce((lease) => {
+          leases.push(lease);
+          return new Promise<StashRunOutcome>(() => undefined);
+        })
+        .mockImplementation((lease) => {
+          leases.push(lease);
+          return Promise.resolve('empty');
+        });
+      const drain = createSerialDrain(run);
+
+      void drain();
+      expect(leases[0]?.stillOwned()).toBe(true);
+      expect(leases[0]?.remainingMs()).toBe(TASK_BUDGET_MS);
+      await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
+      await drain();
+
+      expect(leases[0]?.stillOwned()).toBe(false);
+      expect(leases[0]?.remainingMs()).toBeLessThanOrEqual(0);
+      expect(leases[1]?.stillOwned()).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

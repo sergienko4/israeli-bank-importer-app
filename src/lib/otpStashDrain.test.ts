@@ -1,3 +1,5 @@
+import type { SaveResult } from '../api/manifest';
+import { ACK_MARGIN_MS, MIN_SEND_MS, SUBMIT_DEADLINE_MS, TASK_BUDGET_MS } from './otpDeadline';
 import { STASH_SPENT, STASH_TTL_MS, type StashedMessage } from './otpStash';
 import type { StashDrainPorts } from './otpStashDrain';
 import { drainStash } from './otpStashDrain';
@@ -60,6 +62,8 @@ function ports(overrides: Partial<StashDrainPorts> = {}) {
       return Promise.resolve({ ok: true });
     },
     now: () => NOW,
+    stillOwned: () => true,
+    remainingMs: () => TASK_BUDGET_MS,
     ...overrides,
   };
   return { ports: base, submitted, consumed, attempts };
@@ -136,7 +140,12 @@ describe('drainStash', () => {
     },
   );
 
-  it('leaves the message completely untouched when submitting throws', async () => {
+  it('takes the code out of circulation when the send itself throws', async () => {
+    // The request was already on its way when the connection went, so the
+    // importer may have taken the code and forwarded it with only the answer
+    // lost. Recording it against this request alone would leave it selectable
+    // by the next one, spending an attempt on a code the bank may already have
+    // seen; marking it spent takes it away from every request instead.
     const {
       ports: p,
       consumed,
@@ -145,7 +154,111 @@ describe('drainStash', () => {
       submit: () => Promise.reject(new Error('offline')),
     });
 
+    await expect(drainStash(p)).resolves.toBe('unknown');
+    expect(consumed).toEqual(['msg-1']);
+    expect(attempts).toEqual([]);
+  });
+
+  it('takes the code out of circulation when the send never answers', async () => {
+    // Nothing underneath the send enforces a deadline, and an importer that
+    // accepts the connection then says nothing must not leave the message on
+    // offer for the next drain once the serial lock is released.
+    jest.useFakeTimers();
+    try {
+      const sent: { id: string; code: string }[] = [];
+      const { ports: p, consumed } = ports({
+        submit: (_session, id, code) => {
+          sent.push({ id, code });
+          return new Promise<SaveResult>(() => undefined);
+        },
+      });
+      const running = drainStash(p);
+
+      await jest.advanceTimersByTimeAsync(SUBMIT_DEADLINE_MS);
+
+      await expect(running).resolves.toBe('unknown');
+      expect(sent).toEqual([{ id: 'req-1', code: '481920' }]);
+      expect(consumed).toEqual(['msg-1']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('sends nothing once a newer run has taken over', async () => {
+    // This run read the held messages before the run that replaced it existed,
+    // so its list is stale: the code it is about to offer may be one the newer
+    // run has already sent and consumed.
+    const { ports: p, submitted, consumed, attempts } = ports({ stillOwned: () => false });
+
+    await expect(drainStash(p)).resolves.toBe('superseded');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+    expect(attempts).toEqual([]);
+  });
+
+  it('sends nothing when too little is left to record what the send did', async () => {
+    // The reads before the send have no deadline of their own, so a slow one
+    // can eat most of the run. Sending anyway would leave the lock to release
+    // with the message still on offer, and the next drain would send the same
+    // code — the very thing the acknowledgement exists to prevent.
+    const { ports: p, submitted, consumed } = ports({ remainingMs: () => ACK_MARGIN_MS });
+
+    await expect(drainStash(p)).resolves.toBe('superseded');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+  });
+
+  it('sends nothing when what is left is too little to be worth a send', async () => {
+    // Reaching the send with a sliver left means the reads ate the lease, so
+    // the link is slow and a send squeezed into what remains is near-certain to
+    // be abandoned. Abandoning it spends the message for nothing; refusing
+    // leaves it for the next run, which starts with a whole lease.
+    const {
+      ports: p,
+      submitted,
+      consumed,
+    } = ports({
+      remainingMs: () => ACK_MARGIN_MS + MIN_SEND_MS - 1,
+    });
+
+    await expect(drainStash(p)).resolves.toBe('superseded');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+  });
+
+  it('gives a send only what is left of the run when that is the shorter', async () => {
+    jest.useFakeTimers();
+    try {
+      const room = MIN_SEND_MS + 1_000;
+      const { ports: p, consumed } = ports({
+        remainingMs: () => ACK_MARGIN_MS + room,
+        submit: () => new Promise<SaveResult>(() => undefined),
+      });
+      const running = drainStash(p);
+
+      await jest.advanceTimersByTimeAsync(room);
+
+      await expect(running).resolves.toBe('unknown');
+      expect(consumed).toEqual(['msg-1']);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('leaves the message completely untouched when a read throws', async () => {
+    // Nothing was given to the importer, so the code is unspent and the message
+    // is still worth keeping for whenever the network comes back.
+    const {
+      ports: p,
+      submitted,
+      consumed,
+      attempts,
+    } = ports({
+      getPending: () => Promise.reject(new Error('offline')),
+    });
+
     await expect(drainStash(p)).resolves.toBe('failed');
+    expect(submitted).toEqual([]);
     expect(consumed).toEqual([]);
     expect(attempts).toEqual([]);
   });

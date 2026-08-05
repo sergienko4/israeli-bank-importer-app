@@ -44,11 +44,20 @@ export interface BackgroundSubmitPorts {
 /**
  * Why the background path stopped.
  *
- * Every value except `submitted` means nothing was sent. They are distinct so
- * the caller can tell "we chose not to" from "we tried and could not".
+ * Every value except `submitted` means nothing was accepted. They are distinct
+ * so the caller can tell "we chose not to" from "we tried and could not", and —
+ * because this path has no screen and may be retried — "we do not know".
  */
 export type BackgroundSubmitOutcome =
-  'no-code' | 'no-session' | 'no-pending' | 'submitted' | 'rejected' | 'failed';
+  'no-code' | 'no-session' | 'no-pending' | 'submitted' | 'rejected' | 'failed' | 'unknown';
+
+/** The request a code should answer, once one has been found. */
+interface Target {
+  /** The session the code will be sent over. */
+  readonly session: Session;
+  /** The importer's id for the request awaiting a code. */
+  readonly requestId: string;
+}
 
 /**
  * Attempts to satisfy an outstanding one-time-code request from a message.
@@ -65,6 +74,23 @@ export async function autoSubmitFromMessage(
   const code = extractOtpCode(body);
   if (code === null) return 'no-code';
 
+  const target = await intendedRequest(ports);
+  return typeof target === 'string' ? target : send(ports, target, code);
+}
+
+/**
+ * Finds the request a captured code should answer, if there is one.
+ *
+ * Kept apart from the send so their failures can be told apart. Everything here
+ * is a read: nothing has been given to the importer yet, so a failure leaves the
+ * code unspent and asking again is free.
+ *
+ * @param ports - The injected outside world.
+ * @returns The request to answer, or why there is nothing to answer.
+ */
+async function intendedRequest(
+  ports: BackgroundSubmitPorts,
+): Promise<Target | 'no-session' | 'no-pending' | 'failed'> {
   try {
     const session = await ports.loadSession();
     if (session === null) return 'no-session';
@@ -72,9 +98,36 @@ export async function autoSubmitFromMessage(
     const expectation = pickExpectation(await ports.getPending(session), ports.now());
     if (expectation === null) return 'no-pending';
 
-    const result = await ports.submit(session, expectation.requestId, code);
-    return result.ok ? 'submitted' : 'rejected';
+    return { session, requestId: expectation.requestId };
   } catch {
     return 'failed';
+  }
+}
+
+/**
+ * Gives the code to the importer, and reports what became of it.
+ *
+ * A throw here is *not* reported as a failure. The request was already on its
+ * way when the connection went — the phone leaving the network mid-send is the
+ * ordinary case for a pocket capture — so the importer may well have taken the
+ * code and forwarded it to the bank, with only the answer lost. Calling that a
+ * failure would invite a caller to send the same code again, and a bank grants
+ * only a handful of attempts before it locks the request out.
+ *
+ * @param ports - The injected outside world.
+ * @param target - The session and request the code answers.
+ * @param code - The digits taken from the message.
+ * @returns Whether the code was accepted, refused, or left in doubt.
+ */
+async function send(
+  ports: BackgroundSubmitPorts,
+  target: Target,
+  code: string,
+): Promise<BackgroundSubmitOutcome> {
+  try {
+    const result = await ports.submit(target.session, target.requestId, code);
+    return result.ok ? 'submitted' : 'rejected';
+  } catch {
+    return 'unknown';
   }
 }

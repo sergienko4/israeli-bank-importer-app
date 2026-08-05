@@ -11,10 +11,18 @@ private const val TASK_NAME = "OtpSmsAutoRead"
 /**
  * How long the task may run before React Native tears it down regardless.
  *
- * The work is one short request against a machine on the same network, so this
- * is generous. It exists so a hung request cannot hold the device awake.
+ * Must match `TASK_TIMEOUT_MS` in `otpDeadline.ts`. This is a backstop, not the
+ * working bound: the task gives itself a shorter budget in JavaScript and
+ * returns when it runs out, so that it ends by finishing rather than by being
+ * torn down — which is what lets the wake lock be released in order. The gap
+ * between the two is margin, because that budget is a JavaScript timer and a
+ * JavaScript timer only fires when the thread next gets round to it.
+ *
+ * The ordinary run is one quick request against a machine on the same network
+ * and finishes in well under a second. This exists only so a task that never
+ * returns at all cannot hold the device awake.
  */
-private const val TASK_TIMEOUT_MS = 30_000L
+private const val TASK_TIMEOUT_MS = 60_000L
 
 /**
  * Runs the JavaScript that submits a captured code, with no screen involved.

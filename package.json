@@ -85,7 +85,8 @@
     "prepare": "husky",
     "contract:check": "node scripts/check-contract.mjs",
     "contract:sync": "node scripts/check-contract.mjs --write",
-    "check:bundle": "node scripts/check-bundle.mjs"
+    "check:bundle": "node scripts/check-bundle.mjs",
+    "check:manifest": "node scripts/check-manifest.mjs"
   },
   "engines": {
     "node": ">=22"

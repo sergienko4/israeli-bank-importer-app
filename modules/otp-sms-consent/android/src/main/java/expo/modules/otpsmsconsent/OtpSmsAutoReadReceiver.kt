@@ -31,17 +31,27 @@ private const val MAX_HELD_LENGTH = 640
 private val DIGIT_RUN = Regex("\\d{4,8}")
 
 /**
+ * The body passed when the message was held rather than handed over.
+ *
+ * An empty payload is what tells the task to look at what is being held instead
+ * of at this message, and the task already treats an absent body that way.
+ */
+private const val HELD_RATHER_THAN_PASSED = ""
+
+/**
  * Hands an arriving one-time code to JavaScript with the user doing nothing.
  *
- * This receiver only exists in a build made with `OTP_SMS_AUTOREAD=1`; the
- * config plugin adds it to the manifest for that build alone, and only that
- * build carries the `RECEIVE_SMS` permission the system requires before it will
- * deliver the broadcast. In the default build neither is present, so this class
- * is compiled but unreachable.
+ * This receiver is absent from a build made with `OTP_SMS_AUTOREAD=0`; the
+ * config plugin adds it to the manifest alongside the `RECEIVE_SMS` permission
+ * the system requires before it will deliver the broadcast, so in that build the
+ * class is compiled but unreachable. Declaring the permission is not holding it
+ * either: nothing arrives here until the user turns auto-read on and grants it.
  *
  * `SMS_RECEIVED_ACTION` is on Android's exemption list for implicit broadcasts,
  * so a manifest entry still wakes the app even when its process is not running.
- * That is what makes a genuinely hands-off capture possible.
+ * That is what makes a genuinely hands-off capture possible, and it is why this
+ * starts JavaScript for a message nothing asked for yet: no other component can
+ * run at that moment to notice it.
  *
  * The message is not parsed here. Deciding whether it contains a code is pure
  * logic that is tested off-device, so this class does the one thing it must be
@@ -59,7 +69,16 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
       deliver(context, body)
       return
     }
-    hold(context, intent)
+    // Nothing is waiting yet. Hold the message, then start JavaScript anyway so
+    // it can ask the importer whether a request has appeared since.
+    //
+    // Only this broadcast can do that. The window is opened by a screen or by a
+    // push, so with the app closed and no push configured it is never open, and
+    // a receiver that only held the message would leave the code on disk until
+    // the user next opened the app.
+    if (hold(context, intent)) {
+      deliver(context, HELD_RATHER_THAN_PASSED)
+    }
   }
 
   /**
@@ -67,21 +86,26 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
    *
    * Banks frequently send the code first. This broadcast is delivered once and
    * the app cannot read the inbox, so dropping the message here used to lose it
-   * for good. Holding it costs one small private write and no JavaScript: the
-   * process is not started, nothing is parsed, and nothing leaves the device.
+   * for good. Holding it costs one small private write and no JavaScript.
+   *
+   * @param context used to reach the stash.
+   * @param intent the broadcast carrying the message.
+   * @return whether a message was actually held, so the caller only starts
+   *   JavaScript when there is something for it to find.
    */
-  private fun hold(context: Context, intent: Intent) {
-    if (!SmsStash.isEnabled(context)) return
-    val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
-    val first = parts.firstOrNull() ?: return
-    val body = bodyOf(parts) ?: return
-    if (body.length > MAX_HELD_LENGTH || !DIGIT_RUN.containsMatchIn(body)) return
+  private fun hold(context: Context, intent: Intent): Boolean {
+    if (!SmsStash.isEnabled(context)) return false
+    val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return false
+    val first = parts.firstOrNull() ?: return false
+    val body = bodyOf(parts) ?: return false
+    if (body.length > MAX_HELD_LENGTH || !DIGIT_RUN.containsMatchIn(body)) return false
     SmsStash.put(
       context,
       first.displayOriginatingAddress.orEmpty(),
       first.timestampMillis,
       body,
     )
+    return true
   }
 
   /**
@@ -90,6 +114,10 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
    * Receiving a message puts the app on Android's temporary allowlist, which
    * permits an ordinary background service. That is why this needs no
    * foreground service and shows no notification: the capture is silent.
+   *
+   * @param context used to start the service.
+   * @param body the message to submit, or [HELD_RATHER_THAN_PASSED] to send the
+   *   task to the stash instead.
    */
   private fun deliver(context: Context, body: String) {
     val service = Intent(context, OtpSmsAutoReadService::class.java)

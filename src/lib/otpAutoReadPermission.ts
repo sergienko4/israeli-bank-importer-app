@@ -30,10 +30,11 @@ export function toPermissionOutcome(status: string): PermissionOutcome {
 /**
  * Whether this build was produced with SMS auto-read compiled in.
  *
- * Reads the flag the app config wrote at build time. A build without it has no
- * SMS permission in its manifest at all, so the feature must stay hidden rather
- * than offering a switch that could never work.
- * @returns True only for a build made with `OTP_SMS_AUTOREAD=1`.
+ * Reads the flag the app config wrote at build time. A build made with
+ * `OTP_SMS_AUTOREAD=0` has no SMS permission in its manifest at all, so the
+ * feature must stay hidden there rather than offering a switch that could never
+ * work.
+ * @returns True unless the build opted out with `OTP_SMS_AUTOREAD=0`.
  */
 export function isAutoReadBuild(): boolean {
   return Constants.expoConfig?.extra?.otpSmsAutoRead === true;

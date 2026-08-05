@@ -26,19 +26,22 @@ the importer you point it at. Relevant concerns include:
 
 - Handling of the portal bearer token and stored password (at rest and in
   transit).
-- OTP code handling in the app-based OTP flow, including SMS capture. In the
-  published build the app holds **no SMS permission**: on Android it uses the
-  SMS User Consent API, so the user approves each individual message in a
-  system dialog and the app can read nothing else. A captured message body is
-  parsed for digits and discarded in the same step — it is never stored,
-  logged, or sent anywhere. Automatic submission is opt-in, bounded to one send
-  per request, and cancellable.
-- The optional build made with `OTP_SMS_AUTOREAD=1` trades that dialog for
-  zero interaction and therefore *does* hold `RECEIVE_SMS`. Reports about it
-  are in scope, in particular any way to make its receiver act on a message
-  while no scrape is waiting for a code, or to reach it from another app. It
-  is not the build distributed on the releases page. `READ_SMS` is blocked in
-  both builds.
+- OTP code handling in the app-based OTP flow, including SMS capture. A build
+  made with `OTP_SMS_AUTOREAD=0` holds **no SMS permission** at all: it uses the
+  SMS User Consent API, so the user approves each individual message in a system
+  dialog and the app can read nothing else. A captured message body is parsed for
+  digits and discarded in the same step — it is never stored, logged, or sent
+  anywhere. Automatic submission is opt-in, bounded to one send per request, and
+  cancellable.
+- Opt-in **auto-read** trades that dialog for zero interaction and is the one
+  path that uses `RECEIVE_SMS`. The released build declares the permission, but
+  it is a runtime permission: nothing is granted until the user turns the switch
+  on and approves Android's dialog, and the receiver is inert until then.
+  Reports about it are in scope, in particular any way to make its receiver act
+  on a message while the user has not opted in, to make it submit while no
+  scrape is waiting for a code, or to reach it from another app. Building with
+  `OTP_SMS_AUTOREAD=0` omits the permission, receiver and service entirely.
+  `READ_SMS` is blocked in every build.
 - Any leakage of credentials/tokens to logs, crash reports, or third parties.
 
 ## Supported versions

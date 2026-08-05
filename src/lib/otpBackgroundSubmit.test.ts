@@ -101,4 +101,43 @@ describe('autoSubmitFromMessage', () => {
 
     await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('failed');
   });
+
+  it('will not call a lost send a failure, because the code may have landed', async () => {
+    // The request was already on its way when the connection went — a phone
+    // leaving the house mid-send is the ordinary case here. The importer may
+    // have taken the code and passed it to the bank, with only the answer lost.
+    // Reporting that as a failure invites a caller to send it again, and a bank
+    // grants only a handful of attempts before it locks the request out.
+    const submit = jest.fn(() => Promise.reject(new Error('connection reset')));
+    const { ports: p } = ports({ submit });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('unknown');
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a code the importer never judged, rather than calling it refused', async () => {
+    // A 503 says the code was not looked at. Reporting it as a refusal would
+    // stop the retry above it and strand an unspent code over an outage that
+    // clears in seconds.
+    const { ports: p } = ports({
+      submit: () => Promise.resolve({ ok: false, error: 'bad gateway', status: 503 }),
+    });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('failed');
+  });
+
+  it('tells a lost send apart from never having sent at all', async () => {
+    // Both are "we could not finish", but only one leaves the code unspent, and
+    // that difference is the whole reason a caller may retry one and not the
+    // other.
+    const lost = ports({ submit: () => Promise.reject(new Error('connection reset')) });
+    const never = ports({ loadSession: () => Promise.reject(new Error('keystore locked')) });
+
+    const [a, b] = await Promise.all([
+      autoSubmitFromMessage('Your code is 481920', lost.ports),
+      autoSubmitFromMessage('Your code is 481920', never.ports),
+    ]);
+    expect(a).toBe('unknown');
+    expect(b).toBe('failed');
+  });
 });

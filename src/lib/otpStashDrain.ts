@@ -9,10 +9,12 @@
  * That makes the acknowledgement the security control rather than bookkeeping.
  * A submitted code is consumed from every message carrying it, so it cannot be
  * sent again — banks resend, and a leftover copy is a spent answer still on
- * offer. A rejected code is recorded against the request that rejected it, on
- * every copy for the same reason, because retrying a wrong code is how the
- * bank's handful of attempts get spent in a loop. A transient failure records
- * nothing at all, leaving the message usable once the network comes back.
+ * offer. A code whose fate is unknown is treated the same way, because the
+ * importer may have taken it. A rejected code is recorded against the request
+ * that rejected it, on every copy for the same reason, because retrying a wrong
+ * code is how the bank's handful of attempts get spent in a loop. Only a
+ * transient failure records nothing at all, leaving the message usable once the
+ * network comes back.
  *
  * Because it is the security control, one acknowledgement that fails may not
  * abandon the copies behind it, and each falls back to the other. What that
@@ -24,7 +26,9 @@
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
-import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
+import type { SaveResult } from '../api/manifest';
+import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
+import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import {
   liveStashEntries,
@@ -47,6 +51,17 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
   readonly consume: (id: string) => Promise<void>;
   /** Records that a message was already sent against one request. */
   readonly markAttempt: (id: string, requestId: string) => Promise<void>;
+  /**
+   * Whether this run is still the one the caller is waiting on.
+   *
+   * A run whose own step outlasted the lock that serialises drains has been
+   * superseded, and is working from a list of held messages read before the run
+   * that replaced it existed. Sending from that list would offer a code the
+   * newer run may already have sent.
+   */
+  readonly stillOwned: () => boolean;
+  /** How long is left before the lock behind this run is released. */
+  readonly remainingMs: () => number;
 }
 
 /**
@@ -56,10 +71,22 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  * held message was not chosen: none carries a code, one was already sent
  * against this request, every copy is already spent, or several carry different
  * codes. They are all the same answer to the user — type it yourself — and none
- * of them is worth retrying.
+ * of them is worth retrying. `unknown` means a code went out and no answer came
+ * back, which is also not worth retrying, for the opposite reason. `superseded`
+ * means the run ran out of its claim on the drain before it reached the send —
+ * either a newer run has already taken over, or too little is left to record
+ * what a send did — so whatever is worth doing is the next run's to do.
  */
 export type StashDrainOutcome =
-  'empty' | 'ambiguous' | 'no-session' | 'no-pending' | 'submitted' | 'rejected' | 'failed';
+  | 'empty'
+  | 'ambiguous'
+  | 'no-session'
+  | 'no-pending'
+  | 'submitted'
+  | 'rejected'
+  | 'failed'
+  | 'unknown'
+  | 'superseded';
 
 /**
  * Spends at most one held message against the importer's pending request.
@@ -85,7 +112,22 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const drop = (id: string): Promise<void> => ports.consume(id);
     const record = (id: string): Promise<void> => ports.markAttempt(id, expectation.requestId);
     const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
-    const result = await ports.submit(session, expectation.requestId, found.code);
+    const allowance = sendWindow(ports);
+    if (allowance === null) return 'superseded';
+    const result = await sent(
+      () => ports.submit(session, expectation.requestId, found.code),
+      allowance,
+    );
+    if (result === 'unknown') {
+      // Marked spent rather than merely attempted, because the scope of the
+      // doubt is the code itself and not this request. Recording it against
+      // this request alone would leave it selectable by the next one, where a
+      // code the bank may already have seen would spend a second attempt — and
+      // would sit alongside the fresh message answering that request, whose
+      // different code makes the pair ambiguous and stops either being sent.
+      await acknowledgeEach(copies, orElse(drop, spend));
+      return 'unknown';
+    }
     if (result.ok) {
       // If both of these writes fail the entry stays spendable and a later drain
       // can resubmit. Nothing here can close that: both go through the same
@@ -101,6 +143,59 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
   } catch {
     return 'failed';
   }
+}
+
+/**
+ * How long this run may spend on the send, or null when it must not make one.
+ *
+ * A send is only safe while there is room left to record what it did. The reads
+ * before it have no deadline of their own, so how much of the run they consumed
+ * is unknowable in advance and a fixed constant would compose with them into
+ * something longer than the run's claim on the lock — leaving the lock to
+ * release with the message still on offer and the next drain sending the same
+ * code. Taking the deadline from what is left instead makes that bound hold
+ * whatever the reads cost, and refuses the send outright once too little is
+ * left to be worth starting one.
+ *
+ * @param ports - The injected outside world, carrying this run's lease.
+ * @returns Milliseconds the send may take, or null when there is no room.
+ */
+function sendWindow(ports: StashDrainPorts): number | null {
+  if (!ports.stillOwned()) return null;
+  const room = ports.remainingMs() - ACK_MARGIN_MS;
+  return room >= MIN_SEND_MS ? Math.min(SUBMIT_DEADLINE_MS, room) : null;
+}
+
+/**
+ * Gives the code to the importer, keeping a lost answer apart from a failure.
+ *
+ * The send is wrapped on its own because it is the only step that can leave
+ * something behind. Everything before it is a read, so a failure there means the
+ * importer was never given the code and the message is still worth trying; a
+ * failure here means the request was already on its way when the connection
+ * went, which is the ordinary case for a capture made in someone's pocket. The
+ * importer may well have taken the code and forwarded it to the bank with only
+ * the answer lost, so the caller must treat it as spent rather than send again.
+ *
+ * Silence is treated the same as a failure, and on a deadline, because nothing
+ * underneath enforces one: an importer that accepts the connection and then says
+ * nothing would otherwise leave the caller with no answer to act on at the
+ * moment it most needs one.
+ *
+ * @param submit - The send, already bound to its session, request and code.
+ * @param ms - How long to wait, already trimmed to what the run has left.
+ * @returns What the importer said, or `unknown` when it never said anything.
+ */
+async function sent(
+  submit: () => Promise<SaveResult>,
+  ms: number,
+): Promise<SaveResult | 'unknown'> {
+  let answer: SaveResult | 'unknown' = 'unknown';
+  const asking = (async () => {
+    answer = await submit();
+  })();
+  await settleWithin(asking, ms);
+  return answer;
 }
 
 /**
@@ -164,20 +259,4 @@ async function attempted(promise: Promise<void>): Promise<void> {
     // Deliberately nothing: both ways of taking the message out of circulation
     // have already been tried.
   }
-}
-
-/**
- * Reports whether a failing status means the code was never actually judged.
- *
- * Those failures are the importer's problem, not the code's, so the message
- * stays held for the next drain. Every other status — including a missing one —
- * counts as a verdict, because retrying a code the bank already refused spends
- * one of the few attempts it allows.
- *
- * @param status - The HTTP status behind the failure, where there was one.
- * @returns True when the message should survive to be tried again.
- */
-function neverJudged(status: number | undefined): boolean {
-  if (status === undefined) return false;
-  return status >= 500 || status === 408 || status === 429;
 }

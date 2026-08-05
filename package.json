@@ -1,6 +1,6 @@
 {
   "name": "israeli-bank-importer-app",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "main": "index.ts",
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

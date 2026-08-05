@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.8...israeli-bank-importer-app-v0.2.9) (2026-08-05)
+
+
+### Bug Fixes
+
+* **otp:** read the SMS code with the app closed ([#80](https://github.com/sergienko4/israeli-bank-importer-app/issues/80)) ([cff4c35](https://github.com/sergienko4/israeli-bank-importer-app/commit/cff4c3560e2766007e8e9802b37f5586e2cb6a32))
+
 ## [0.2.8](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.7...israeli-bank-importer-app-v0.2.8) (2026-08-04)
 
 

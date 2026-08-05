@@ -160,6 +160,14 @@ function checkAutoReadBuild(config) {
     receiver?.$['android:permission'] === 'android.permission.BROADCAST_SMS',
     'the receiver should require BROADCAST_SMS, so only the system can reach it',
   );
+
+  const service = (application.service ?? []).find((entry) => entry.$['android:name'] === SERVICE);
+  check(
+    service?.$['android:exported'] === 'false',
+    // Only this app's own receiver ever starts it, and it acts on whatever body
+    // it is handed. Exported, any app on the device could start it directly.
+    'the service should not be exported, since only the receiver starts it',
+  );
 }
 
 /**
@@ -182,6 +190,10 @@ function checkOptOutBuild(config) {
   check(
     names(manifest.application[0], 'receiver').every((name) => name !== RECEIVER),
     'the receiver should be absent from an opted-out build, so there is nothing to run',
+  );
+  check(
+    names(manifest.application[0], 'service').every((name) => name !== SERVICE),
+    'the service should be absent from an opted-out build, so there is nothing to start',
   );
 }
 

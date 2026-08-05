@@ -197,10 +197,10 @@ exists so you can stop it, and the once-per-request limit means a burst of
 messages cannot spend several attempts — but the safe setting is off, which is
 why it ships off.
 
-Two limits are worth knowing. On the default build the message must arrive
+Two limits are worth knowing. With auto-read off the message must arrive
 **while the prompt is open** — the consent dialog is what reads it, so a code
-that landed before the importer asked is typed by hand. The auto-read build
-holds that early message instead, under the ten-minute limit above. And the
+that landed before the importer asked is typed by hand. With auto-read on that
+early message is held instead, under the ten-minute limit above. And the
 reading step is Android-only either way: on iOS the keyboard suggestion is the
 whole feature.
 

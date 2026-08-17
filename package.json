@@ -29,7 +29,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.1",
+    "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.0",
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.10",

@@ -40,8 +40,29 @@ jobs:
       # off the Expo SDK line (a missing native peer, or a bump past the SDK
       # pin). While this ran with continue-on-error it stayed red on main
       # across several merges without turning a single check red.
+      #
+      # EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK skips the one doctor check
+      # whose reference moves under every pull request. That check fetches the
+      # expected versions for the SDK line live from api.expo.dev, which
+      # advances every time Expo publishes a patch (every few days), so any
+      # branch resolved from an older snapshot - a weekly Dependabot PR by
+      # definition - fails no matter how consistent it is. The check below
+      # replaces it with the installed expo's bundledNativeModules.json as the
+      # stable reference.
       - name: Expo Doctor
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: true
         run: npx --yes expo-doctor@1.20.1
+      # Validates the declared versions against bundledNativeModules.json of
+      # the installed expo package, with EXPO_OFFLINE forcing the pure-local
+      # reference that expo install --check otherwise replaces with the same
+      # live api.expo.dev data. That reference is stable: a bump that keeps
+      # the expo group internally consistent with the expo it installs passes
+      # regardless of what Expo published afterwards, while a missing native
+      # peer or a bump past the pin still fails. expo install --fix at bump
+      # time still resolves against the live API.
+      - name: Versions match the installed Expo SDK
+        run: EXPO_OFFLINE=1 npx expo install --check
       - name: Bundle for iOS + Android
         run: npm run export
       - name: No bundled module shadows a global

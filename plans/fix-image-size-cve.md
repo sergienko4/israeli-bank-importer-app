@@ -80,25 +80,37 @@ Status: Complete
 
 ## Phase 4: Commit, push, PR
 
-Status: Not started
+Status: Complete
 
-- [ ] Pre-flight checklist per `before-commit-guidlines.md` (50/72 subject/body, atomic, selective staging)
-- [ ] Commit: patch-package infra + parser guards + plan file
-- [ ] Push, open PR with `## Guideline compliance` table + evidence
-- [ ] Read `post-pr-checklist.md` after PR opens
+- [x] Pre-flight checklist per `before-commit-guidlines.md` (50/72 subject/body, atomic, selective staging)
+- [x] Commit: patch-package infra + parser guards + plan file
+- [x] Push, open PR with `## Guideline compliance` table + evidence
+- [x] Read `post-pr-checklist.md` after PR opens
 
 ### Verification Plan
 
-- `npm run lint`, `lint:md`, `format:check`, `typecheck`, `npm test` all green (pre-push hook runs them)
-- PR body includes compliance table; PR URL reported
+- `npm run lint`, `lint:md`, `format:check`, `typecheck`, `npm test` all green (pre-push hook runs them) — done
+- PR body includes compliance table; PR URL reported — done: <https://github.com/sergienko4/israeli-bank-importer-app/pull/99>
+
+### Phase Summary
+
+- Pre-flight: subject 41 chars (≤50), body wrap ≤72 verified with awk, staging selective (4 files).
+- Commit `5b47986` — `fix(security): patch image-size DoS loops`.
+- Fresh `npm ci` verified postinstall applies the patch (guards present; crafted buffers return in ≤2ms).
+- Pre-push battery green; PR #99 opened with compliance table (7 rows, evidence per row).
+- `post-pr-checklist.md` read: scoped to `israeli-bank-scrapers-fork` (OODA/KG/SQL infra); only CR rate-limit watchdog applies here — CodeRabbit queued, no rate-limit comment → hands off.
+- CI on PR: Documentation Quality pass, Gitleaks pass; Typecheck/lint/bundle + CodeQL + License pending.
 
 ## Final Recap
 
-- _(write when all phases complete: summary of the entire piece of work)_
+- All 3 GitHub alerts (Dependabot #20/#21, CodeQL #33) closed with documented evidence; root cause was the transitive `image-size@1.2.1` ICNS/JXL infinite-loop CVEs with no fixed release upstream.
+- Fix shipped as patch-package guards + postinstall (PR #99, commit `5b47986`): fresh installs and CI re-apply the patch deterministically; repro proved hang-on-unpatched / ≤2ms-after-patch; 615 tests + export green.
 
 ## Deployment Plan
 
-- _(write when all phases complete: step-by-step deployment instructions)_
+- Merge PR #99; CI (`npm ci` → postinstall) keeps every install patched. No rollout steps — build-time dependency only.
+- When upstream publishes a patched image-size release (advisory currently has none): Dependabot will bump `image-size` (needs a metro/expo release allowing it), then remove `patches/image-size+1.2.1.patch` and the `postinstall` script in a follow-up, and un-dismiss/re-open tracking of the alerts.
+- Dismissal comments (all three alerts) carry the full evidence chain for auditability.
 
 - Merge PR; CI (npm ci → postinstall → patch applied) keeps the fix on every install
 - When upstream publishes a patched image-size release: Dependabot bumps, then remove `patches/image-size+1.2.1.patch` and the `postinstall` script in a follow-up

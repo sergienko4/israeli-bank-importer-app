@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.11](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.10...israeli-bank-importer-app-v0.2.11) (2026-08-18)
+
+
+### Bug Fixes
+
+* **ci:** anchor Expo version gate to local SDK ([#97](https://github.com/sergienko4/israeli-bank-importer-app/issues/97)) ([6862499](https://github.com/sergienko4/israeli-bank-importer-app/commit/686249933f9ed64d930c9f024f321a784a8221e6))
+* **security:** patch image-size DoS loops (CVE-2025-71329, CVE-2025-71330) ([#99](https://github.com/sergienko4/israeli-bank-importer-app/issues/99)) ([829d49c](https://github.com/sergienko4/israeli-bank-importer-app/commit/829d49cb66dc34d7719bf88e96bae0c7c1753e5d))
+
 ## [0.2.10](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.9...israeli-bank-importer-app-v0.2.10) (2026-08-05)
 
 

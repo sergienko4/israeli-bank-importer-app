@@ -1,0 +1,30 @@
+diff --git a/node_modules/image-size/dist/types/icns.js b/node_modules/image-size/dist/types/icns.js
+index f2bfafe..99afa1a 100644
+--- a/node_modules/image-size/dist/types/icns.js
++++ b/node_modules/image-size/dist/types/icns.js
+@@ -93,6 +93,10 @@ exports.ICNS = {
+         while (imageOffset < fileLength && imageOffset < inputLength) {
+             imageHeader = readImageHeader(input, imageOffset);
+             imageSize = getImageSize(imageHeader[0]);
++            // Guard against zero-length entries (CVE-2025-71330): the offset
++            // would never advance, looping forever on a crafted buffer.
++            if (imageHeader[1] === 0)
++                break;
+             imageOffset += imageHeader[1];
+             result.images.push(imageSize);
+         }
+diff --git a/node_modules/image-size/dist/types/jxl.js b/node_modules/image-size/dist/types/jxl.js
+index f557b0a..b0d7aab 100644
+--- a/node_modules/image-size/dist/types/jxl.js
++++ b/node_modules/image-size/dist/types/jxl.js
+@@ -24,6 +24,10 @@ function extractPartialStreams(input) {
+         if (!jxlpBox)
+             break;
+         partialStreams.push(input.slice(jxlpBox.offset + 12, jxlpBox.offset + jxlpBox.size));
++        // Guard against zero-size boxes (CVE-2025-71329): the offset would
++        // never advance, looping forever on a crafted buffer.
++        if (jxlpBox.size === 0)
++            break;
+         offset = jxlpBox.offset + jxlpBox.size;
+     }
+     return partialStreams;

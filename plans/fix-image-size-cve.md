@@ -104,7 +104,8 @@ Status: Complete
 ## Final Recap
 
 - All 3 GitHub alerts (Dependabot #20/#21, CodeQL #33) closed with documented evidence; root cause was the transitive `image-size@1.2.1` ICNS/JXL infinite-loop CVEs with no fixed release upstream.
-- Fix shipped as patch-package guards + postinstall (PR #99, commit `5b47986`): fresh installs and CI re-apply the patch deterministically; repro proved hang-on-unpatched / ≤2ms-after-patch; 615 tests + export green.
+- Fix shipped as patch-package guards + postinstall (PR #99, commits `5b47986`, `69db686`, `21f1859`): fresh installs and CI re-apply the patch deterministically; repro proved hang-on-unpatched / ≤2ms-after-patch; 615 tests + export green.
+- CodeRabbit cycle 1 (triggered after 15-min rate-limit cooldown): 1 finding — Major, `postinstall` must fail closed (`patch-package --error-on-fail`). Resolved in `21f1859`; disposition recorded in PR body table. No reply threads (C10).
 
 ## Deployment Plan
 

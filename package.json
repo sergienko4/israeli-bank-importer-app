@@ -54,7 +54,7 @@
     "prettier": "^3.9.6",
     "sonarqube-scanner": "^5.0.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.67.0"
+    "typescript-eslint": "^8.68.0"
   },
   "overrides": {
     "postcss": "^8.5.18",

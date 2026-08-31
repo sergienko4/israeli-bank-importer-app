@@ -80,6 +80,43 @@ jobs:
           path: coverage/lcov.info
           retention-days: 5
 
+  # The `build` job already validates the Expo pin table, but every one of its
+  # steps runs after `npm ci`, and pin drift is precisely what stops `npm ci`
+  # from resolving. When the SDK moves a native pin that dependabot.yml holds
+  # frozen - expo 57.0.17 moved react-native to 0.86.3 while react-native was
+  # ignored - the two peer ranges become unsatisfiable and the install aborts,
+  # so the check that would have named the culprit never runs. What the reader
+  # gets instead is an ERESOLVE about @react-native/jest-preset, a package
+  # nobody declared (PR #106).
+  #
+  # This job exists to make that diagnosis reachable. It installs with
+  # --legacy-peer-deps so an unsatisfiable peer cannot silence the check, and
+  # with --ignore-scripts because reading declared versions needs no
+  # postinstall (the full scripted install still happens in `build`). It
+  # deliberately does not use ./.github/actions/setup-node, whose lockfile-exact
+  # `npm ci` is the very step that dies.
+  expo-pins:
+    name: Expo SDK pin drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Pin the npm registry for this job
+        run: echo 'NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' >> "$GITHUB_ENV"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Matches the `engines.node` floor declared in package.json.
+          node-version: '22'
+          cache: npm
+      - name: Install tolerating peer conflicts
+        run: npm ci --legacy-peer-deps --ignore-scripts
+      # --no-install because the tolerant install above already placed the exact
+      # expo this lockfile resolves; letting npx fetch its own would validate a
+      # different SDK than the one the app builds against.
+      - name: Versions match the installed Expo SDK
+        run: EXPO_OFFLINE=1 npx --no-install expo install --check
+
   docs:
     name: Documentation Quality
     runs-on: ubuntu-latest
@@ -181,12 +218,13 @@ jobs:
   ci-pass:
     name: CI Pass
     runs-on: ubuntu-latest
-    needs: [build, docs, licenses, sonar]
+    needs: [build, expo-pins, docs, licenses, sonar]
     if: always()
     steps:
       - name: Verify required jobs succeeded
         run: |
           if [ "${{ needs.build.result }}" != "success" ] \
+            || [ "${{ needs['expo-pins'].result }}" != "success" ] \
             || [ "${{ needs.docs.result }}" != "success" ] \
             || [ "${{ needs.licenses.result }}" != "success" ] \
             || [ "${{ needs.sonar.result }}" != "success" ]; then

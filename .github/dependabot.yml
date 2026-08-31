@@ -40,15 +40,16 @@ updates:
       # A react patch slipping through this gap is what broke doctor on main
       # (PRs #67/#68).
       #
-      # Deliberately no version numbers here: they go stale. The SDK moves its
-      # own pins *within* a line - expo 57.0.17 moved react-native from 0.86.2
-      # to 0.86.3 - and Dependabot cannot follow, because it resolves to
-      # registry-latest (react-native@latest is already 0.87.x, well past SDK
-      # 57) rather than to whatever the installed expo pins. So these stay
-      # ignored and `npx expo install --fix` owns the versions. The `expo-pins`
-      # job in ci.yml is what reports that the fix is overdue: PR #106 bumped
-      # the expo group, jest-expo took its patch and followed the SDK,
-      # react-native could not, and npm ci was left unable to resolve.
+      # Deliberately no current version numbers here: they go stale. The SDK
+      # moves its own pins *within* a line - expo 57.0.17 moved react-native
+      # from 0.86.2 to 0.86.3 - and Dependabot cannot follow, because it
+      # resolves to whatever `react-native@latest` is, which has long since
+      # moved past the SDK 57 line, rather than to whatever the installed expo
+      # pins. So these stay ignored and `npx expo install --fix` owns the
+      # versions. The `expo-pins` job in ci.yml is what reports that the fix is
+      # overdue: PR #106 bumped the expo group, jest-expo took its patch and
+      # followed the SDK, react-native could not, and npm ci was left unable to
+      # resolve.
       - dependency-name: react
         update-types:
           [

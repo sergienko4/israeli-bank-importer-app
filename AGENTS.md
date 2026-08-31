@@ -2,8 +2,11 @@
 
 Read the exact versioned docs at <https://docs.expo.dev/versions/v57.0.0/> before writing any code.
 
-This app targets **Expo SDK 57** (`expo@^57.0.0`, `react-native@0.86.2`, `react@19.2.3`).
-Match that line for every dependency and API - do not use older SDK docs or examples.
+This app targets **Expo SDK 57**, which pins `expo`, `react`, and `react-native`
+to exact versions and moves those pins within its own patch line: 57.0.17 moved
+`react-native` from 0.86.2 to 0.86.3. Read the current pins from `package.json`
+rather than from this file, change them only through `npx expo install --fix`,
+and do not use older SDK docs or examples.
 
 Two things from that upgrade are easy to trip over:
 

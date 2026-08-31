@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.12](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.11...israeli-bank-importer-app-v0.2.12) (2026-08-31)
+
+
+### Bug Fixes
+
+* **ci:** report Expo SDK pin drift ([#109](https://github.com/sergienko4/israeli-bank-importer-app/issues/109)) ([1119b48](https://github.com/sergienko4/israeli-bank-importer-app/commit/1119b484f8a8a7df5701201a95f2566da7dc15a4))
+* **deps:** follow Expo SDK 57 react-native pin ([#110](https://github.com/sergienko4/israeli-bank-importer-app/issues/110)) ([eee517a](https://github.com/sergienko4/israeli-bank-importer-app/commit/eee517a857e33cdb65363ead0c47a1e3da09ff06))
+
 ## [0.2.11](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.10...israeli-bank-importer-app-v0.2.11) (2026-08-18)
 
 

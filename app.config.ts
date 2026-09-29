@@ -92,11 +92,12 @@ type ManifestApplication = Parameters<
  * is what happened in `v0.2.9`.
  *
  * Everything the feature needs is still compiled in and still tested; only the
- * manifest declaration is withheld. Build with `OTP_SMS_AUTOREAD=1` to get it
- * back, and install that APK over `adb`, which does not consult Play Protect.
+ * manifest declaration is withheld. `scripts/build-sms-apk.mjs` sets
+ * `OTP_SMS_AUTOREAD=1` to build the APK that declares it, which is installed
+ * over `adb`, since that does not consult Play Protect.
  *
- * Set it for `eas update` as well as for the build if you do. `eas build`
- * resolves this config on one machine and `eas update` on another, and under the
+ * Set it for `eas update` as well as for the build. The build resolves this
+ * config on one machine and `eas update` on another, and under the
  * `fingerprint` runtime version policy a different config is a different runtime
  * id — so setting it for only one of the two would leave updates unable to reach
  * the binary. Leaving it unset everywhere, which is the default, cannot drift

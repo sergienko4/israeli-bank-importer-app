@@ -1,0 +1,96 @@
+name: Verify release tag
+
+# Decides which commit a release workflow may build, before any job that holds
+# a secret or checks out code starts.
+#
+# A `workflow_dispatch` runs from `main`, so it passes the `release-signing`
+# Environment's branch rule, yet it names a tag that could point at any
+# commit. Without this check that commit's build script would run with the
+# signing key, or its JavaScript would ship as an update. So the tag must be
+# a release tag whose commit is already on `main`.
+#
+# A reusable workflow rather than a composite action: a local action is read
+# from the checked-out workspace, so it cannot run before the checkout it
+# gates, while a `./` reusable workflow loads from the caller's commit with no
+# checkout at all. It uses only the automatic read-only GITHUB_TOKEN.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag the caller builds'
+        required: true
+        type: string
+    outputs:
+      sha:
+        description: 'Verified commit to build'
+        value: ${{ jobs.verify.outputs.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify release tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.provenance.outputs.sha }}
+    steps:
+      - name: Check the tag and choose the commit
+        id: provenance
+        # Inside a called workflow the `github` context is the caller's, so a
+        # release-please call arrives here as `push` and a manual run as
+        # `workflow_dispatch`. Every value reaches the script through `env:`.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          HEAD_SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          is_sha() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+
+          case "$EVENT_NAME" in
+            push | workflow_dispatch) ;;
+            *) fail "Release builds run only on push or workflow_dispatch, not $EVENT_NAME." ;;
+          esac
+          [ "$GIT_REF" = refs/heads/main ] || fail "Release builds run only from refs/heads/main, not $GIT_REF."
+          # The tag is not echoed: it is caller input, and a crafted value
+          # could inject a workflow command into the log.
+          [[ "$RELEASE_TAG" =~ ^israeli-bank-importer-app-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || fail "The tag input is not a release tag (israeli-bank-importer-app-vX.Y.Z)."
+          is_sha "$HEAD_SHA" || fail "github.sha is not a commit SHA."
+
+          # `git/ref` matches exactly; `matching-refs` would match by prefix.
+          object=$(gh api "repos/$REPO/git/ref/tags/$RELEASE_TAG" --jq '.object.type + " " + .object.sha') \
+            || fail "Tag $RELEASE_TAG does not exist."
+          # An annotated tag points at a tag object; follow it to the commit.
+          for _ in 1 2 3 4 5; do
+            type=${object%% *}
+            sha=${object#* }
+            is_sha "$sha" || fail "Tag $RELEASE_TAG resolved to a malformed object id."
+            [ "$type" = tag ] || break
+            object=$(gh api "repos/$REPO/git/tags/$sha" --jq '.object.type + " " + .object.sha') \
+              || fail "Could not read the tag object of $RELEASE_TAG."
+          done
+          [ "$type" = commit ] || fail "Tag $RELEASE_TAG does not point at a commit."
+
+          # `ahead` or `identical` means the tag commit is an ancestor of, or
+          # equal to, the commit on main this run started from.
+          status=$(gh api "repos/$REPO/compare/$sha...$HEAD_SHA?per_page=1" --jq .status) \
+            || fail "Could not compare $RELEASE_TAG with main."
+          case "$status" in
+            ahead | identical) ;;
+            *) fail "Tag $RELEASE_TAG is not on main at $HEAD_SHA (compare status: $status)." ;;
+          esac
+
+          # A release-please push builds the commit it tagged, as before. A
+          # dispatch builds the tag, not whatever main has moved on to.
+          if [ "$EVENT_NAME" = push ]; then build=$HEAD_SHA; else build=$sha; fi
+          is_sha "$build" || fail "The commit to build is not a commit SHA."
+          echo "Building $build for $RELEASE_TAG."
+          echo "sha=$build" >> "$GITHUB_OUTPUT"

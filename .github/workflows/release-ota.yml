@@ -44,8 +44,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs first, holds no secret and checks out nothing: it decides which
+  # commit the job below may build (see verify-release-tag.yml).
+  verify:
+    name: Verify release tag
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-release-tag.yml
+    with:
+      tag: ${{ inputs.tag }}
+
   publish-ota:
     name: Publish over-the-air update
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Gate on EXPO_TOKEN
@@ -62,6 +73,9 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The verified commit, not the tag name: a tag re-pointed after the
+          # check cannot change what gets built.
+          ref: ${{ needs.verify.outputs.sha }}
           persist-credentials: false
       - if: steps.guard.outputs.run == 'true'
         uses: ./.github/actions/setup-node

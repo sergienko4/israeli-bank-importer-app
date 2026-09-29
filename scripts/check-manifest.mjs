@@ -13,6 +13,10 @@
  * build flag allows, because "the permission is absent" is the correct answer
  * for one of them and the bug for the other.
  *
+ * The same file routes an auto-read build's updates to its own channel and lets
+ * a build outside EAS set its versionCode, and neither has any other reader
+ * before a release, so both are checked here too.
+ *
  * Usage:
  *   node scripts/check-manifest.mjs
  */
@@ -40,6 +44,56 @@ const SERVICE = 'expo.modules.otpsmsconsent.OtpSmsAutoReadService';
 const SMS_RECEIVED = 'android.provider.Telephony.SMS_RECEIVED';
 
 /**
+ * The manifest meta that carries `updates.requestHeaders` into the binary. A
+ * build made outside EAS Build has no other way to name its update channel.
+ */
+const REQUEST_HEADERS_META = 'expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY';
+
+/** The channel an auto-read build asks for, kept apart from the standard one. */
+const AUTO_READ_CHANNEL = 'production-sms';
+
+/** The variable a build outside EAS sets its versionCode with. */
+const VERSION_CODE_VARIABLE = 'ANDROID_VERSION_CODE';
+
+/**
+ * Values the versionCode variable must refuse: zero, a leading zero, text, a
+ * fraction, a negative, one past Play's 2100000000 limit, and the empty string
+ * an unset workflow expression expands to.
+ */
+const INVALID_VERSION_CODES = ['0', '01', 'abc', '4.2', '-1', '2100000001', ''];
+
+/**
+ * Runs `expo config` with exactly the build variables given.
+ *
+ * @param {{ flag?: string, versionCode?: string, type?: string }} options - The
+ *   value of `OTP_SMS_AUTOREAD` and of the versionCode variable, each left unset
+ *   when omitted, which is how a release build resolves them, and the config
+ *   type to print.
+ * @returns {string} What the command printed.
+ */
+function runExpoConfig({ flag, versionCode, type = 'introspect' }) {
+  const env = { ...process.env };
+  // Deleted rather than left alone: a developer with either variable exported
+  // would otherwise silently check something other than what ships.
+  delete env.OTP_SMS_AUTOREAD;
+  delete env.ANDROID_VERSION_CODE;
+  if (flag !== undefined) {
+    env.OTP_SMS_AUTOREAD = flag;
+  }
+  if (versionCode !== undefined) {
+    env.ANDROID_VERSION_CODE = versionCode;
+  }
+
+  // Expo's CLI is run through node directly: npx resolves to a .cmd on Windows,
+  // which cannot be spawned without a shell.
+  return execFileSync(
+    process.execPath,
+    [createRequire(import.meta.url).resolve('expo/bin/cli'), 'config', '--type', type, '--json'],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env },
+  );
+}
+
+/**
  * Resolves the app config the way a build does.
  *
  * `introspect` is the type that runs the config plugins, so the manifest it
@@ -51,28 +105,7 @@ const SMS_RECEIVED = 'android.provider.Telephony.SMS_RECEIVED';
  * @returns {object} The introspected config.
  */
 function resolveConfig(flag) {
-  const env = { ...process.env };
-  // Deleted rather than left alone: a developer with the variable exported
-  // would otherwise silently check something other than what ships.
-  delete env.OTP_SMS_AUTOREAD;
-  if (flag !== undefined) {
-    env.OTP_SMS_AUTOREAD = flag;
-  }
-
-  // Expo's CLI is run through node directly: npx resolves to a .cmd on Windows,
-  // which cannot be spawned without a shell.
-  const stdout = execFileSync(
-    process.execPath,
-    [
-      createRequire(import.meta.url).resolve('expo/bin/cli'),
-      'config',
-      '--type',
-      'introspect',
-      '--json',
-    ],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env },
-  );
-  return JSON.parse(stdout);
+  return JSON.parse(runExpoConfig({ flag }));
 }
 
 /**
@@ -94,6 +127,34 @@ function manifestOf(config) {
  */
 function names(node, kind) {
   return (node[kind] ?? []).map((entry) => entry.$['android:name']);
+}
+
+/**
+ * The value of one `meta-data` entry on the application node.
+ *
+ * @param {object} config - The introspected config.
+ * @param {string} name - The entry's `android:name`.
+ * @returns {string[]} The value of every entry with that name, in order.
+ */
+function metaValues(config, name) {
+  return (manifestOf(config).application[0]['meta-data'] ?? [])
+    .filter((entry) => entry.$['android:name'] === name)
+    .map((entry) => entry.$['android:value']);
+}
+
+/**
+ * Whether a string is JSON naming exactly the auto-read channel.
+ *
+ * @param {string} value - The meta's value.
+ * @returns {boolean} True when it parses to that one header and nothing else.
+ */
+function namesAutoReadChannel(value) {
+  try {
+    const headers = JSON.parse(value);
+    return Object.keys(headers).length === 1 && headers['expo-channel-name'] === AUTO_READ_CHANNEL;
+  } catch {
+    return false;
+  }
 }
 
 /** Collected failures, reported together so one run shows every problem. */
@@ -168,6 +229,14 @@ function checkAutoReadBuild(config) {
     // it is handed. Exported, any app on the device could start it directly.
     'the service should not be exported, since only the receiver starts it',
   );
+
+  const headers = metaValues(config, REQUEST_HEADERS_META);
+  check(
+    headers.length === 1 && namesAutoReadChannel(headers[0]),
+    // Without it the binary asks for the standard channel and is offered
+    // updates built for a different runtime, which it can never apply.
+    `${REQUEST_HEADERS_META} should be declared once as {"expo-channel-name":"${AUTO_READ_CHANNEL}"}`,
+  );
 }
 
 /**
@@ -198,6 +267,10 @@ function checkOptOutBuild(config) {
     names(manifest.application[0], 'service').every((name) => name !== SERVICE),
     'the service should be absent from the default build, so there is nothing to start',
   );
+  check(
+    metaValues(config, REQUEST_HEADERS_META).length === 0,
+    `${REQUEST_HEADERS_META} should be absent from the default build, whose channel EAS Build sets`,
+  );
 }
 
 /**
@@ -211,6 +284,45 @@ function checkBothBuilds(config, label) {
     (entry) => entry.$['android:name'] === READ_SMS && entry.$['tools:node'] === 'remove',
   );
   check(blocked, `${READ_SMS} should be stripped from the ${label} build's merged manifest`);
+  check(
+    config.android?.versionCode === undefined,
+    // EAS Build owns the number through remote versioning; a value here would
+    // be one EAS never sees.
+    `android.versionCode should be unset in the ${label} build when ${VERSION_CODE_VARIABLE} is`,
+  );
+}
+
+/**
+ * Asserts that the versionCode variable is taken when valid and refused
+ * otherwise.
+ *
+ * A build outside EAS copies the number from the standard APK of the same
+ * release, and Android installs one over the other only when it matches. A
+ * value that is quietly dropped or truncated would build an APK that cannot be
+ * installed over the one it belongs with, so every malformed value must stop
+ * the build instead.
+ */
+function checkVersionCode() {
+  for (const value of ['42', '2100000000']) {
+    const config = JSON.parse(runExpoConfig({ flag: '1', versionCode: value, type: 'public' }));
+    check(
+      config.android?.versionCode === Number(value),
+      `${VERSION_CODE_VARIABLE}=${value} should resolve to android.versionCode ${value}`,
+    );
+  }
+
+  for (const value of INVALID_VERSION_CODES) {
+    let refused = false;
+    try {
+      runExpoConfig({ flag: '1', versionCode: value, type: 'public' });
+    } catch (error) {
+      refused = String(error.stderr).includes(VERSION_CODE_VARIABLE);
+    }
+    check(
+      refused,
+      `${VERSION_CODE_VARIABLE}=${JSON.stringify(value)} should stop config resolution with an error naming the variable`,
+    );
+  }
 }
 
 try {
@@ -236,16 +348,21 @@ try {
     checkAutoReadBuild(optIn);
     checkBothBuilds(optIn, 'opted-in');
 
+    checkVersionCode();
+
     if (failures.length > 0) {
       console.error(
         'The resolved Android manifest does not match what the app expects:\n' +
           failures.map((failure) => `  - ${failure}`).join('\n') +
-          '\n\nThe wiring is in app.config.ts. An app built from this manifest would\n' +
-          'not capture one-time codes, and no other check would notice.',
+          '\n\nThe wiring is in app.config.ts. An app built from this config would\n' +
+          'ship broken, and no other check would notice.',
       );
       process.exitCode = 1;
     } else {
-      console.log('The resolved Android manifest wires up SMS auto-read in both build directions.');
+      console.log(
+        'The resolved Android manifest wires up SMS auto-read in both build directions,\n' +
+          `routes the auto-read build to ${AUTO_READ_CHANNEL}, and ${VERSION_CODE_VARIABLE} is validated.`,
+      );
     }
   }
 } catch (error) {

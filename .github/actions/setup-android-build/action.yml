@@ -1,0 +1,36 @@
+name: Set up the Android build toolchain
+description: >
+  Installs the Android SDK packages a Gradle build of this app needs on a
+  GitHub-hosted runner: the NDK and build-tools versions React Native pins, and
+  the CMake the Android Gradle plugin defaults to. Run it after setup-node,
+  which installs react-native and with it the version file read here.
+
+runs:
+  using: composite
+  steps:
+    # The runner image ships its own default NDK and only newer CMakes. The
+    # Android Gradle plugin picks the NDK by `android.ndkVersion` from
+    # ANDROID_HOME and ignores ANDROID_NDK_HOME, so installing the pinned one
+    # is enough. CMake 3.22.1 is the plugin's default (AGP 8.12,
+    # `CMakeVersion.DEFAULT`); no native library here asks for another.
+    - name: Install the NDK, CMake and build-tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        versions=node_modules/react-native/gradle/libs.versions.toml
+        read_version() { sed -n -E "s/^$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$versions"; }
+        ndk=$(read_version ndkVersion)
+        build_tools=$(read_version buildTools)
+        if [ -z "$ndk" ] || [ -z "$build_tools" ]; then
+          echo "::error::Could not read ndkVersion and buildTools from $versions."
+          exit 1
+        fi
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+          "ndk;$ndk" "cmake;3.22.1" "build-tools;$build_tools" > /dev/null
+        for package in "ndk/$ndk" cmake/3.22.1 "build-tools/$build_tools"; do
+          if [ ! -d "$ANDROID_HOME/$package" ]; then
+            echo "::error::$package is not installed under ANDROID_HOME."
+            exit 1
+          fi
+        done
+        echo "Android toolchain: NDK $ndk, CMake 3.22.1, build-tools $build_tools."

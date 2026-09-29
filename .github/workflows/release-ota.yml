@@ -2,7 +2,9 @@ name: Release OTA update
 
 # Publishes the JavaScript bundle of a release to the EAS `production` channel,
 # so installed apps pick it up on their next launch instead of waiting for the
-# user to notice a new APK on the Releases page.
+# user to notice a new APK on the Releases page. A second leg publishes the
+# same commit, built with OTP_SMS_AUTOREAD=1, to `production-sms` for the SMS
+# APK that release-apk-sms.yml attaches.
 #
 # This runs unconditionally on every release. `runtimeVersion` uses the
 # `fingerprint` policy, which means the runtime id only moves when native code
@@ -55,9 +57,23 @@ jobs:
       tag: ${{ inputs.tag }}
 
   publish-ota:
-    name: Publish over-the-air update
+    name: Publish over-the-air update (${{ matrix.channel }})
     needs: verify
     runs-on: ubuntu-latest
+    strategy:
+      # Each leg feeds its own channel, so one failing must not cancel the other.
+      fail-fast: false
+      matrix:
+        include:
+          - channel: production
+            platform: all
+            autoread: ''
+          # The SMS APK (release-apk-sms.yml) is Android-only and listens on
+          # its own channel; its runtime is the fingerprint of the config with
+          # OTP_SMS_AUTOREAD=1, so only an update built the same way matches.
+          - channel: production-sms
+            platform: android
+            autoread: '1'
     steps:
       - name: Gate on EXPO_TOKEN
         id: guard
@@ -87,12 +103,19 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         name: Point the bundle at this account's update server
         # `updates.url` is derived from the committed project id rather than
-        # committed itself, so the two cannot drift apart. Idempotent.
+        # committed itself, so the two cannot drift apart. Idempotent. Run
+        # without the SMS flag on both legs: this writes the resolved
+        # `updates` into app.json, and the flag's channel header must not
+        # land there.
         run: eas update:configure --platform android --non-interactive
       - if: steps.guard.outputs.run == 'true'
-        name: Publish to the production channel
+        name: Publish to the ${{ matrix.channel }} channel
         env:
           RELEASE_TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ matrix.channel }}
+          PLATFORM: ${{ matrix.platform }}
+          # Empty on the production leg, which app.config.ts treats as unset.
+          OTP_SMS_AUTOREAD: ${{ matrix.autoread }}
         run: |
-          eas update --channel production --message "$RELEASE_TAG" \
+          eas update --channel "$CHANNEL" --platform "$PLATFORM" --message "$RELEASE_TAG" \
             --environment production --non-interactive

@@ -131,7 +131,10 @@ jobs:
         # overwritten and the gate would fail again next time. Excluded here
         # rather than disabling MD012 in .markdownlint.jsonc, which would drop
         # the rule for the hand-written docs as well.
-        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        # Pinned to an untagged main commit: v24.2.0 bundles markdownlint-cli2
+        # 0.23.2, and `npm run lint:md` needs 0.23.3 for the smol-toml fix
+        # (GHSA-7w5x-hrqm-74c2). Move to the first release that bundles 0.23.3.
+        uses: DavidAnson/markdownlint-cli2-action@63bcb6427c9446dfcbcb0c92a1d9bd4323dec58a # v24.2.0-18-g63bcb64 (markdownlint-cli2 0.23.3)
         with:
           globs: |
             **/*.md

@@ -6,6 +6,13 @@ and dismissing the alerts with a documented, evidence-based reason — no fixed
 release exists upstream (advisory `remediation: null`, latest 2.0.2 still in the
 affected range, project dormant since Apr 2025).
 
+> **Superseded.** Metro 0.84.6 replaced `image-size` with its own parser
+> (`metro/src/lib/imageSize.js`), which has no ICNS or JXL support. The package
+> left the dependency tree, so the patch file, `patch-package` and the
+> `postinstall` script were removed. The two advisories were re-raised as
+> Dependabot #30 and #31 and are closed by that removal. This file is kept as a
+> record of the interim mitigation.
+
 ## For Future Agents
 
 As work proceeds: mark checkboxes `- [x]` as items complete; when a phase is done,

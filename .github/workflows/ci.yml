@@ -92,7 +92,7 @@ jobs:
   # This job exists to make that diagnosis reachable. It installs with
   # --legacy-peer-deps so an unsatisfiable peer cannot silence the check, and
   # with --ignore-scripts because reading declared versions needs no
-  # postinstall (the full scripted install still happens in `build`). It
+  # lifecycle scripts (the full scripted install still happens in `build`). It
   # deliberately does not use ./.github/actions/setup-node, whose lockfile-exact
   # `npm ci` is the very step that dies.
   expo-pins:

@@ -1,0 +1,76 @@
+name: SMS APK check
+
+# Builds the SMS auto-read APK on a pull request, the way release-apk-sms.yml
+# builds it on a release, so a change that breaks the Gradle build on a GitHub
+# runner fails here rather than on release day.
+#
+# Separate from the release workflow on purpose: this one has no Environment,
+# no write permission and no secret, so fork and Dependabot pull requests run
+# it exactly as others do. It signs with a key made for this run alone and
+# uploads nothing.
+#
+# Only the inputs of prebuild and Gradle trigger it. A JavaScript-only change
+# is already bundled for both platforms by ci.yml on every pull request.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app.config.ts'
+      - 'app.json'
+      - 'fingerprint.config.js'
+      - 'metro.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'patches/**'
+      - 'modules/**'
+      - 'assets/**'
+      - 'scripts/build-sms-apk.mjs'
+      - '.github/actions/**'
+      - '.github/workflows/sms-apk-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sms-apk-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# `shell: bash` adds `-o pipefail`, which the implicit default does not.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-apk-sms:
+    name: Build the SMS APK (Gradle on this runner)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-android-build
+      - name: Build with a throwaway key
+        # There is no release APK to match here, so --self-reference takes the
+        # signer from this key, the versionName from the app config and the
+        # versionCode from ANDROID_VERSION_CODE. The password is made in this
+        # step and reaches keytool and the script by variable name only.
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/check.keystore
+          ANDROID_KEY_ALIAS: sms-apk-check
+          ANDROID_VERSION_CODE: '1'
+        run: |
+          ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 16)
+          ANDROID_KEY_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+          export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD
+          keytool -genkeypair -keystore "$ANDROID_KEYSTORE_PATH" -storetype PKCS12 \
+            -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 \
+            -dname 'CN=SMS APK check' \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          node scripts/build-sms-apk.mjs --self-reference \
+            --out "$RUNNER_TEMP/israeli-bank-importer.sms.apk"
+      - name: Remove the throwaway key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/check.keystore"

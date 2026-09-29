@@ -20,9 +20,14 @@ import { useAuth } from '../auth/AuthContext';
 import { TopBanner, type TopBannerIcon } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { resolveOtaState, resolveUpdatePrompt, type UpdatePrompt } from '../lib/otaUpdate';
-import { type AvailableRelease, fetchLatestRelease } from '../lib/releaseCheck';
+import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
+import { apkAssetFor, type AvailableRelease, fetchLatestRelease } from '../lib/releaseCheck';
 
-/** The version bundled into the running binary. */
+/**
+ * The version of the running update. `Constants.expoConfig` is read from the
+ * update's manifest, and versions take no part in the runtime fingerprint, so
+ * after an over-the-air update this can be newer than the installed binary.
+ */
 const RUNNING_VERSION = Constants.expoConfig?.version ?? '0.0.0';
 
 /** Copy for each prompt, keyed by what the tap will do. */
@@ -45,6 +50,21 @@ const COPY = {
 >;
 
 /**
+ * What the download prompt says about installing a release.
+ *
+ * The SMS auto-read build cannot be installed on the phone: Play Protect
+ * refuses any sideloaded app that declares an SMS permission. So it says how
+ * to install from a computer instead.
+ * @param version - The release version.
+ * @returns The detail line.
+ */
+function downloadDetail(version: string): string {
+  return isAutoReadBuild()
+    ? `Version ${version} is ready. Install it from a computer: adb install -r.`
+    : `Version ${version} is ready to install.`;
+}
+
+/**
  * Looks up the newest installable build once per launch.
  *
  * Only Android has a sideload path, and the unauthenticated GitHub API allows
@@ -59,7 +79,7 @@ function useLatestRelease(): AvailableRelease | null {
       return;
     }
     let active = true;
-    void fetchLatestRelease(RUNNING_VERSION).then((found) => {
+    void fetchLatestRelease(RUNNING_VERSION, apkAssetFor(isAutoReadBuild())).then((found) => {
       if (active) {
         setRelease(found);
       }
@@ -90,9 +110,7 @@ export function UpdateBanner(): ReactElement | null {
 
   const copy = COPY[prompt];
   const detail =
-    prompt === 'download' && release !== null
-      ? `Version ${release.version} is ready to install.`
-      : copy.detail;
+    prompt === 'download' && release !== null ? downloadDetail(release.version) : copy.detail;
 
   const onPress = (): void => {
     haptics.medium();

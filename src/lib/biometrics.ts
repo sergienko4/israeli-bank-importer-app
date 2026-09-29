@@ -46,8 +46,9 @@ export async function authenticateBiometric(reason: string): Promise<BiometricAu
       return { status: 'unsupported' };
     }
     return { status: 'failed', error: result.error };
-  } catch (error: unknown) {
-    void error;
+  } catch {
+    // Fail closed. A thrown value is not a LocalAuthentication error code, so
+    // `error` stays unset rather than carrying an untyped value.
     return { status: 'failed' };
   }
 }

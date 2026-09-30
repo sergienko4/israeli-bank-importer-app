@@ -57,9 +57,8 @@ const COPY = {
 /**
  * What the download prompt says about installing a release.
  *
- * The SMS auto-read build cannot be installed on the phone: Play Protect
- * refuses any sideloaded app that declares an SMS permission. So it says how
- * to install from a computer instead.
+ * Play Protect blocks browser and files-app installation of the SMS build on
+ * affected devices, so this gives every user the consistent ADB path.
  * @param version - The release version.
  * @returns The detail line.
  */

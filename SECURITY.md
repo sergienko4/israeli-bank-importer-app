@@ -34,15 +34,17 @@ the importer you point it at. Relevant concerns include:
   anywhere. Automatic submission is opt-in, bounded to one send per request, and
   cancellable.
 - Opt-in **auto-read** trades that dialog for zero interaction and is the one
-  path that uses `RECEIVE_SMS`. It is left out of the standard APK — Play Protect
-  refuses to install a sideloaded app that declares an SMS permission. Each
-  release also carries a separate SMS APK, `israeli-bank-importer.sms.apk`, built
-  with `OTP_SMS_AUTOREAD=1`, which alone carries the permission, receiver and
-  service; it is installed over `adb` and can never be installed by tapping it.
-  It is signed with the same key as the standard APK and must match its version,
-  so the two can replace each other. Even in that build it is a
-  runtime permission: nothing is granted until the user turns the switch on and
-  approves Android's dialog, and the receiver is inert until then.
+  path that uses `RECEIVE_SMS`. It is left out of the standard APK because Play
+  Protect's enhanced fraud protection blocks internet-sideloaded apps with that
+  permission on affected devices with Google Play services. Each release also
+  carries a separate SMS APK, `israeli-bank-importer.sms.apk`, built with
+  `OTP_SMS_AUTOREAD=1`, which alone carries the permission, receiver and service;
+  it is installed over `adb`, including on affected devices where tapping a
+  browser or files-app download is blocked. It is signed with the same key as
+  the standard APK and must match its version, so the two can replace each
+  other. Even in that build, it remains a runtime permission: nothing is granted
+  until the user turns the switch on and approves Android's dialog, and the
+  receiver is inert until then.
   Reports about it are in scope, in particular any way to make its receiver act
   on a message while the user has not opted in, to make it submit while no
   scrape is waiting for a code, or to reach it from another app.

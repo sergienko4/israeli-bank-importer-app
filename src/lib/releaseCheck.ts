@@ -42,8 +42,9 @@ export const SMS_APK_INSTALL_COMMAND = `adb install -r ${SMS_APK_ASSET}`;
 
 /**
  * The release asset a build installs from. A standard build is never offered
- * the SMS package, which Play Protect refuses to install on the device, and an
- * SMS build is never offered the standard package, which would drop auto-read.
+ * the SMS package, whose internet-sideloaded install Play Protect may block,
+ * and an SMS build is never offered the standard package, which would drop
+ * auto-read.
  * @param autoRead - Whether the running build is the SMS auto-read build.
  * @returns The asset name.
  */

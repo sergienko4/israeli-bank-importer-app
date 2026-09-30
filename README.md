@@ -97,9 +97,9 @@ of submitting a wrong code is a bank-side attempt, and those run out.
   filled code send itself. It then sends after a three-second countdown you can
   cancel, at most once per request.
 - **Zero-touch capture is not in the standard APK.** It is the only part of this
-  that needs an SMS permission, and that permission stops Android installing an
-  APK from the phone. Each release carries it as a second APK, installed from a
-  computer — see below.
+  that needs an SMS permission. On affected devices, Play Protect blocks an APK
+  with that permission when it comes from a browser or files app. Each release
+  carries it as a second APK, installed over ADB — see below.
 
 ### Zero-touch capture
 
@@ -111,20 +111,23 @@ the app is closed — no dialog, no tap.
 That is a different privacy bargain, so it comes as a separate APK that you
 choose to install.
 
-**The standard APK does not include it.** Google Play Protect's enhanced fraud
-protection refuses to install a sideloaded app that declares an SMS permission,
-and offers no way past the warning, so an APK that declared `RECEIVE_SMS` could
-not be installed by tapping it at all. The feature's code is still here and
-still tested; only the manifest declaration is withheld. With the standard APK
-the app simply has to be on screen when the code arrives, which is what
-everything above covers.
+**The standard APK does not include it.** On Android devices with Google Play
+services, Google Play Protect's
+[enhanced fraud protection](https://developers.google.com/android/play-protect/warning-dev-guidance)
+blocks apps from internet-sideloading sources such as browsers and file managers
+when they declare `RECEIVE_SMS`; Google says this protection is active in select
+markets. On affected devices, tapping the downloaded SMS APK cannot install it.
+The feature's code is still here and still tested; only the manifest declaration
+is withheld. With the standard APK the app simply has to be on screen when the
+code arrives, which is what everything above covers.
 
 **Each release also carries `israeli-bank-importer.sms.apk`, which does
 include it.** It is the same app with the same version and signing key, plus the
 permission, so it installs over the standard APK and keeps your pairing and
-settings. Download it from the release and install it over `adb`, with USB
-debugging on. `adb` does not consult Play Protect, which is the whole reason
-this APK is installable at all:
+settings. Install [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools),
+add its directory to `PATH`, enable USB debugging, download the SMS APK, and
+open a terminal in the directory containing it. Then install it over ADB, which
+also works when Play Protect blocks the browser or files-app installation path:
 
 ```sh
 adb install -r israeli-bank-importer.sms.apk
@@ -308,11 +311,11 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 1. Open the latest release and download `israeli-bank-importer.apk` (if no APK
    asset is attached, the build is still in progress or was skipped — check back
    or use the dev build). The release also carries
-   `israeli-bank-importer.sms.apk`, which adds zero-touch SMS capture and has to
-   be installed from a computer — see [Zero-touch capture](#zero-touch-capture).
-2. On your phone, allow installing from your browser or files app
-   (Settings → Apps → Special access → Install unknown apps).
-3. Open the APK to install, then point the app at your importer's portal.
+   `israeli-bank-importer.sms.apk`, which adds zero-touch SMS capture and uses
+   the ADB installation steps in [Zero-touch capture](#zero-touch-capture).
+2. For the standard APK, allow installing from your browser or files app
+   (Settings → Apps → Special access → Install unknown apps), then open it.
+3. Point the app at your importer's portal.
 
 You only do this once. From then on the app updates itself — see
 [Staying up to date](#staying-up-to-date).
@@ -344,8 +347,8 @@ A sideloaded app gets no store to update it, so the app looks after itself.
   a native module, so it reaches you as a new APK rather than as an update.
 - **The SMS APK** gets both the same way, from its own `production-sms` update
   channel. Its **Download** banner links to the new SMS APK and asks you to
-  install it from a computer, because Play Protect will not install it on the
-  phone.
+  install it from a computer. That ADB path works on affected devices where
+  Play Protect blocks installation from a browser or files app.
 
 Both checks are silent when they find nothing, and every failure — offline, rate
 limited, malformed response — is treated as "no update" rather than an error the
@@ -396,9 +399,10 @@ user cannot act on.
   patch and a breaking change bumps the minor, so the version stays in the `0.x`
   lane until the app is declared stable
   (`bump-patch-for-minor-pre-major` + `bump-minor-pre-major`).
-- **No store submission**: releases are distributed as the APK attached to the
-  GitHub Release. Nothing in this repository builds or submits a store binary,
-  so no Apple Developer or Google Play account is required to cut a release.
+- **No store submission**: releases are distributed as the two APKs attached to
+  the GitHub Release. Nothing in this repository builds or submits a store
+  binary, so no Apple Developer or Google Play account is required to cut a
+  release.
 - Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
   stays green without them.
 
@@ -425,9 +429,9 @@ user cannot act on.
 
 ## Releasing a beta
 
-The release pipeline is already wired (`release-please` → tag → APK attached to
-the release). To cut device builds and distribute a beta, one-time setup is
-needed:
+The release pipeline is already wired (`release-please` → tag → both APKs
+attached to the release). To cut device builds and distribute a beta, one-time
+setup is needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
    secret (Settings → Secrets and variables → Actions) — this unlocks the APK

@@ -14,20 +14,25 @@
  *
  * - Every caller checks the user's two capture switches first, so nothing here
  *   runs for a user who has not opted in.
- * - The renewed pair is saved already expired. The rotated refresh token has to
- *   be stored, because the one it replaced is spent, but the access token stays
- *   in memory: the screen reads the saved pair as expired and asks for an
- *   unlock before it uses anything, exactly as it did before.
+ * - The renewed pair is saved with its access token withheld and already
+ *   expired. The rotated refresh token has to be stored, because the one it
+ *   replaced is spent, but the access token stays in memory: the screen reads
+ *   the saved pair as expired and asks for an unlock, and a cancelled unlock
+ *   leaves it with nothing to send.
  */
 import { type AppTokens, refreshTokens } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { toSession } from '../auth/appSession';
 import { type Connection, loadConnection, saveConnection } from '../auth/connectionStore';
 import { withRefreshLock } from '../auth/refreshLock';
+import { processLedger, type TokenLedger } from '../auth/tokenLedger';
 import { TASK_TIMEOUT_MS } from './otpDeadline';
 
 /** Saved in place of a background renewal's real expiry, so the screen never uses it unprompted. */
 export const SAVED_EXPIRED = 0;
+
+/** Saved in place of a background renewal's access token, so a cancelled unlock sends nothing. */
+export const WITHHELD_ACCESS = '';
 
 /** What an unattended renewal needs, injected so it can be tested without a device. */
 export interface UnattendedSessionPorts {
@@ -39,18 +44,8 @@ export interface UnattendedSessionPorts {
   readonly refresh: (baseUrl: string, refreshToken: string) => Promise<AppTokens>;
   /** The current time, injected so expiry is testable. */
   readonly now: () => number;
-}
-
-/** A pair this process renewed, remembered with the refresh tokens it spent. */
-interface Renewal {
-  /** The pair the portal issued, with its real expiry. */
-  readonly pair: Connection;
-  /**
-   * Every refresh token this process presented since storage last held one of
-   * its own. Saves can fail more than once in a row, and storage then still
-   * holds a token retired several renewals ago.
-   */
-  readonly spent: ReadonlySet<string>;
+  /** The record of renewals this process shares with the screen. */
+  readonly ledger: TokenLedger;
 }
 
 /**
@@ -60,38 +55,28 @@ interface Renewal {
  * is renewed, since a token that expired mid-task would turn a code the importer
  * is waiting for into a 401.
  *
- * The pair renewed here is remembered for the life of the process. The saved
- * copy reads as expired, so without that every retry of one capture would spend
- * another refresh token. It is only used while storage still holds its refresh
- * token — or one this process already spent, when saves failed — so a later
- * renewal by the screen always wins.
+ * The pair renewed here is kept in the process ledger, which the screen shares.
+ * The saved copy is withheld, so without the ledger every retry of one capture
+ * would spend another refresh token, and a failed save would leave storage
+ * naming a token the portal has already retired.
  *
  * Runs under the refresh lock, because the screen spends the same single-use
  * refresh token and a second presentation ends the whole session.
  *
- * @param ports - The injected storage, portal, and clock.
+ * @param ports - The injected storage, portal, clock, and ledger.
  * @returns A loader resolving to a usable session, or `null` when unpaired.
  */
 export function createUnattendedSession(
   ports: UnattendedSessionPorts,
 ): () => Promise<Session | null> {
-  let renewal: Renewal | null = null;
-
-  const newest = (stored: Connection): Connection => {
-    if (renewal?.pair.baseUrl !== stored.baseUrl) return stored;
-    const current =
-      stored.refreshToken === renewal.pair.refreshToken || renewal.spent.has(stored.refreshToken);
-    return current ? renewal.pair : stored;
-  };
-
   return () =>
     withRefreshLock(async () => {
       const stored = await ports.load();
       if (stored === null) {
-        renewal = null;
+        ports.ledger.forget();
         return null;
       }
-      const pair = newest(stored);
+      const pair = ports.ledger.current(stored);
       if (pair.expiresAt - ports.now() > TASK_TIMEOUT_MS) return toSession(pair);
 
       const tokens = await ports.refresh(pair.baseUrl, pair.refreshToken);
@@ -101,13 +86,11 @@ export function createUnattendedSession(
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
       };
-      const spent = new Set(pair === renewal?.pair ? renewal.spent : []);
-      spent.add(pair.refreshToken);
-      renewal = { pair: next, spent };
+      ports.ledger.record(pair, next);
       try {
-        await ports.save({ ...next, expiresAt: SAVED_EXPIRED });
+        await ports.save({ ...next, accessToken: WITHHELD_ACCESS, expiresAt: SAVED_EXPIRED });
       } catch {
-        // The presented token is already spent. The pair is kept in memory for
+        // The presented token is already spent. The ledger keeps the pair for
         // this process, which is the only copy of a refresh token still valid.
       }
       return toSession(next);
@@ -126,4 +109,5 @@ export const loadUnattendedSession: () => Promise<Session | null> = createUnatte
   save: saveConnection,
   refresh: refreshTokens,
   now: Date.now,
+  ledger: processLedger,
 });

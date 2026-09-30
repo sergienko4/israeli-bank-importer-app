@@ -207,10 +207,12 @@ within ten seconds — the usual case — shows nothing; a slower one shows a qu
 **Opening the app once is enough.** The importer's access token lasts minutes,
 so by the time a code arrives it has usually expired. On screen, renewing it
 asks for your fingerprint, but a closed app cannot show that prompt, so the task
-renews it without one. The renewed token is stored already expired, so the next
-time you open the app it still asks for your fingerprint before it shows
-anything. The renewal spends the device's refresh token, so once that has lapsed
-or the device is unpaired, codes go back to Telegram until you sign in again.
+renews it without one. The task keeps the new access token to itself and stores
+only the refresh token, marked expired, so the next time you open the app it
+still asks for your fingerprint before it shows anything — and cancelling that
+prompt leaves it nothing to send. The renewal spends the device's refresh token,
+so once that has lapsed or the device is unpaired, codes go back to Telegram
+until you sign in again.
 
 Because banks usually send the code *before* the importer has finished asking
 for it, that task does not give up on its first look. It keeps checking for about

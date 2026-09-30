@@ -6,13 +6,14 @@ name: Release SMS APK
 #
 # It is the standard APK plus the RECEIVE_SMS permission, with the same
 # version, versionCode and signing key, and it follows the `production-sms`
-# update channel. Play Protect refuses to install a sideloaded app that
-# declares an SMS permission, so this one is installed over adb.
+# update channel. On affected devices, Play Protect blocks its browser or
+# files-app install, so ADB is the consistent installation path.
 #
 # scripts/build-sms-apk.mjs takes the version and signer from the standard APK,
 # refuses native mismatches, and reports the SMS APK's runtime. A later workflow
 # step uses find-matching-update.mjs to require an update with that runtime, tag
-# and commit on `production-sms`. So this runs after both APK and OTA publishers.
+# and commit on the branch currently mapped to `production-sms`. So this runs
+# after both APK and OTA publishers.
 #
 # Reusable rather than a `release: published` listener for the same reason as
 # release-apk.yml: releases created with GITHUB_TOKEN do not start new runs.
@@ -178,10 +179,11 @@ jobs:
           fi
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
       - if: steps.guard.outputs.run == 'true'
-        name: Check the matching update is on production-sms
+        name: Check the matching update serves production-sms
         # An SMS APK without its update would run this release's native code
-        # with no way to receive later JavaScript fixes. The helper pages
-        # through every group and reads each one in full for its commit.
+        # with no way to receive later JavaScript fixes. The helper resolves the
+        # channel's current branch, then pages through every group and reads
+        # each one in full for its commit.
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           BUILD_SHA: ${{ needs.verify.outputs.sha }}

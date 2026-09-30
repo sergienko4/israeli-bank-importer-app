@@ -40,7 +40,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
-import { findMatchingUpdate } from './find-matching-update.mjs';
+import { branchFromChannelView, findMatchingUpdate } from './find-matching-update.mjs';
 
 /** The repository root, whatever directory the script is started from. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -399,14 +399,14 @@ function checkChannel(workflows) {
       publish[0].run.includes('--channel "$CHANNEL"'),
     `${OTA_WORKFLOW} should publish once, with --channel "$CHANNEL" and CHANNEL and OTP_SMS_AUTOREAD from the matrix`,
   );
-  // eas update creates a missing channel with a branch of the same name, which
-  // is the branch the SMS workflow's lookup helper reads.
+  // The lookup must follow the channel embedded in the APK. EAS supports
+  // remapping that channel to a differently named branch.
   const lookup = readText(UPDATE_LOOKUP);
-  const lookupBranch = lookup === undefined ? undefined : privateConstantOf(lookup, 'BRANCH');
+  const lookupChannel = lookup === undefined ? undefined : privateConstantOf(lookup, 'CHANNEL');
   check(
     rule,
-    lookupBranch === smsChannel,
-    `${UPDATE_LOOKUP} should look the update up on branch ${smsChannel}, found ${JSON.stringify(lookupBranch)}`,
+    lookupChannel === smsChannel,
+    `${UPDATE_LOOKUP} should resolve channel ${smsChannel}, found ${JSON.stringify(lookupChannel)}`,
   );
 }
 
@@ -764,17 +764,41 @@ function checkUpdateLookup(workflows) {
   };
   const firstPage = Array.from({ length: 50 }, (_, index) => `old-group-${index}`);
   const matchingGroup = 'matching-group-after-first-page';
+  const mappedBranch = 'sms-release-v2';
+  check(
+    rule,
+    branchFromChannelView({
+      currentPage: { updateBranches: [{ name: mappedBranch }] },
+    }) === mappedBranch,
+    `${UPDATE_LOOKUP} should read the branch currently mapped to the SMS channel`,
+  );
+  let rolloutRejected = false;
+  try {
+    branchFromChannelView({
+      currentPage: {
+        updateBranches: [{ name: 'sms-stable' }, { name: 'sms-rollout' }],
+      },
+    });
+  } catch (error) {
+    rolloutRejected = error instanceof Error && error.message.includes('expected exactly one');
+  }
+  check(
+    rule,
+    rolloutRejected,
+    `${UPDATE_LOOKUP} should fail closed while a channel maps to multiple rollout branches`,
+  );
   const requests = [];
   const found = findMatchingUpdate(identity, {
-    listGroups: (offset, limit) => {
-      requests.push([offset, limit]);
+    resolveBranch: () => mappedBranch,
+    listGroups: (branch, offset, limit) => {
+      requests.push([branch, offset, limit]);
       return offset === 0 ? firstPage : [matchingGroup];
     },
     readGroup: (group) =>
       group === matchingGroup
         ? [
             {
-              branch: 'production-sms',
+              branch: mappedBranch,
               platform: 'android',
               runtimeVersion: identity.runtime,
               message: identity.releaseTag,
@@ -785,26 +809,30 @@ function checkUpdateLookup(workflows) {
   });
   check(
     rule,
-    found === matchingGroup &&
+    found.branch === mappedBranch &&
+      found.group === matchingGroup &&
       JSON.stringify(requests) ===
         JSON.stringify([
-          [0, 50],
-          [50, 50],
+          [mappedBranch, 0, 50],
+          [mappedBranch, 50, 50],
         ]),
-    `${UPDATE_LOOKUP} should find a matching group after a full first page`,
+    `${UPDATE_LOOKUP} should follow the channel mapping and find a match after a full first page`,
   );
 
   const exhaustedRequests = [];
   const exhausted = findMatchingUpdate(identity, {
-    listGroups: (offset, limit) => {
-      exhaustedRequests.push([offset, limit]);
+    resolveBranch: () => mappedBranch,
+    listGroups: (branch, offset, limit) => {
+      exhaustedRequests.push([branch, offset, limit]);
       return firstPage.slice(0, 49);
     },
     readGroup: () => [],
   });
   check(
     rule,
-    exhausted === null && JSON.stringify(exhaustedRequests) === JSON.stringify([[0, 50]]),
+    exhausted.branch === mappedBranch &&
+      exhausted.group === null &&
+      JSON.stringify(exhaustedRequests) === JSON.stringify([[mappedBranch, 0, 50]]),
     `${UPDATE_LOOKUP} should stop without another request after a short final page`,
   );
 }

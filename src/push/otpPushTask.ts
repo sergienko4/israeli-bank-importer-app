@@ -16,11 +16,10 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
-import { getPendingOtp } from '../api/importerClient';
-import { loadConnection } from '../auth/connectionStore';
+import { getPendingOtpUnattended } from '../api/importerClient';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
-import { backgroundSession } from '../lib/otpBackgroundSession';
+import { loadUnattendedSession } from '../lib/otpBackgroundSession';
 import { TASK_BUDGET_MS } from '../lib/otpDeadline';
 import { wakeAutoReadWindow } from '../lib/otpPushWake';
 import { drainHeldMessages } from '../lib/otpStashRunner';
@@ -39,8 +38,8 @@ export const OTP_PUSH_TASK_NAME = 'OtpPushWake';
  */
 async function handlePush(): Promise<void> {
   const outcome = await wakeAutoReadWindow({
-    loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
-    getPending: getPendingOtp,
+    loadSession: loadUnattendedSession,
+    getPending: getPendingOtpUnattended,
     syncWindow: syncAutoReadWindow,
     now: Date.now,
   });

@@ -9,8 +9,14 @@
 import { refreshTokens, SessionEndedError } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { authenticateBiometric } from '../lib/biometrics';
-import { type Connection, loadConnection, saveConnection } from './connectionStore';
+import {
+  clearConnection,
+  type Connection,
+  loadConnection,
+  saveConnection,
+} from './connectionStore';
 import { withRefreshLock } from './refreshLock';
+import { processLedger } from './tokenLedger';
 
 /**
  * How long before expiry a token is refreshed rather than used.
@@ -19,6 +25,9 @@ import { withRefreshLock } from './refreshLock';
  * arrives just after it, which would otherwise fail with a 401 the user sees.
  */
 export const REFRESH_MARGIN_MS = 120_000;
+
+/** Why a renewal ended the connection when the device had already been unpaired. */
+export const NO_LONGER_PAIRED = 'This device was disconnected. Connect again to continue.';
 
 /** What happened when the app tried to renew a connection. */
 export type RefreshOutcome =
@@ -85,27 +94,34 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
  * Reads the pair to renew from storage rather than from the screen's copy.
  *
  * The background capture renews on its own and saves the pair it was issued,
- * which retires the refresh token the screen loaded at launch. Presenting that
- * retired token would look like a stolen copy and end the session, so the
- * stored pair wins whenever there is one.
- * @param connection - The screen's copy, used only when storage has none.
- * @returns The pair whose refresh token is still unspent.
+ * which retires the refresh token the screen loaded at launch, so the stored
+ * pair wins. An empty store means the device was unpaired while this renewal
+ * waited, and renewing would quietly pair it again.
+ * @param connection - The screen's copy, used only when storage cannot be read.
+ * @returns The stored pair, or `null` when the device is no longer paired.
  */
-async function latestStored(connection: Connection): Promise<Connection> {
+async function latestStored(connection: Connection): Promise<Connection | null> {
   try {
-    return (await loadConnection()) ?? connection;
+    return await loadConnection();
   } catch {
     return connection;
   }
 }
 
 /**
- * Spends the newest stored refresh token and saves the pair it buys.
+ * Spends the live refresh token and saves the pair it buys.
+ *
+ * Storage can lag behind when a save failed after the portal had rotated, so
+ * the process ledger decides which of this process's pairs is still live.
  * @param connection - The screen's copy of the connection.
  * @returns What happened, including the renewed connection on success.
  */
 async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
-  const current = await latestStored(connection);
+  const stored = await latestStored(connection);
+  if (stored === null) {
+    return { status: 'ended', message: NO_LONGER_PAIRED };
+  }
+  const current = processLedger.current(stored);
   let next: Connection;
   try {
     const tokens = await refreshTokens(current.baseUrl, current.refreshToken);
@@ -119,6 +135,7 @@ async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
     const message = error instanceof Error ? error.message : 'Could not reconnect. Try again.';
     return { status: endedBy(error), message };
   }
+  processLedger.record(current, next);
   try {
     await saveConnection(next);
   } catch {
@@ -127,4 +144,31 @@ async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
     // rather than replaying a token the portal has retired.
   }
   return { status: 'refreshed', connection: next };
+}
+
+/**
+ * Stores the pair a new sign-in was issued, replacing whatever was paired.
+ *
+ * Runs under the refresh lock, so a background renewal of the old pairing that
+ * is still in flight cannot save over the new one when it finishes.
+ * @param connection - The address and tokens the sign-in produced.
+ */
+export async function adoptConnection(connection: Connection): Promise<void> {
+  await withRefreshLock(async () => {
+    await saveConnection(connection);
+    processLedger.forget();
+  });
+}
+
+/**
+ * Removes the stored pairing.
+ *
+ * Runs under the refresh lock, so a renewal that is still in flight cannot save
+ * the pairing back after the user removed it.
+ */
+export async function dropConnection(): Promise<void> {
+  await withRefreshLock(async () => {
+    await clearConnection();
+    processLedger.forget();
+  });
 }

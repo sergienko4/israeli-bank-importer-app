@@ -5,14 +5,15 @@
  * second presentation, and a closed app renews with nobody there to sign in
  * again. So for any run of captures — clocks jumping ahead, retries that
  * overlap, saves that fail — the loader must never present a spent token, must
- * never hand back an expired one, and must never leave a renewed token in
- * storage that the screen could use without an unlock.
+ * never hand back an expired one, and must never leave a renewed access token
+ * in storage that the screen could send without an unlock.
  */
 import * as fc from 'fast-check';
 
 import type { AppTokens } from '../api/appTokens';
 import type { Connection } from '../auth/connectionStore';
-import { createUnattendedSession, SAVED_EXPIRED } from './otpBackgroundSession';
+import { createTokenLedger } from '../auth/tokenLedger';
+import { createUnattendedSession, SAVED_EXPIRED, WITHHELD_ACCESS } from './otpBackgroundSession';
 
 const START = 1_700_000_000_000;
 const BASE_URL = 'https://importer.example.ts.net';
@@ -63,7 +64,7 @@ function portal(now: () => number) {
 }
 
 describe('createUnattendedSession (property)', () => {
-  it('never replays a refresh token, returns a live token, and stores renewals expired', async () => {
+  it('never replays a refresh token, returns a live token, and stores renewals withheld', async () => {
     await fc.assert(
       fc.asyncProperty(initialLifeArb, fc.array(stepArb, { maxLength: 8 }), async (life, steps) => {
         let clock = START;
@@ -86,6 +87,7 @@ describe('createUnattendedSession (property)', () => {
           },
           refresh: importer.refresh,
           now,
+          ledger: createTokenLedger(),
         });
 
         const capture = async (step: Step): Promise<void> => {
@@ -103,7 +105,8 @@ describe('createUnattendedSession (property)', () => {
             const expiry = importer.accessExpiry.get(session?.token ?? '') ?? 0;
             expect(expiry).toBeGreaterThan(clock);
           }
-          if (stored.accessToken !== 'access-0') {
+          if (stored.refreshToken !== 'refresh-0') {
+            expect(stored.accessToken).toBe(WITHHELD_ACCESS);
             expect(stored.expiresAt).toBe(SAVED_EXPIRED);
           }
         };

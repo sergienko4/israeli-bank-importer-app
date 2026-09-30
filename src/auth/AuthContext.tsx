@@ -28,14 +28,14 @@ import {
 import { forgetHeldMessages } from '../lib/otpStashGate';
 import { getPushToken } from '../push/pushRegistration';
 import { signIn } from './appAuthFlow';
-import { isExpiring, refreshConnection, toSession } from './appSession';
 import {
-  clearConnection,
-  type Connection,
-  loadConnection,
-  migrateLegacySecrets,
-  saveConnection,
-} from './connectionStore';
+  adoptConnection,
+  dropConnection,
+  isExpiring,
+  refreshConnection,
+  toSession,
+} from './appSession';
+import { type Connection, loadConnection, migrateLegacySecrets } from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
 export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
@@ -122,7 +122,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
   }, []);
 
   const forget = useCallback(async (reason?: string) => {
-    await clearConnection();
+    await dropConnection();
     // Held messages were captured for an importer this app can no longer
     // reach, so nothing will ever be able to spend them.
     await forgetHeldMessages();
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
     };
-    await saveConnection(next);
+    await adoptConnection(next);
     setConnection(next);
     setSessionExpired(false);
     setEndedReason(null);

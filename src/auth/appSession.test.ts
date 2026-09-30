@@ -10,20 +10,40 @@
  */
 import { refreshTokens, SESSION_ENDED, SessionEndedError } from '../api/appTokens';
 import { authenticateBiometric } from '../lib/biometrics';
-import { isExpiring, REFRESH_MARGIN_MS, refreshConnection, toSession } from './appSession';
-import { type Connection, loadConnection, saveConnection } from './connectionStore';
+import {
+  adoptConnection,
+  dropConnection,
+  isExpiring,
+  NO_LONGER_PAIRED,
+  REFRESH_MARGIN_MS,
+  refreshConnection,
+  toSession,
+} from './appSession';
+import {
+  clearConnection,
+  type Connection,
+  loadConnection,
+  saveConnection,
+} from './connectionStore';
+import { withRefreshLock } from './refreshLock';
+import { processLedger } from './tokenLedger';
 
 jest.mock('../api/appTokens', () => ({
   ...jest.requireActual<Record<string, unknown>>('../api/appTokens'),
   refreshTokens: jest.fn(),
 }));
 jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
-jest.mock('./connectionStore', () => ({ loadConnection: jest.fn(), saveConnection: jest.fn() }));
+jest.mock('./connectionStore', () => ({
+  clearConnection: jest.fn(),
+  loadConnection: jest.fn(),
+  saveConnection: jest.fn(),
+}));
 
 const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
 const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authenticateBiometric>;
 const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
+const mockedClear = clearConnection as jest.MockedFunction<typeof clearConnection>;
 
 const CONNECTION: Connection = {
   baseUrl: 'https://importer.example.ts.net',
@@ -41,8 +61,11 @@ const ROTATED: Connection = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  processLedger.forget();
   mockedUnlock.mockResolvedValue({ status: 'success' });
   mockedLoad.mockResolvedValue(CONNECTION);
+  mockedSave.mockResolvedValue();
+  mockedClear.mockResolvedValue();
   mockedRefresh.mockResolvedValue({
     accessToken: 'access-2',
     refreshToken: 'refresh-2',
@@ -102,13 +125,84 @@ describe('refreshConnection when the user unlocks', () => {
     expect(mockedRefresh).not.toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
   });
 
-  it.each([
-    ['holds nothing', () => mockedLoad.mockResolvedValue(null)],
-    ['cannot be read', () => mockedLoad.mockRejectedValue(new Error('Keychain unavailable.'))],
-  ])('falls back to the screen copy when storage %s', async (_label, arrange) => {
-    arrange();
+  it('falls back to the screen copy when storage cannot be read', async () => {
+    mockedLoad.mockRejectedValue(new Error('Keychain unavailable.'));
     await refreshConnection(CONNECTION);
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
+  });
+
+  it('does not pair the device again once storage holds nothing', async () => {
+    // Disconnect ran while this renewal waited its turn; spending the screen's
+    // copy now would quietly restore the pairing the user just removed.
+    mockedLoad.mockResolvedValue(null);
+    const outcome = await refreshConnection(CONNECTION);
+    expect(outcome).toEqual({ status: 'ended', message: NO_LONGER_PAIRED });
+    expect(mockedRefresh).not.toHaveBeenCalled();
+    expect(mockedSave).not.toHaveBeenCalled();
+  });
+
+  it('renews from its own pair when its save failed, never replaying the spent token', async () => {
+    mockedSave.mockRejectedValueOnce(new Error('Keychain unavailable.'));
+    await refreshConnection(CONNECTION);
+    mockedRefresh.mockResolvedValueOnce({
+      accessToken: 'access-3',
+      refreshToken: 'refresh-3',
+      expiresAt: 2_000_001_800_000,
+    });
+    await refreshConnection(ROTATED);
+    expect(mockedRefresh.mock.calls.map(([, token]) => token)).toEqual(['refresh-1', 'refresh-2']);
+  });
+
+  it('renews from the background pair when the background could not save it', async () => {
+    const background: Connection = { ...ROTATED, refreshToken: 'refresh-background' };
+    processLedger.record(CONNECTION, background);
+    await refreshConnection(CONNECTION);
+    expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
+  });
+});
+
+describe('adoptConnection and dropConnection', () => {
+  it('stores a new sign-in and forgets renewals of the old pairing', async () => {
+    processLedger.record(CONNECTION, ROTATED);
+    const signedIn: Connection = { ...CONNECTION, refreshToken: 'refresh-signed-in' };
+    await adoptConnection(signedIn);
+    expect(mockedSave).toHaveBeenCalledWith(signedIn);
+    expect(processLedger.current(CONNECTION)).toEqual(CONNECTION);
+  });
+
+  it('removes the pairing and forgets renewals of it', async () => {
+    processLedger.record(CONNECTION, ROTATED);
+    await dropConnection();
+    expect(mockedClear).toHaveBeenCalledTimes(1);
+    expect(processLedger.current(CONNECTION)).toEqual(CONNECTION);
+  });
+
+  it.each([
+    ['sign-in', () => adoptConnection(CONNECTION)],
+    ['disconnect', () => dropConnection()],
+  ])('waits for a renewal in flight before a %s touches storage', async (_label, act) => {
+    const order: string[] = [];
+    let finish: () => void = () => undefined;
+    const renewal = withRefreshLock(async () => {
+      order.push('renewal:start');
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      order.push('renewal:saved');
+    });
+    mockedSave.mockImplementation(() => {
+      order.push('storage');
+      return Promise.resolve();
+    });
+    mockedClear.mockImplementation(() => {
+      order.push('storage');
+      return Promise.resolve();
+    });
+    const replaced = act();
+    await Promise.resolve();
+    finish();
+    await Promise.all([renewal, replaced]);
+    expect(order).toEqual(['renewal:start', 'renewal:saved', 'storage']);
   });
 });
 

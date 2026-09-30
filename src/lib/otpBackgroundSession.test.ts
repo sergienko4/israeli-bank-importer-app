@@ -8,7 +8,8 @@
  */
 import type { AppTokens } from '../api/appTokens';
 import type { Connection } from '../auth/connectionStore';
-import { createUnattendedSession, SAVED_EXPIRED } from './otpBackgroundSession';
+import { createTokenLedger } from '../auth/tokenLedger';
+import { createUnattendedSession, SAVED_EXPIRED, WITHHELD_ACCESS } from './otpBackgroundSession';
 import { TASK_TIMEOUT_MS } from './otpDeadline';
 
 const NOW = 1_700_000_000_000;
@@ -49,7 +50,13 @@ function harness(initial: Connection | null) {
     });
   });
   const load = jest.fn(() => Promise.resolve(stored));
-  const loader = createUnattendedSession({ load, save, refresh, now: () => clock });
+  const loader = createUnattendedSession({
+    load,
+    save,
+    refresh,
+    now: () => clock,
+    ledger: createTokenLedger(),
+  });
   return {
     loader,
     save,
@@ -89,12 +96,12 @@ describe('loadUnattendedSession', () => {
     await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
   });
 
-  it('saves the rotated pair already expired, so the screen still asks for an unlock', async () => {
+  it('saves the rotated pair withheld, so a cancelled unlock has nothing to send', async () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
     await h.loader();
     expect(h.stored()).toEqual({
       baseUrl: BASE_URL,
-      accessToken: 'access-renewed-1',
+      accessToken: WITHHELD_ACCESS,
       refreshToken: 'refresh-renewed-1',
       expiresAt: SAVED_EXPIRED,
     });

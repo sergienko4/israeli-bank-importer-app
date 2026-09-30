@@ -8,11 +8,10 @@
  */
 import { AppRegistry, Platform } from 'react-native';
 
-import { getPendingOtp, submitOtp } from '../api/importerClient';
-import { loadConnection } from '../auth/connectionStore';
+import { getPendingOtpUnattended, submitOtpUnattended } from '../api/importerClient';
 import { isAutoReadBuild } from './otpAutoReadPermission';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
-import { backgroundSession } from './otpBackgroundSession';
+import { loadUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage, type BackgroundSubmitOutcome } from './otpBackgroundSubmit';
 import { settleWithin, TASK_BUDGET_MS } from './otpDeadline';
 import { retryUntilAnswered } from './otpRetry';
@@ -40,8 +39,8 @@ export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
  * body once and dropping it would lose exactly the code this exists to catch,
  * and on that path nothing is holding a copy to try again from.
  *
- * The whole thing is bounded, because the calls underneath have no deadline of
- * their own and this runs with nobody watching. Returning is the only way this
+ * The whole thing is bounded as well as each request, because retries add up
+ * and this runs with nobody watching. Returning is the only way this
  * task ends tidily: React Native releases the wake lock when the task settles,
  * and Android tears the service down without that courtesy once its own timeout
  * passes. Abandoning a request that was never going to answer is the lesser of
@@ -85,9 +84,9 @@ async function capture(body: string | undefined, left: RemainingBudget): Promise
  */
 function submitBody(body: string): Promise<BackgroundSubmitOutcome> {
   return autoSubmitFromMessage(body, {
-    loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
-    getPending: getPendingOtp,
-    submit: submitOtp,
+    loadSession: loadUnattendedSession,
+    getPending: getPendingOtpUnattended,
+    submit: submitOtpUnattended,
     now: Date.now,
   });
 }

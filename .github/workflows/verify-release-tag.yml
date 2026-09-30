@@ -88,9 +88,11 @@ jobs:
             *) fail "Tag $RELEASE_TAG is not on main at $HEAD_SHA (compare status: $status)." ;;
           esac
 
-          # A release-please push builds the commit it tagged, as before. A
-          # dispatch builds the tag, not whatever main has moved on to.
-          if [ "$EVENT_NAME" = push ]; then build=$HEAD_SHA; else build=$sha; fi
-          is_sha "$build" || fail "The commit to build is not a commit SHA."
-          echo "Building $build for $RELEASE_TAG."
-          echo "sha=$build" >> "$GITHUB_OUTPUT"
+          # A release-please push may only build the tag created for that push.
+          # A reusable caller must not pair an older release tag with newer
+          # code merely because both commits are on main.
+          if [ "$EVENT_NAME" = push ] && [ "$sha" != "$HEAD_SHA" ]; then
+            fail "Tag $RELEASE_TAG does not point at push commit $HEAD_SHA."
+          fi
+          echo "Building $sha for $RELEASE_TAG."
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"

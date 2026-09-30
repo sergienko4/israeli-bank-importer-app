@@ -20,7 +20,9 @@
  *   3. provenance  - every workflow that takes a release tag builds only the
  *                    commit verify-release-tag.yml resolved it to;
  *   4. token       - every step that runs `gh` sets GH_TOKEN;
- *   5. isolation   - the pull-request build check can reach no secret.
+ *   5. isolation   - the pull-request build check can reach no secret;
+ *   6. orchestration - release-please calls the SMS build only after the
+ *                      standard APK and both OTA legs succeed.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -59,6 +61,9 @@ const SMS_WORKFLOW = 'release-apk-sms.yml';
 
 /** The workflow that publishes the updates. */
 const OTA_WORKFLOW = 'release-ota.yml';
+
+/** The workflow that creates a release and calls each publisher. */
+const RELEASE_WORKFLOW = 'release-please.yml';
 
 /** The pull-request build check, which must stay away from every secret. */
 const PR_CHECK = 'sms-apk-check.yml';
@@ -200,12 +205,13 @@ function checkNames(workflows) {
   if (standard === undefined || sms === undefined) {
     return;
   }
-  // Apps up to v0.2.12 take the first `.apk` asset, and the Releases API
-  // lists assets by name, so the standard APK must sort first either way.
+  // GitHub does not document release-asset ordering, so the SMS workflow
+  // verifies the actual API response after upload. Keep name sorting safe too
+  // as defense in depth for clients up to v0.2.12, which take the first APK.
   check(
     rule,
     standard < sms && standard.localeCompare(sms, 'en', { sensitivity: 'base' }) < 0,
-    `${standard} should sort before ${sms}, so older apps keep finding the standard APK first`,
+    `${standard} should sort before ${sms}, preserving the standard-first fallback`,
   );
 
   const standardRuns = runsOf(workflows.get(STANDARD_WORKFLOW)?.doc);
@@ -256,9 +262,10 @@ function checkNames(workflows) {
  */
 function publicConfig(flag) {
   const env = { ...process.env };
-  // Deleted rather than left alone, so a developer's exported value cannot
-  // change what is checked.
+  // Deleted rather than left alone, so a developer's exported build values
+  // cannot change what is checked.
   delete env.OTP_SMS_AUTOREAD;
+  delete env.ANDROID_VERSION_CODE;
   if (flag !== undefined) {
     env.OTP_SMS_AUTOREAD = flag;
   }
@@ -412,12 +419,18 @@ function checkProvenance(workflows) {
     const step = (verify.doc?.jobs?.[jobId]?.steps ?? []).find(
       (candidate) => candidate.id === stepId,
     );
+    const run = String(step?.run ?? '');
     check(
       rule,
       jobId !== undefined &&
         stepId !== undefined &&
-        /\bsha=[^\n]*>>\s*"\$GITHUB_OUTPUT"/u.test(String(step?.run ?? '')),
+        run.includes('echo "sha=$sha" >> "$GITHUB_OUTPUT"'),
       `${VERIFY} should map a step's sha= output through its job to on.workflow_call.outputs.sha`,
+    );
+    check(
+      rule,
+      run.includes('[ "$EVENT_NAME" = push ] && [ "$sha" != "$HEAD_SHA" ]'),
+      `${VERIFY} should refuse a push whose release tag does not point at github.sha`,
     );
   }
 
@@ -527,6 +540,71 @@ function checkIsolation(workflows) {
   );
 }
 
+/**
+ * Asserts rule 6: release-please calls the SMS build after its two inputs.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ */
+function checkOrchestration(workflows) {
+  const rule = 'orchestration';
+  const workflow = workflows.get(RELEASE_WORKFLOW);
+  check(rule, workflow !== undefined, `${WORKFLOWS}/${RELEASE_WORKFLOW} is missing`);
+  if (workflow === undefined) {
+    return;
+  }
+
+  const jobs = Object.fromEntries(jobsOf(workflow.doc));
+  check(
+    rule,
+    jobs.apk?.uses === `./${WORKFLOWS}/${STANDARD_WORKFLOW}`,
+    `${RELEASE_WORKFLOW} job apk should call ${STANDARD_WORKFLOW}`,
+  );
+  check(
+    rule,
+    jobs.ota?.uses === `./${WORKFLOWS}/${OTA_WORKFLOW}`,
+    `${RELEASE_WORKFLOW} job ota should call ${OTA_WORKFLOW}`,
+  );
+
+  const smsCalls = jobsOf(workflow.doc).filter(
+    ([, job]) => job.uses === `./${WORKFLOWS}/${SMS_WORKFLOW}`,
+  );
+  check(
+    rule,
+    smsCalls.length === 1,
+    `${RELEASE_WORKFLOW} should call ${SMS_WORKFLOW} exactly once`,
+  );
+  const sms = smsCalls[0]?.[1];
+  if (sms === undefined) {
+    return;
+  }
+
+  check(
+    rule,
+    JSON.stringify(needsOf(sms).sort()) === JSON.stringify(['apk', 'ota', 'release-please']),
+    `${RELEASE_WORKFLOW} SMS job should need release-please, apk and ota`,
+  );
+  check(
+    rule,
+    sms.if === "needs.release-please.outputs.release_created == 'true'",
+    `${RELEASE_WORKFLOW} SMS job should run only when release-please created a release`,
+  );
+  check(
+    rule,
+    sms.with?.tag === '${{ needs.release-please.outputs.tag_name }}',
+    `${RELEASE_WORKFLOW} SMS job should pass release-please's tag_name`,
+  );
+  check(
+    rule,
+    JSON.stringify(sms.permissions) === JSON.stringify({ contents: 'write' }),
+    `${RELEASE_WORKFLOW} SMS job should grant contents: write and nothing else`,
+  );
+  check(
+    rule,
+    JSON.stringify(sms.secrets) === JSON.stringify({ EXPO_TOKEN: '${{ secrets.EXPO_TOKEN }}' }),
+    `${RELEASE_WORKFLOW} SMS job should pass only EXPO_TOKEN`,
+  );
+}
+
 try {
   const workflows = loadWorkflows();
   checkNames(workflows);
@@ -534,6 +612,7 @@ try {
   checkProvenance(workflows);
   checkToken(workflows, loadActions());
   checkIsolation(workflows);
+  checkOrchestration(workflows);
 
   if (failures.length > 0) {
     console.error(
@@ -545,7 +624,7 @@ try {
   } else {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
-        'provenance, gh tokens and the pull-request check isolation all hold.',
+        'provenance, gh tokens, pull-request isolation and release orchestration all hold.',
     );
   }
 } catch (error) {

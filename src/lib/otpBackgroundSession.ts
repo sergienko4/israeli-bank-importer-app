@@ -41,12 +41,16 @@ export interface UnattendedSessionPorts {
   readonly now: () => number;
 }
 
-/** A pair this process renewed, remembered with the refresh token it spent. */
+/** A pair this process renewed, remembered with the refresh tokens it spent. */
 interface Renewal {
   /** The pair the portal issued, with its real expiry. */
   readonly pair: Connection;
-  /** The refresh token presented for it, which the portal has now retired. */
-  readonly spent: string;
+  /**
+   * Every refresh token this process presented since storage last held one of
+   * its own. Saves can fail more than once in a row, and storage then still
+   * holds a token retired several renewals ago.
+   */
+  readonly spent: ReadonlySet<string>;
 }
 
 /**
@@ -59,8 +63,8 @@ interface Renewal {
  * The pair renewed here is remembered for the life of the process. The saved
  * copy reads as expired, so without that every retry of one capture would spend
  * another refresh token. It is only used while storage still holds its refresh
- * token — or the one it replaced, when the save failed — so a later renewal by
- * the screen always wins.
+ * token — or one this process already spent, when saves failed — so a later
+ * renewal by the screen always wins.
  *
  * Runs under the refresh lock, because the screen spends the same single-use
  * refresh token and a second presentation ends the whole session.
@@ -76,7 +80,7 @@ export function createUnattendedSession(
   const newest = (stored: Connection): Connection => {
     if (renewal?.pair.baseUrl !== stored.baseUrl) return stored;
     const current =
-      stored.refreshToken === renewal.pair.refreshToken || stored.refreshToken === renewal.spent;
+      stored.refreshToken === renewal.pair.refreshToken || renewal.spent.has(stored.refreshToken);
     return current ? renewal.pair : stored;
   };
 
@@ -97,7 +101,9 @@ export function createUnattendedSession(
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
       };
-      renewal = { pair: next, spent: pair.refreshToken };
+      const spent = new Set(pair === renewal?.pair ? renewal.spent : []);
+      spent.add(pair.refreshToken);
+      renewal = { pair: next, spent };
       try {
         await ports.save({ ...next, expiresAt: SAVED_EXPIRED });
       } catch {

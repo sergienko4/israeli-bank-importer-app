@@ -211,9 +211,10 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         name: Keep the standard APK first for older apps
         # Apps up to v0.2.12 download the first `.apk` asset of the release.
-        # The API lists assets by name and `.apk` sorts before `.sms.apk`, so
-        # the standard APK stays first; if that ever changes, withdraw the SMS
-        # APK rather than offer it to phones that cannot install it.
+        # This job starts only after the standard APK upload, but GitHub does
+        # not document the order of the assets array. Check the actual response
+        # and withdraw the SMS APK rather than offer it to phones that cannot
+        # install it.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}

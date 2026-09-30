@@ -29,9 +29,11 @@ export const STANDARD_APK_ASSET = 'israeli-bank-importer.apk';
 /**
  * The release asset of the SMS auto-read build.
  *
- * Its name sorts after {@link STANDARD_APK_ASSET}. The Releases API lists
- * assets in name order, and clients up to v0.2.12 take the first `.apk` they
- * see, so they keep being offered the standard build.
+ * Its name sorts after {@link STANDARD_APK_ASSET}. GitHub does not document
+ * the order of a release's `assets` array, so the release workflow verifies
+ * the actual response after upload and withdraws this asset unless the
+ * standard one is first. The later-sorting name is defense in depth for
+ * responses and interfaces that sort assets by name.
  */
 export const SMS_APK_ASSET = 'israeli-bank-importer.sms.apk';
 

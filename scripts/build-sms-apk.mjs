@@ -788,7 +788,7 @@ function preflight(expected, { config, keystore, url, derived }) {
  * Checks the signed APK against every invariant, and lists each that fails.
  *
  * @param {string} apk - The signed APK.
- * @param {ReturnType<typeof expectedIdentity>} expected - What it must match.
+ * @param {ReturnType<typeof readReference>} expected - What it must match.
  * @param {{ runtime: string, updateUrl: string }} build - The runtime and update
  *   URL it was built with.
  * @param {ReturnType<typeof locateTools>} tools - The SDK tools.

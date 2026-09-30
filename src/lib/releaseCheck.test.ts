@@ -93,7 +93,7 @@ describe('apkAssetFor', () => {
     expect(apkAssetFor(true)).toBe('israeli-bank-importer.sms.apk');
   });
 
-  it('sorts the standard asset first, which clients up to v0.2.12 install', () => {
+  it('keeps the standard asset first when release assets are sorted by name', () => {
     expect([SMS_APK_ASSET, STANDARD_APK_ASSET].sort()).toEqual([STANDARD_APK_ASSET, SMS_APK_ASSET]);
   });
 });

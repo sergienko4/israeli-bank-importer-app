@@ -9,7 +9,8 @@
 import { refreshTokens, SessionEndedError } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { authenticateBiometric } from '../lib/biometrics';
-import { type Connection, saveConnection } from './connectionStore';
+import { type Connection, loadConnection, saveConnection } from './connectionStore';
+import { withRefreshLock } from './refreshLock';
 
 /**
  * How long before expiry a token is refreshed rather than used.
@@ -77,11 +78,39 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
   if (unlock.status !== 'success') {
     return { status: 'declined', message: 'Unlock to reconnect to your importer.' };
   }
+  return withRefreshLock(async () => renewLatest(connection));
+}
+
+/**
+ * Reads the pair to renew from storage rather than from the screen's copy.
+ *
+ * The background capture renews on its own and saves the pair it was issued,
+ * which retires the refresh token the screen loaded at launch. Presenting that
+ * retired token would look like a stolen copy and end the session, so the
+ * stored pair wins whenever there is one.
+ * @param connection - The screen's copy, used only when storage has none.
+ * @returns The pair whose refresh token is still unspent.
+ */
+async function latestStored(connection: Connection): Promise<Connection> {
+  try {
+    return (await loadConnection()) ?? connection;
+  } catch {
+    return connection;
+  }
+}
+
+/**
+ * Spends the newest stored refresh token and saves the pair it buys.
+ * @param connection - The screen's copy of the connection.
+ * @returns What happened, including the renewed connection on success.
+ */
+async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
+  const current = await latestStored(connection);
   let next: Connection;
   try {
-    const tokens = await refreshTokens(connection.baseUrl, connection.refreshToken);
+    const tokens = await refreshTokens(current.baseUrl, current.refreshToken);
     next = {
-      baseUrl: connection.baseUrl,
+      baseUrl: current.baseUrl,
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,

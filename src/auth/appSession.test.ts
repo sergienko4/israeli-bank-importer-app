@@ -11,17 +11,18 @@
 import { refreshTokens, SESSION_ENDED, SessionEndedError } from '../api/appTokens';
 import { authenticateBiometric } from '../lib/biometrics';
 import { isExpiring, REFRESH_MARGIN_MS, refreshConnection, toSession } from './appSession';
-import { type Connection, saveConnection } from './connectionStore';
+import { type Connection, loadConnection, saveConnection } from './connectionStore';
 
 jest.mock('../api/appTokens', () => ({
   ...jest.requireActual<Record<string, unknown>>('../api/appTokens'),
   refreshTokens: jest.fn(),
 }));
 jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
-jest.mock('./connectionStore', () => ({ saveConnection: jest.fn() }));
+jest.mock('./connectionStore', () => ({ loadConnection: jest.fn(), saveConnection: jest.fn() }));
 
 const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
 const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authenticateBiometric>;
+const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 
 const CONNECTION: Connection = {
@@ -41,6 +42,7 @@ const ROTATED: Connection = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUnlock.mockResolvedValue({ status: 'success' });
+  mockedLoad.mockResolvedValue(CONNECTION);
   mockedRefresh.mockResolvedValue({
     accessToken: 'access-2',
     refreshToken: 'refresh-2',
@@ -88,6 +90,25 @@ describe('refreshConnection when the user unlocks', () => {
     mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
     const outcome = await refreshConnection(CONNECTION);
     expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
+  });
+
+  it('spends the stored refresh token, not the one the screen loaded at launch', async () => {
+    // The background capture renewed while the screen held its copy, retiring
+    // that copy's refresh token. Presenting it again would read as a stolen copy
+    // and end the whole session.
+    mockedLoad.mockResolvedValue({ ...CONNECTION, refreshToken: 'refresh-background' });
+    await refreshConnection(CONNECTION);
+    expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
+    expect(mockedRefresh).not.toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
+  });
+
+  it.each([
+    ['holds nothing', () => mockedLoad.mockResolvedValue(null)],
+    ['cannot be read', () => mockedLoad.mockRejectedValue(new Error('Keychain unavailable.'))],
+  ])('falls back to the screen copy when storage %s', async (_label, arrange) => {
+    arrange();
+    await refreshConnection(CONNECTION);
+    expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
   });
 });
 

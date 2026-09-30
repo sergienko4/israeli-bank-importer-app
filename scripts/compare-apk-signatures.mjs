@@ -11,6 +11,7 @@ import { parseArgs } from 'node:util';
 
 import {
   describeSigningSchemes,
+  isMissingSigningLineageError,
   parseApkSignatureProfile,
   sameSigningSchemes,
 } from './apk-signature-profile.mjs';
@@ -44,7 +45,36 @@ function readProfile(apksigner, apk) {
     env: sanitizedEnvironment(),
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  return parseApkSignatureProfile(output);
+  return {
+    ...parseApkSignatureProfile(output),
+    hasLineage: hasSigningLineage(apksigner, apk),
+  };
+}
+
+/**
+ * Reports whether an APK carries an unsupported signing-key lineage.
+ *
+ * @param {string} apksigner - The Android SDK verifier.
+ * @param {string} apk - The verified APK.
+ * @returns {boolean} `true` when Build Tools extracts a lineage.
+ * @throws {Error} The lineage command fails for any reason other than absence.
+ */
+function hasSigningLineage(apksigner, apk) {
+  try {
+    execFileSync(apksigner, ['lineage', '--in', apk, '--print-certs'], {
+      encoding: 'utf8',
+      env: sanitizedEnvironment(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return true;
+  } catch (error) {
+    const stderr =
+      typeof error === 'object' && error !== null && 'stderr' in error ? String(error.stderr) : '';
+    if (isMissingSigningLineageError(stderr)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 const { values } = parseArgs({
@@ -80,6 +110,13 @@ if (!sameSigningSchemes(expected.schemes, actual.schemes)) {
     `signing schemes differ: expected ${describeSigningSchemes(
       expected.schemes,
     )}, actual ${describeSigningSchemes(actual.schemes)}`,
+  );
+}
+if (expected.hasLineage || actual.hasLineage) {
+  failures.push(
+    `signing-key lineage is unsupported: reference=${String(
+      expected.hasLineage,
+    )}, actual=${String(actual.hasLineage)}`,
   );
 }
 if (failures.length > 0) {

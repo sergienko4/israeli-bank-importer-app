@@ -92,6 +92,47 @@ jobs:
           fi
           grep -F 'signing schemes differ:' "$RUNNER_TEMP/signature-mismatch.log" > /dev/null
           rm -f "$mismatch" "$RUNNER_TEMP/signature-mismatch.log"
+
+          rotated_keystore="$RUNNER_TEMP/rotated.keystore"
+          rotated_alias=sms-apk-check-rotated
+          keytool -genkeypair -keystore "$rotated_keystore" -storetype PKCS12 \
+            -alias "$rotated_alias" -keyalg RSA -keysize 2048 -validity 1 \
+            -dname 'CN=SMS APK rotated check' \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          lineage="$RUNNER_TEMP/signing-lineage"
+          "$apksigner" rotate --out "$lineage" \
+            --old-signer --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --new-signer --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD
+          lineaged="$RUNNER_TEMP/signature-lineage"
+          "$apksigner" sign --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --next-signer --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --lineage "$lineage" --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$lineaged" "$output"
+          no_lineage="$RUNNER_TEMP/signature-no-lineage"
+          "$apksigner" sign --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$no_lineage" "$output"
+          if node scripts/compare-apk-signatures.mjs \
+            --apksigner "$apksigner" --reference "$lineaged" --actual "$no_lineage" \
+            2> "$RUNNER_TEMP/signature-lineage.log"; then
+            echo "::error::The validator accepted an APK with an unsupported signing-key lineage."
+            exit 1
+          fi
+          grep -F 'signing-key lineage is unsupported' \
+            "$RUNNER_TEMP/signature-lineage.log" > /dev/null
+          rm -f "$rotated_keystore" "$lineage" "$lineaged" "$no_lineage" \
+            "$RUNNER_TEMP/signature-lineage.log"
       - name: Remove the throwaway key
         if: always()
-        run: rm -f "$RUNNER_TEMP/check.keystore"
+        run: |
+          rm -f "$RUNNER_TEMP/check.keystore" "$RUNNER_TEMP/rotated.keystore" \
+            "$RUNNER_TEMP/signing-lineage" "$RUNNER_TEMP/signature-lineage" \
+            "$RUNNER_TEMP/signature-no-lineage" "$RUNNER_TEMP/signature-lineage.log"

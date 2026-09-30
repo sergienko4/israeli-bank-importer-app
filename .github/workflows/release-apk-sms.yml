@@ -64,12 +64,6 @@ concurrency:
   group: release-apk-assets-${{ inputs.tag }}
   cancel-in-progress: false
 
-# `shell: bash` adds `-o pipefail`, which the implicit default does not, so a
-# failing command piped into `tee` or `jq` fails its step.
-defaults:
-  run:
-    shell: bash
-
 jobs:
   # Runs first, holds no secret and checks out nothing: it decides which
   # commit the job below may build (see verify-release-tag.yml).
@@ -95,26 +89,11 @@ jobs:
         id: guard
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$EXPO_TOKEN" ]; then
             echo "::notice::EXPO_TOKEN secret not set - skipping the SMS APK build. Add it in repo settings to publish APKs to Releases."
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
-          fi
-          # With an Expo account the release is real, so a missing key fails
-          # rather than skips: the release would otherwise lack its SMS APK.
-          missing=()
-          [ -n "$ANDROID_KEYSTORE_BASE64" ] || missing+=(ANDROID_KEYSTORE_BASE64)
-          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || missing+=(ANDROID_KEYSTORE_PASSWORD)
-          [ -n "$ANDROID_KEY_ALIAS" ] || missing+=(ANDROID_KEY_ALIAS)
-          [ -n "$ANDROID_KEY_PASSWORD" ] || missing+=(ANDROID_KEY_PASSWORD)
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::The release-signing environment is missing: ${missing[*]}."
-            exit 1
           fi
           echo "run=true" >> "$GITHUB_OUTPUT"
       - if: steps.guard.outputs.run == 'true'
@@ -130,11 +109,12 @@ jobs:
         uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
       - if: steps.guard.outputs.run == 'true'
         name: Point the build at this account's update server
         # Without the SMS flag: this writes the resolved `updates` into
         # app.json, and the flag's channel header must not land there.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas update:configure --platform android --non-interactive
       - if: steps.guard.outputs.run == 'true'
         uses: ./.github/actions/setup-android-build
@@ -148,6 +128,8 @@ jobs:
             --pattern israeli-bank-importer.apk --dir "$RUNNER_TEMP/reference"
       - if: steps.guard.outputs.run == 'true'
         name: Pull the production EAS environment
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           umask 077
           eas env:pull --environment production \
@@ -157,14 +139,19 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::The release-signing environment is missing ANDROID_KEYSTORE_BASE64."
+            exit 1
+          fi
           umask 077
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
       - if: steps.guard.outputs.run == 'true'
         name: Build the SMS APK (Gradle on this runner)
         id: build
         # The pulled file gives the build the same readable EAS `production`
-        # variables as the update. EAS CLI has exited before the keystore and
-        # passwords exist, and Node's inherited variables override that file.
+        # variables as the update. Pre-build EAS commands have exited before
+        # the keystore and passwords exist, and Node's inherited variables
+        # override that file.
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -172,19 +159,9 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           EXPO_TOKEN: ''
         run: |
-          reference="$RUNNER_TEMP/reference/israeli-bank-importer.apk"
           node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs \
-            --reference "$reference" --out israeli-bank-importer.sms.apk \
-            | tee "$RUNNER_TEMP/build.log"
-          # A missing or malformed summary yields an empty value for the check
-          # below, rather than failing this pipeline without saying why.
-          runtime=$({ grep -E '^\{"versionCode"' "$RUNNER_TEMP/build.log" || true; } |
-            tail -n 1 | jq -rR 'fromjson? | .runtime? // empty')
-          if [[ ! "$runtime" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::The build did not report a runtime."
-            exit 1
-          fi
-          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+            --reference "$RUNNER_TEMP/reference/israeli-bank-importer.apk" \
+            --out israeli-bank-importer.sms.apk
       - name: Remove the build credentials
         if: always() && steps.guard.outputs.run == 'true'
         run: |
@@ -197,6 +174,7 @@ jobs:
         # channel's current branch, then pages through every group and reads
         # each one in full for its commit.
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
           BUILD_SHA: ${{ needs.verify.outputs.sha }}
           RUNTIME: ${{ steps.build.outputs.runtime }}

@@ -11,7 +11,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -27,8 +27,8 @@ const BACKUP_DIRECTORY = 'release-asset-backup';
  *
  * @param {unknown} release - The untrusted GitHub release response.
  * @param {{
- *   downloadAsset: (asset: { id: number, name: string, size: number }) => Buffer,
- *   writeBackup: (contents: Buffer) => void,
+ *   downloadToBackup: (asset: { id: number, name: string, size: number }) => void,
+ *   readBackupSize: () => number,
  *   deleteAsset: (asset: { id: number, name: string, size: number }) => void
  * }} operations - The side effects, injected so failure ordering is testable.
  * @returns {boolean} `true` when an SMS asset was preserved and withdrawn.
@@ -38,34 +38,50 @@ export function prepareStandardApkReplacement(release, operations) {
   if (typeof release !== 'object' || release === null || !Array.isArray(release.assets)) {
     throw new Error('GitHub returned no release assets array.');
   }
-  const matches = release.assets.filter(
-    (asset) => typeof asset === 'object' && asset !== null && asset.name === SMS_APK_ASSET,
-  );
+  const ids = new Set();
+  const names = new Set();
+  const assets = [];
+  for (const [index, asset] of release.assets.entries()) {
+    if (
+      typeof asset !== 'object' ||
+      asset === null ||
+      !Number.isSafeInteger(asset.id) ||
+      asset.id <= 0 ||
+      typeof asset.name !== 'string' ||
+      asset.name === '' ||
+      !Number.isSafeInteger(asset.size) ||
+      asset.size < 0
+    ) {
+      throw new Error(`GitHub returned an invalid release asset at index ${String(index)}.`);
+    }
+    if (ids.has(asset.id)) {
+      throw new Error(`GitHub returned duplicate release asset id ${String(asset.id)}.`);
+    }
+    if (names.has(asset.name)) {
+      throw new Error(`GitHub returned duplicate release asset name ${asset.name}.`);
+    }
+    ids.add(asset.id);
+    names.add(asset.name);
+    assets.push({ id: asset.id, name: asset.name, size: asset.size });
+  }
+  const matches = assets.filter((asset) => asset.name === SMS_APK_ASSET);
   if (matches.length === 0) {
     return false;
   }
   if (matches.length !== 1) {
     throw new Error(`GitHub returned ${String(matches.length)} SMS assets, not one.`);
   }
-  const asset = matches[0];
-  if (
-    !Number.isSafeInteger(asset.id) ||
-    asset.id <= 0 ||
-    !Number.isSafeInteger(asset.size) ||
-    asset.size <= 0
-  ) {
-    throw new Error('The SMS asset has an invalid id or size.');
+  const normalized = matches[0];
+  if (normalized.size <= 0) {
+    throw new Error('The SMS asset is empty.');
   }
-  const normalized = { id: asset.id, name: SMS_APK_ASSET, size: asset.size };
-  const contents = operations.downloadAsset(normalized);
-  if (!Buffer.isBuffer(contents) || contents.length !== normalized.size) {
+  operations.downloadToBackup(normalized);
+  const backupSize = operations.readBackupSize();
+  if (backupSize !== normalized.size) {
     throw new Error(
-      `The SMS backup is ${String(contents?.length ?? 0)} bytes, expected ${String(
-        normalized.size,
-      )}.`,
+      `The SMS backup is ${String(backupSize)} bytes, expected ${String(normalized.size)}.`,
     );
   }
-  operations.writeBackup(contents);
   operations.deleteAsset(normalized);
   return true;
 }
@@ -89,14 +105,40 @@ function requiredEnvironment(name, value) {
  * Runs GitHub CLI without a shell.
  *
  * @param {string[]} args - The exact arguments.
- * @param {boolean} [binary=false] - Whether stdout is binary.
- * @returns {string | Buffer} Captured stdout.
+ * @returns {string} Captured stdout.
  */
-function runGh(args, binary = false) {
+function runGh(args) {
   return execFileSync('gh', args, {
-    encoding: binary ? null : 'utf8',
+    encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+/**
+ * Streams a command's stdout into a new owner-only file without a shell.
+ *
+ * @param {string} command - The executable to run.
+ * @param {string[]} args - Its exact arguments.
+ * @param {string} path - The destination, which must not already exist.
+ * @throws {Error} The file cannot be created or the command fails.
+ */
+export function runCommandToFile(command, args, path) {
+  const descriptor = openSync(path, 'wx', 0o600);
+  let completed = false;
+  try {
+    execFileSync(command, args, {
+      stdio: ['ignore', descriptor, 'pipe'],
+    });
+    completed = true;
+  } finally {
+    try {
+      closeSync(descriptor);
+    } finally {
+      if (!completed) {
+        rmSync(path, { force: true });
+      }
+    }
+  }
 }
 
 /**
@@ -134,20 +176,20 @@ function prepare() {
   const release = JSON.parse(runGh(['api', `repos/${repository}/releases/tags/${tag}`]));
   const path = backupPath(runnerTemp);
   const preserved = prepareStandardApkReplacement(release, {
-    downloadAsset: (asset) =>
-      runGh(
+    downloadToBackup: (asset) => {
+      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+      runCommandToFile(
+        'gh',
         [
           'api',
           '-H',
           'Accept: application/octet-stream',
           `repos/${repository}/releases/assets/${String(asset.id)}`,
         ],
-        true,
-      ),
-    writeBackup: (contents) => {
-      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      writeFileSync(path, contents, { mode: 0o600 });
+        path,
+      );
     },
+    readBackupSize: () => statSync(path).size,
     deleteAsset: (asset) => {
       runGh([
         'api',
@@ -167,7 +209,13 @@ function restore() {
   const repository = requiredEnvironment('GITHUB_REPOSITORY', process.env.GITHUB_REPOSITORY);
   const tag = requiredEnvironment('RELEASE_TAG', process.env.RELEASE_TAG);
   const path = backupPath(requiredEnvironment('RUNNER_TEMP', process.env.RUNNER_TEMP));
-  if (!existsSync(path) || readFileSync(path).length === 0) {
+  let backup;
+  try {
+    backup = statSync(path);
+  } catch (error) {
+    throw new Error(`The preserved SMS APK is missing from ${dirname(path)}.`, { cause: error });
+  }
+  if (!backup.isFile() || backup.size === 0) {
     throw new Error(`The preserved SMS APK is missing from ${dirname(path)}.`);
   }
   runGh(['release', 'upload', tag, path, '--repo', repository]);

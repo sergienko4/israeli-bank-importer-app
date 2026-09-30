@@ -44,7 +44,14 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { constants } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -53,6 +60,7 @@ import { parseArgs } from 'node:util';
 
 import {
   describeSigningSchemes,
+  isMissingSigningLineageError,
   parseApkSignatureProfile,
   sameSigningSchemes,
   signingSchemeArguments,
@@ -602,12 +610,38 @@ function badging(aapt2, apk) {
  *
  * @param {string} apksigner - The `apksigner` executable.
  * @param {string} apk - The APK.
- * @returns {ReturnType<typeof parseApkSignatureProfile> | undefined} Its profile,
- *   or `undefined` when the signature does not verify.
+ * @returns {(ReturnType<typeof parseApkSignatureProfile> & { hasLineage: boolean }) | undefined}
+ *   Its profile, or `undefined` when the signature does not verify.
  */
 function signatureProfile(apksigner, apk) {
   const output = tryRun(apksigner, ['verify', '--verbose', '--print-certs', apk]);
-  return output === undefined ? undefined : parseApkSignatureProfile(output);
+  return output === undefined
+    ? undefined
+    : { ...parseApkSignatureProfile(output), hasLineage: hasSigningLineage(apksigner, apk) };
+}
+
+/**
+ * Reports whether an APK carries a v3 or v3.1 proof-of-rotation lineage.
+ *
+ * @param {string} apksigner - The `apksigner` executable.
+ * @param {string} apk - The verified APK.
+ * @returns {boolean} `true` when Build Tools extracts a lineage.
+ * @throws {Error} The lineage command fails for any reason other than absence.
+ */
+function hasSigningLineage(apksigner, apk) {
+  try {
+    run(apksigner, ['lineage', '--in', apk, '--print-certs']);
+    return true;
+  } catch (error) {
+    if (error instanceof InterruptedError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    if (isMissingSigningLineageError(message)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -792,6 +826,11 @@ function readReference(tools, apk) {
       `reference: ${apk} has ${String(profile?.signers.length ?? 0)} verified signers, not 1`,
     ]);
   }
+  if (profile.hasLineage) {
+    throw new InvariantError([
+      'referenceSignature: The standard APK uses an unsupported signing-key lineage.',
+    ]);
+  }
   try {
     signingSchemeArguments(profile.schemes);
   } catch (error) {
@@ -799,7 +838,12 @@ function readReference(tools, apk) {
       `referenceSignature: ${error instanceof Error ? error.message : String(error)}`,
     ]);
   }
-  return { ...identity, signer: profile.signers[0], schemes: profile.schemes };
+  return {
+    ...identity,
+    signer: profile.signers[0],
+    schemes: profile.schemes,
+    hasLineage: false,
+  };
 }
 
 /**
@@ -881,6 +925,10 @@ function inspect(apk, expected, build, tools) {
         profile.schemes,
       )}, expected ${describeSigningSchemes(expected.schemes)}`,
     );
+    check(
+      !profile.hasLineage,
+      'signatureLineage: generated APK contains an unsupported signing-key lineage',
+    );
   }
 
   checkManifest(
@@ -948,6 +996,7 @@ async function main(options) {
     versionName: config.version,
     signer: keystore,
     schemes: SELF_REFERENCE_SCHEMES,
+    hasLineage: false,
   };
 
   const original = readFileSync(APP_JSON);
@@ -1076,12 +1125,29 @@ function report(error) {
   return 1;
 }
 
+/**
+ * Publishes a verified build summary to the caller and GitHub Actions.
+ *
+ * @param {{ runtime: string }} summary - The successful build's update runtime.
+ * @throws {InvariantError} The runtime cannot identify an Expo fingerprint.
+ */
+function reportSuccess(summary) {
+  if (!/^[0-9a-f]{40}$/u.test(summary.runtime)) {
+    throw new InvariantError([`runtime: ${summary.runtime} is not a fingerprint hash`]);
+  }
+  const output = process.env.GITHUB_OUTPUT;
+  if (output !== undefined && output !== '') {
+    appendFileSync(output, `runtime=${summary.runtime}\n`);
+  }
+  process.stdout.write(`${JSON.stringify(summary)}\n`);
+}
+
 let options;
 try {
   options = parseOptions();
   checkpoint();
   const summary = await main(options);
-  process.stdout.write(`${JSON.stringify(summary)}\n`);
+  reportSuccess(summary);
 } catch (error) {
   const status = report(error);
   if (status !== 2 && options !== undefined) {

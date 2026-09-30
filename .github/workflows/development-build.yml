@@ -41,12 +41,15 @@ jobs:
         uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
       - if: steps.guard.outputs.run == 'true'
         name: Point the build at this account's update server
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas update:configure --platform android --non-interactive
       - if: steps.guard.outputs.run == 'true'
         name: Queue the build on EAS
         # Queued rather than awaited: the artifact is collected from the EAS
         # dashboard, so holding a runner open for the whole build buys nothing.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform android --profile development --non-interactive --no-wait

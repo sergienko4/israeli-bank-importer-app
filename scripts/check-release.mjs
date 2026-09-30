@@ -19,7 +19,8 @@
  *                    channel EAS Build gives the standard APK;
  *   3. provenance  - every workflow that takes a release tag builds only the
  *                    commit verify-release-tag.yml resolved it to;
- *   4. token       - every step that runs `gh` sets GH_TOKEN;
+ *   4. token       - every `gh` or EAS command receives only its own token,
+ *                    and Expo setup cannot export EXPO_TOKEN job-wide;
  *   5. isolation   - the pull-request build check can reach no secret;
  *   6. orchestration - release-please calls the SMS build only after the
  *                      standard APK and both OTA legs succeed;
@@ -39,19 +40,21 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
 import {
   parseApkSignatureProfile,
+  isMissingSigningLineageError,
   sameSigningSchemes,
   signingSchemeArguments,
 } from './apk-signature-profile.mjs';
 import { branchFromChannelView, findMatchingUpdate } from './find-matching-update.mjs';
-import { prepareStandardApkReplacement } from './standard-apk-replacement.mjs';
+import { prepareStandardApkReplacement, runCommandToFile } from './standard-apk-replacement.mjs';
 
 /** The repository root, whatever directory the script is started from. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -92,6 +95,9 @@ const SMS_BUILD_SCRIPT = 'scripts/build-sms-apk.mjs';
 /** The CLI that compares two real APK signing profiles. */
 const APK_SIGNATURE_CHECK = 'scripts/compare-apk-signatures.mjs';
 
+/** The shared parser and unsupported-lineage classifier. */
+const APK_SIGNATURE_PROFILE = 'scripts/apk-signature-profile.mjs';
+
 /** The workflow that publishes the updates. */
 const OTA_WORKFLOW = 'release-ota.yml';
 
@@ -110,6 +116,15 @@ const STANDARD_PROFILE = 'apk';
 /** A `gh` command at the start of a shell word, which is how a step runs it. */
 const GH_COMMAND = /(?:^|[\s;&|(`])gh\s+[a-z]/mu;
 
+/** An EAS command at the start of a shell word, which is how a step runs it. */
+const EAS_COMMAND = /(?:^|[\s;&|(`])eas\s+[a-z]/mu;
+
+/** The setup action that exports a supplied token to every later job step. */
+const EXPO_ACTION = 'expo/expo-github-action@';
+
+/** The exact workflow expression that provides the Expo credential. */
+const EXPO_TOKEN_SECRET = '${{ secrets.EXPO_TOKEN }}';
+
 /** A file name ending in `.apk`, as it appears in a shell command. */
 const APK_NAME = /(?<![\w.-])[\w-][\w.-]*\.apk(?![\w.-])/gu;
 
@@ -127,6 +142,58 @@ function check(rule, condition, message) {
   if (!condition) {
     failures.push(`[${rule}] ${message}`);
   }
+}
+
+/**
+ * Normalizes line continuations while preserving shell command boundaries.
+ *
+ * @param {string} run - A workflow step's shell body.
+ * @returns {string[]} Its non-empty logical lines.
+ */
+function logicalShellLines(run) {
+  return run
+    .replace(/\\\r?\n[ \t]*/gu, ' ')
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/[ \t]+/gu, ' '))
+    .filter((line) => line !== '');
+}
+
+/**
+ * Accepts only the narrow shell forms used by credentialed EAS steps.
+ *
+ * @param {string} run - A workflow step's shell body.
+ * @returns {boolean} Whether exactly one trusted EAS entry point runs.
+ */
+function expoTokenRunIsNarrow(run) {
+  if (
+    run.includes('|') ||
+    run.includes('&') ||
+    run.includes('$(') ||
+    run.includes('`') ||
+    /[<>]\(/u.test(run) ||
+    run.includes(';')
+  ) {
+    return false;
+  }
+  const lines = logicalShellLines(run);
+  const commands = lines.filter(
+    (line) => line.startsWith('eas ') || line === `node ${UPDATE_LOOKUP}`,
+  );
+  return (
+    commands.length === 1 &&
+    lines.every((line) => {
+      if (line === 'umask 077' || line === "MESSAGE=${HEAD_MESSAGE%%$'\\n'*}") {
+        return true;
+      }
+      if (line === `node ${UPDATE_LOOKUP}`) {
+        return true;
+      }
+      if (!line.startsWith('eas ')) {
+        return false;
+      }
+      return true;
+    })
+  );
 }
 
 /**
@@ -564,16 +631,17 @@ function checkProvenance(workflows) {
  */
 function checkToken(workflows, actions) {
   const rule = 'token';
-  const steps = [
-    ...[...workflows].flatMap(([name, { doc }]) =>
-      jobsOf(doc).flatMap(([id, job]) =>
-        (job.steps ?? []).map((step, index) => ({
-          where: `${name} job ${id} step ${index + 1}`,
-          step,
-          job,
-        })),
-      ),
+  const workflowSteps = [...workflows].flatMap(([name, { doc }]) =>
+    jobsOf(doc).flatMap(([id, job]) =>
+      (job.steps ?? []).map((step, index) => ({
+        where: `${name} job ${id} step ${index + 1}`,
+        step,
+        job,
+      })),
     ),
+  );
+  const steps = [
+    ...workflowSteps,
     ...[...actions].flatMap(([name, action]) =>
       (action?.runs?.steps ?? []).map((step, index) => ({
         where: `${ACTIONS}/${name} step ${index + 1}`,
@@ -590,6 +658,68 @@ function checkToken(workflows, actions) {
         `${where}${step.name === undefined ? '' : ` (${step.name})`} runs gh, so it or its job should set GH_TOKEN`,
       );
     }
+  }
+  for (const [name, { doc }] of workflows) {
+    check(
+      rule,
+      doc?.env?.EXPO_TOKEN === undefined,
+      `${name} should not expose EXPO_TOKEN to every job`,
+    );
+    for (const [id, job] of jobsOf(doc)) {
+      check(
+        rule,
+        job.env?.EXPO_TOKEN === undefined,
+        `${name} job ${id} should not expose EXPO_TOKEN to every step`,
+      );
+    }
+  }
+  for (const { where, step } of workflowSteps) {
+    if (typeof step.uses === 'string' && step.uses.startsWith(EXPO_ACTION)) {
+      check(
+        rule,
+        step.with?.token === undefined,
+        `${where} should install EAS without exporting EXPO_TOKEN job-wide`,
+      );
+    }
+    const run = typeof step.run === 'string' ? step.run : '';
+    const invokesEas = EAS_COMMAND.test(run) || run.includes(`node ${UPDATE_LOOKUP}`);
+    const token = step.env?.EXPO_TOKEN;
+    if (invokesEas) {
+      check(
+        rule,
+        token === EXPO_TOKEN_SECRET,
+        `${where}${step.name === undefined ? '' : ` (${step.name})`} invokes EAS, so it should set EXPO_TOKEN only for that step`,
+      );
+    }
+    if (token === EXPO_TOKEN_SECRET) {
+      check(
+        rule,
+        step.name === 'Gate on EXPO_TOKEN' || invokesEas,
+        `${where}${step.name === undefined ? '' : ` (${step.name})`} receives EXPO_TOKEN without invoking EAS`,
+      );
+      if (invokesEas) {
+        check(
+          rule,
+          expoTokenRunIsNarrow(run),
+          `${where}${step.name === undefined ? '' : ` (${step.name})`} should invoke only its trusted EAS entry point`,
+        );
+      }
+    }
+  }
+  for (const unsafe of [
+    'MESSAGE=`head -n 1 <<<"$HEAD_MESSAGE"`\neas update --branch "$BRANCH"',
+    'eas update --branch "$BRANCH" --message <(head -n 1 message.txt)',
+    'node -e "process.exit(0)"\neas update --branch "$BRANCH"',
+    'eas update --branch "$BRANCH" | head -n 1',
+    'MESSAGE=$(head -n 1 <<<"$HEAD_MESSAGE")\neas update --branch "$BRANCH"',
+    'eas update --channel production & node -e "process.exit(0)"',
+    'eas branch:delete "$BRANCH" || echo "missing"',
+  ]) {
+    check(
+      rule,
+      !expoTokenRunIsNarrow(unsafe),
+      'the EXPO_TOKEN oracle should reject unrelated shell child processes',
+    );
   }
 }
 
@@ -701,6 +831,36 @@ function checkAssetSafety(workflows, actions) {
   const rule = 'asset safety';
   const standard = workflows.get(STANDARD_WORKFLOW)?.doc;
   const sms = workflows.get(SMS_WORKFLOW)?.doc;
+  const replacementSource = readText(STANDARD_REPLACEMENT);
+  check(
+    rule,
+    replacementSource?.includes('export function runCommandToFile') === true &&
+      replacementSource.includes("stdio: ['ignore', descriptor, 'pipe']"),
+    `${STANDARD_REPLACEMENT} should stream large APK downloads to a private file`,
+  );
+  const largeDownloadDirectory = mkdtempSync(join(tmpdir(), 'release-asset-oracle-'));
+  const largeDownload = join(largeDownloadDirectory, 'large.apk');
+  try {
+    const expectedSize = 2 * 1024 * 1024;
+    runCommandToFile(
+      process.execPath,
+      ['--eval', `process.stdout.write(Buffer.alloc(${String(expectedSize)}, 97))`],
+      largeDownload,
+    );
+    check(
+      rule,
+      statSync(largeDownload).size === expectedSize,
+      `${STANDARD_REPLACEMENT} should stream an APK larger than the child-process buffer`,
+    );
+  } catch {
+    check(
+      rule,
+      false,
+      `${STANDARD_REPLACEMENT} should stream an APK larger than the child-process buffer`,
+    );
+  } finally {
+    rmSync(largeDownloadDirectory, { recursive: true, force: true });
+  }
   const group = standard?.concurrency?.group;
   check(
     rule,
@@ -810,21 +970,22 @@ function checkAssetSafety(workflows, actions) {
       ],
     },
     {
-      downloadAsset: () => {
+      downloadToBackup: () => {
         events.push('download');
-        return Buffer.from('safe');
       },
-      writeBackup: () => events.push('backup'),
+      readBackupSize: () => {
+        events.push('measure');
+        return 4;
+      },
       deleteAsset: () => events.push('delete'),
     },
   );
   check(
     rule,
-    prepared && JSON.stringify(events) === JSON.stringify(['download', 'backup', 'delete']),
-    `${STANDARD_REPLACEMENT} should preserve SMS before withdrawing it`,
+    prepared && JSON.stringify(events) === JSON.stringify(['download', 'measure', 'delete']),
+    `${STANDARD_REPLACEMENT} should download and measure SMS before withdrawing it`,
   );
   let deletedAfterBadDownload = false;
-  let backedUpBadDownload = false;
   try {
     prepareStandardApkReplacement(
       {
@@ -837,10 +998,8 @@ function checkAssetSafety(workflows, actions) {
         ],
       },
       {
-        downloadAsset: () => Buffer.from('bad'),
-        writeBackup: () => {
-          backedUpBadDownload = true;
-        },
+        downloadToBackup: () => undefined,
+        readBackupSize: () => 3,
         deleteAsset: () => {
           deletedAfterBadDownload = true;
         },
@@ -851,8 +1010,182 @@ function checkAssetSafety(workflows, actions) {
   }
   check(
     rule,
-    !backedUpBadDownload && !deletedAfterBadDownload,
-    `${STANDARD_REPLACEMENT} should never preserve or delete SMS after an incomplete download`,
+    !deletedAfterBadDownload,
+    `${STANDARD_REPLACEMENT} should never delete SMS after an incomplete download`,
+  );
+
+  const malformedReleases = [
+    {
+      description: 'a null asset after the SMS asset',
+      release: {
+        assets: [{ id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 }, null],
+      },
+    },
+    {
+      description: 'a non-numeric asset id',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: '18', name: 'release-notes.txt', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'a zero asset id',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 0, name: 'release-notes.txt', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'a negative asset id',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: -1, name: 'release-notes.txt', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'a fractional asset id',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18.5, name: 'release-notes.txt', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'an unsafe asset id',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: Number.MAX_SAFE_INTEGER + 1, name: 'release-notes.txt', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'a non-string asset name',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 19, size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'an empty asset name',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: '', size: 1 },
+        ],
+      },
+    },
+    {
+      description: 'a non-numeric asset size',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 'release-notes.txt', size: '1' },
+        ],
+      },
+    },
+    {
+      description: 'a negative asset size',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 'release-notes.txt', size: -1 },
+        ],
+      },
+    },
+    {
+      description: 'a fractional asset size',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 'release-notes.txt', size: 1.5 },
+        ],
+      },
+    },
+    {
+      description: 'an unsafe asset size',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 'release-notes.txt', size: Number.MAX_SAFE_INTEGER + 1 },
+        ],
+      },
+    },
+    {
+      description: 'an empty SMS asset',
+      release: { assets: [{ id: 17, name: 'israeli-bank-importer.sms.apk', size: 0 }] },
+    },
+    {
+      description: 'duplicate asset ids',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 17, name: 'release-notes.txt', size: 3 },
+        ],
+      },
+    },
+    {
+      description: 'duplicate asset names',
+      release: {
+        assets: [
+          { id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 },
+          { id: 18, name: 'israeli-bank-importer.sms.apk', size: 3 },
+        ],
+      },
+    },
+  ];
+  for (const { description, release } of malformedReleases) {
+    let rejected = false;
+    let touchedRemoteState = false;
+    try {
+      prepareStandardApkReplacement(release, {
+        downloadToBackup: () => {
+          touchedRemoteState = true;
+        },
+        readBackupSize: () => {
+          touchedRemoteState = true;
+          return 4;
+        },
+        deleteAsset: () => {
+          touchedRemoteState = true;
+        },
+      });
+    } catch {
+      rejected = true;
+    }
+    check(
+      rule,
+      rejected && !touchedRemoteState,
+      `${STANDARD_REPLACEMENT} should reject ${description} before any side effect`,
+    );
+  }
+  const smsAbsent = prepareStandardApkReplacement(
+    { assets: [{ id: 25, name: 'release-notes.txt', size: 0 }] },
+    {
+      downloadToBackup: () => {
+        throw new Error('A valid unrelated asset must not be downloaded.');
+      },
+      readBackupSize: () => {
+        throw new Error('A valid unrelated asset must not be measured.');
+      },
+      deleteAsset: () => {
+        throw new Error('A valid unrelated asset must not be deleted.');
+      },
+    },
+  );
+  check(
+    rule,
+    !smsAbsent,
+    `${STANDARD_REPLACEMENT} should report SMS absent only after validating every asset`,
   );
 }
 
@@ -1036,6 +1369,15 @@ Signer #1 certificate SHA-256 digest: ${digest}
   );
   check(
     rule,
+    isMissingSigningLineageError('The provided APK does not contain a valid lineage.') &&
+      isMissingSigningLineageError(
+        'The provided APK does not contain a valid V3 nor V3.1 signature block.',
+      ) &&
+      !isMissingSigningLineageError('Unable to locate a Java Runtime.'),
+    'the lineage classifier should allow only Build Tools no-lineage outcomes',
+  );
+  check(
+    rule,
     JSON.stringify(signingSchemeArguments(v2Only.schemes)) ===
       JSON.stringify([
         '--v1-signing-enabled',
@@ -1070,9 +1412,31 @@ Signer #1 certificate SHA-256 digest: ${digest}
     source.includes('...signingSchemeArguments(expected.schemes)'),
     `${SMS_BUILD_SCRIPT} should sign with the reference APK's supported scheme profile`,
   );
+  check(
+    rule,
+    source.includes('hasSigningLineage(apksigner, apk)') &&
+      source.includes('The standard APK uses an unsupported signing-key lineage'),
+    `${SMS_BUILD_SCRIPT} should fail closed when the standard APK contains a v3 lineage`,
+  );
 
   const comparison = readText(APK_SIGNATURE_CHECK);
   check(rule, comparison !== undefined, `${APK_SIGNATURE_CHECK} is missing`);
+  check(
+    rule,
+    comparison?.includes("['lineage', '--in', apk, '--print-certs']") === true &&
+      comparison.includes('signing-key lineage is unsupported'),
+    `${APK_SIGNATURE_CHECK} should reject v3 and v3.1 signing-key lineages`,
+  );
+  const profileSource = readText(APK_SIGNATURE_PROFILE);
+  check(
+    rule,
+    profileSource?.includes('export function isMissingSigningLineageError') === true &&
+      profileSource.includes('The provided APK does not contain a valid lineage.') &&
+      profileSource.includes(
+        'The provided APK does not contain a valid V3 nor V3.1 signature block.',
+      ),
+    `${APK_SIGNATURE_PROFILE} should distinguish an absent lineage from a tool failure`,
+  );
   const prCheck = workflows.get(PR_CHECK);
   const prPaths = prCheck?.doc?.on?.pull_request?.paths ?? [];
   const buildRun = stepsOf(prCheck?.doc)
@@ -1081,7 +1445,7 @@ Signer #1 certificate SHA-256 digest: ${digest}
     .join('\n');
   check(
     rule,
-    prPaths.includes(APK_SIGNATURE_CHECK) && prPaths.includes('scripts/apk-signature-profile.mjs'),
+    prPaths.includes(APK_SIGNATURE_CHECK) && prPaths.includes(APK_SIGNATURE_PROFILE),
     `${PR_CHECK} should run when either signature-profile script changes`,
   );
   check(
@@ -1090,6 +1454,14 @@ Signer #1 certificate SHA-256 digest: ${digest}
       buildRun.includes(`node ${APK_SIGNATURE_CHECK}`) &&
       buildRun.includes('accepted a same-certificate APK with a different signing profile'),
     `${PR_CHECK} should reject a real same-certificate APK whose v3 flag differs`,
+  );
+  check(
+    rule,
+    buildRun.includes('apksigner" rotate') &&
+      buildRun.includes('--rotation-min-sdk-version 28') &&
+      buildRun.includes('accepted an APK with an unsupported signing-key lineage') &&
+      buildRun.includes('signing-key lineage is unsupported'),
+    `${PR_CHECK} should reject a real v3 APK carrying a proof-of-rotation lineage`,
   );
 }
 
@@ -1102,19 +1474,38 @@ function checkSecretBoundary(workflows) {
   const rule = 'secret boundary';
   const sms = workflows.get(SMS_WORKFLOW)?.doc;
   const steps = stepsOf(sms);
+  const guard = steps.find((step) => step.name === 'Gate on EXPO_TOKEN');
   const pullIndex = steps.findIndex((step) => step.name === 'Pull the production EAS environment');
   const keyIndex = steps.findIndex((step) => step.name === 'Write the upload keystore');
   const buildIndex = steps.findIndex(
     (step) => step.name === 'Build the SMS APK (Gradle on this runner)',
   );
   const cleanupIndex = steps.findIndex((step) => step.name === 'Remove the build credentials');
+  const lookupIndex = steps.findIndex(
+    (step) => step.name === 'Check the matching update serves production-sms',
+  );
   const pull = steps[pullIndex];
   const build = steps[buildIndex];
   const cleanup = steps[cleanupIndex];
+  const lookup = steps[lookupIndex];
+  const expectedBuildRun =
+    'node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs ' +
+    '--reference "$RUNNER_TEMP/reference/israeli-bank-importer.apk" ' +
+    '--out israeli-bank-importer.sms.apk';
   check(
     rule,
-    pullIndex >= 0 && pullIndex < keyIndex && keyIndex < buildIndex && buildIndex < cleanupIndex,
-    `${SMS_WORKFLOW} should pull EAS variables before creating the key and remove credentials immediately after the build`,
+    JSON.stringify(guard?.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }) &&
+      !guard?.run?.includes('ANDROID_'),
+    `${SMS_WORKFLOW} should gate only on EXPO_TOKEN before any signing secret is materialized`,
+  );
+  check(
+    rule,
+    pullIndex >= 0 &&
+      pullIndex < keyIndex &&
+      keyIndex < buildIndex &&
+      buildIndex < cleanupIndex &&
+      cleanupIndex < lookupIndex,
+    `${SMS_WORKFLOW} should pull EAS variables before creating the key, then remove credentials before the later update lookup`,
   );
   check(
     rule,
@@ -1122,16 +1513,20 @@ function checkSecretBoundary(workflows) {
       pull.run.includes('umask 077') &&
       pull.run.includes('eas env:pull --environment production') &&
       pull.run.includes('--path "$RUNNER_TEMP/eas-production.env"') &&
-      pull.env === undefined,
-    `${SMS_WORKFLOW} should pull production variables into a private file without signing secrets`,
+      JSON.stringify(pull.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }),
+    `${SMS_WORKFLOW} should pull production variables into a private file with only EXPO_TOKEN`,
   );
   check(
     rule,
     typeof build?.run === 'string' &&
-      !build.run.includes('eas env:exec') &&
-      build.run.includes('node --env-file="$RUNNER_TEMP/eas-production.env"') &&
+      JSON.stringify(logicalShellLines(build.run)) === JSON.stringify([expectedBuildRun]) &&
       build.env?.EXPO_TOKEN === '',
-    `${SMS_WORKFLOW} should invoke Node directly from the pulled environment with EXPO_TOKEN removed`,
+    `${SMS_WORKFLOW} should invoke only Node from the pulled environment with EXPO_TOKEN removed`,
+  );
+  check(
+    rule,
+    lookup?.env?.EXPO_TOKEN === EXPO_TOKEN_SECRET,
+    `${SMS_WORKFLOW} should restore EXPO_TOKEN only for the post-cleanup EAS update lookup`,
   );
   check(
     rule,
@@ -1145,6 +1540,11 @@ function checkSecretBoundary(workflows) {
 
   const buildSource = readText(SMS_BUILD_SCRIPT);
   const comparisonSource = readText(APK_SIGNATURE_CHECK);
+  check(
+    rule,
+    buildSource?.includes('appendFileSync(output, `runtime=${summary.runtime}\\n`);') === true,
+    `${SMS_BUILD_SCRIPT} should write its verified runtime directly to GITHUB_OUTPUT`,
+  );
   check(
     rule,
     buildSource?.includes(

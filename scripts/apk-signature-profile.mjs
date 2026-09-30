@@ -1,6 +1,12 @@
 /** APK signing schemes printed by build-tools 36 `apksigner verify --verbose`. */
 const SCHEMES = ['v1', 'v2', 'v3', 'v3.1', 'v4'];
 
+/** Errors proving that a verified APK has no signing-certificate lineage. */
+const MISSING_LINEAGE_ERRORS = [
+  'The provided APK does not contain a valid lineage.',
+  'The provided APK does not contain a valid V3 nor V3.1 signature block.',
+];
+
 /**
  * Parses the verified certificate and signing-scheme profile of an APK.
  *
@@ -38,6 +44,17 @@ export function parseApkSignatureProfile(output) {
  */
 export function sameSigningSchemes(expected, actual) {
   return SCHEMES.every((scheme) => expected[scheme] === actual[scheme]);
+}
+
+/**
+ * Distinguishes an APK without key rotation from a lineage-tool failure.
+ *
+ * @param {string} output - The stderr or wrapped error from `apksigner lineage`.
+ * @returns {boolean} `true` only for Build Tools' two no-lineage outcomes.
+ */
+export function isMissingSigningLineageError(output) {
+  const message = output.trim();
+  return MISSING_LINEAGE_ERRORS.some((missing) => message.endsWith(missing));
 }
 
 /**

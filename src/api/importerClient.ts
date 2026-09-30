@@ -411,22 +411,26 @@ export async function submitOtp(session: Session, id: string, code: string): Pro
  * a plain answer. The deadline matters for the same reason: Android freezes a
  * background task that is still waiting, with the code still undelivered.
  * @param session - A session the caller already made current.
- * @param path - The API path (e.g. `/api/otp/pending`).
- * @param init - Optional fetch init (method, body, headers).
- * @returns The response, when one arrives in time.
+ * @param request - The API path (e.g. `/api/otp/pending`) and fetch init.
+ * @param read - Turns the response into the result, inside the same deadline.
+ * @returns Whatever `read` returns, when the whole reply arrives in time.
  * @throws Error when the importer is unreachable or does not answer in time.
  */
-async function unattended(
+async function unattended<T>(
   session: Session,
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
+  { path, init }: { readonly path: string; readonly init: RequestInit },
+  read: (res: Response) => Promise<T>,
+): Promise<T> {
   const url = `${normalizeBaseUrl(session.baseUrl)}${path}`;
   const bearer = `Bearer ${session.token}`;
-  return timedFetch(url, {
-    ...init,
-    headers: { ...(init.headers as Record<string, string> | undefined), authorization: bearer },
-  });
+  return timedFetch(
+    url,
+    {
+      ...init,
+      headers: { ...(init.headers as Record<string, string> | undefined), authorization: bearer },
+    },
+    read,
+  );
 }
 
 /**
@@ -436,7 +440,7 @@ async function unattended(
  * @throws Error when the request fails or runs out of time.
  */
 export async function getPendingOtpUnattended(session: Session): Promise<PendingOtpRequest[]> {
-  return pendingFrom(await unattended(session, '/api/otp/pending'));
+  return unattended(session, { path: '/api/otp/pending', init: {} }, pendingFrom);
 }
 
 /**
@@ -452,7 +456,7 @@ export async function submitOtpUnattended(
   id: string,
   code: string,
 ): Promise<SaveResult> {
-  const { path, init } = otpSubmission(id, code);
-  const res = await unattended(session, path, init);
-  return res.ok ? { ok: true } : toFailure(res);
+  return unattended(session, otpSubmission(id, code), async (res) =>
+    res.ok ? { ok: true } : toFailure(res),
+  );
 }

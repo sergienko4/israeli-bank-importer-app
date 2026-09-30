@@ -97,19 +97,21 @@ export function toAppTokens(body: unknown): AppTokens {
  *   must clear the stored connection rather than retry.
  */
 export async function refreshTokens(baseUrl: string, refreshToken: string): Promise<AppTokens> {
-  const res = await timedFetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, {
+  const init: RequestInit = {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
+  };
+  return timedFetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, init, async (res) => {
+    if (res.status === 400) {
+      throw new SessionEndedError();
+    }
+    if (res.status === 429) {
+      throw new Error(failureMessage('too-busy').text);
+    }
+    if (!res.ok) {
+      throw new Error(messageForStatus(res.status));
+    }
+    return toAppTokens(await res.json());
   });
-  if (res.status === 400) {
-    throw new SessionEndedError();
-  }
-  if (res.status === 429) {
-    throw new Error(failureMessage('too-busy').text);
-  }
-  if (!res.ok) {
-    throw new Error(messageForStatus(res.status));
-  }
-  return toAppTokens(await res.json());
 }

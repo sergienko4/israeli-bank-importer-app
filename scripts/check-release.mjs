@@ -384,8 +384,9 @@ function checkChannel(workflows) {
     rule,
     standardLegs.length === 1 &&
       standardLegs[0].channel === standardChannel &&
+      standardLegs[0].platform === 'all' &&
       standardLegs[0].autoread === '',
-    `${OTA_WORKFLOW} should have one leg with an empty autoread on ${standardChannel}, found ${JSON.stringify(standardLegs)}`,
+    `${OTA_WORKFLOW} should have one all-platform leg with an empty autoread on ${standardChannel}, found ${JSON.stringify(standardLegs)}`,
   );
   // The matrix only matters if the publish command reads it.
   const publish = jobsOf(ota)

@@ -147,6 +147,12 @@ jobs:
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern israeli-bank-importer.apk --dir "$RUNNER_TEMP/reference"
       - if: steps.guard.outputs.run == 'true'
+        name: Pull the production EAS environment
+        run: |
+          umask 077
+          eas env:pull --environment production \
+            --path "$RUNNER_TEMP/eas-production.env" --non-interactive
+      - if: steps.guard.outputs.run == 'true'
         name: Write the upload keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -156,19 +162,20 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         name: Build the SMS APK (Gradle on this runner)
         id: build
-        # `eas env:exec` gives the build the same EAS `production` variables
-        # `eas update --environment production` gives the update, so both
-        # resolve the same runtime. Passwords reach apksigner by env name only.
+        # The pulled file gives the build the same readable EAS `production`
+        # variables as the update. EAS CLI has exited before the keystore and
+        # passwords exist, and Node's inherited variables override that file.
         env:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload.keystore
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPO_TOKEN: ''
         run: |
           reference="$RUNNER_TEMP/reference/israeli-bank-importer.apk"
-          eas env:exec production \
-            "node scripts/build-sms-apk.mjs --reference '$reference' --out israeli-bank-importer.sms.apk" \
-            --non-interactive | tee "$RUNNER_TEMP/build.log"
+          node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs \
+            --reference "$reference" --out israeli-bank-importer.sms.apk \
+            | tee "$RUNNER_TEMP/build.log"
           # A missing or malformed summary yields an empty value for the check
           # below, rather than failing this pipeline without saying why.
           runtime=$({ grep -E '^\{"versionCode"' "$RUNNER_TEMP/build.log" || true; } |
@@ -178,6 +185,11 @@ jobs:
             exit 1
           fi
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+      - name: Remove the build credentials
+        if: always() && steps.guard.outputs.run == 'true'
+        run: |
+          rm -f "$RUNNER_TEMP/upload.keystore" "$RUNNER_TEMP/eas-production.env"
+          rm -rf .eas/.env
       - if: steps.guard.outputs.run == 'true'
         name: Check the matching update serves production-sms
         # An SMS APK without its update would run this release's native code
@@ -203,6 +215,3 @@ jobs:
         with:
           release_tag: ${{ inputs.tag }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Remove the upload keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/upload.keystore"

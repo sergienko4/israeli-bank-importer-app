@@ -117,8 +117,8 @@ const REQUIRED_ENV = [
   'ANDROID_KEY_PASSWORD',
 ];
 
-/** Variables no child but `keytool` and `apksigner` may see. */
-const SECRET_ENV = ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD'];
+/** Release credentials removed from every child unless explicitly re-added. */
+const SECRET_ENV = ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD', 'EXPO_TOKEN'];
 
 /**
  * The environment inherited by commands that do not need signing passwords.

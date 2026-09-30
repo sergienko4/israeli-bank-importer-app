@@ -21,7 +21,11 @@ import {
  * @returns {NodeJS.ProcessEnv} The password-free environment.
  */
 function sanitizedEnvironment() {
-  const signingPasswords = new Set(['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD']);
+  const signingPasswords = new Set([
+    'ANDROID_KEYSTORE_PASSWORD',
+    'ANDROID_KEY_PASSWORD',
+    'EXPO_TOKEN',
+  ]);
   return Object.fromEntries(
     Object.entries(process.env).filter(([name]) => !signingPasswords.has(name)),
   );

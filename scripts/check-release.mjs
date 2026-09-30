@@ -30,6 +30,8 @@
  *                      on success, failure and interruption.
  *  10. signature profile - the builder compares every APK signing scheme, not
  *                          only the signing certificate.
+ *  11. secret boundary - EAS CLI finishes before signing material exists, and
+ *                        the builder receives no Expo token.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -982,6 +984,74 @@ Signer #1 certificate SHA-256 digest: ${digest}
   );
 }
 
+/**
+ * Asserts rule 11: signing material exists only around the direct builder.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ */
+function checkSecretBoundary(workflows) {
+  const rule = 'secret boundary';
+  const sms = workflows.get(SMS_WORKFLOW)?.doc;
+  const steps = stepsOf(sms);
+  const pullIndex = steps.findIndex((step) => step.name === 'Pull the production EAS environment');
+  const keyIndex = steps.findIndex((step) => step.name === 'Write the upload keystore');
+  const buildIndex = steps.findIndex(
+    (step) => step.name === 'Build the SMS APK (Gradle on this runner)',
+  );
+  const cleanupIndex = steps.findIndex((step) => step.name === 'Remove the build credentials');
+  const pull = steps[pullIndex];
+  const build = steps[buildIndex];
+  const cleanup = steps[cleanupIndex];
+  check(
+    rule,
+    pullIndex >= 0 && pullIndex < keyIndex && keyIndex < buildIndex && buildIndex < cleanupIndex,
+    `${SMS_WORKFLOW} should pull EAS variables before creating the key and remove credentials immediately after the build`,
+  );
+  check(
+    rule,
+    typeof pull?.run === 'string' &&
+      pull.run.includes('umask 077') &&
+      pull.run.includes('eas env:pull --environment production') &&
+      pull.run.includes('--path "$RUNNER_TEMP/eas-production.env"') &&
+      pull.env === undefined,
+    `${SMS_WORKFLOW} should pull production variables into a private file without signing secrets`,
+  );
+  check(
+    rule,
+    typeof build?.run === 'string' &&
+      !build.run.includes('eas env:exec') &&
+      build.run.includes('node --env-file="$RUNNER_TEMP/eas-production.env"') &&
+      build.env?.EXPO_TOKEN === '',
+    `${SMS_WORKFLOW} should invoke Node directly from the pulled environment with EXPO_TOKEN removed`,
+  );
+  check(
+    rule,
+    cleanup?.if === "always() && steps.guard.outputs.run == 'true'" &&
+      typeof cleanup.run === 'string' &&
+      cleanup.run.includes('$RUNNER_TEMP/upload.keystore') &&
+      cleanup.run.includes('$RUNNER_TEMP/eas-production.env') &&
+      cleanup.run.includes('.eas/.env'),
+    `${SMS_WORKFLOW} should remove the key and pulled environment before later release checks`,
+  );
+
+  const buildSource = readText(SMS_BUILD_SCRIPT);
+  const comparisonSource = readText(APK_SIGNATURE_CHECK);
+  check(
+    rule,
+    buildSource?.includes(
+      "const SECRET_ENV = ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD', 'EXPO_TOKEN'];",
+    ) === true,
+    `${SMS_BUILD_SCRIPT} should remove the Expo token as well as signing passwords from children`,
+  );
+  check(
+    rule,
+    comparisonSource?.includes("'ANDROID_KEYSTORE_PASSWORD'") === true &&
+      comparisonSource.includes("'ANDROID_KEY_PASSWORD'") &&
+      comparisonSource.includes("'EXPO_TOKEN'"),
+    `${APK_SIGNATURE_CHECK} should remove every release credential from apksigner verification`,
+  );
+}
+
 try {
   const workflows = loadWorkflows();
   const actions = loadActions();
@@ -995,6 +1065,7 @@ try {
   checkUpdateLookup(workflows);
   checkBuildHygiene();
   checkSignatureProfile(workflows);
+  checkSecretBoundary(workflows);
 
   if (failures.length > 0) {
     console.error(
@@ -1007,7 +1078,8 @@ try {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
         'provenance, gh tokens, pull-request isolation, orchestration, asset safety,\n' +
-        'paginated update lookup, local build hygiene and APK signature profiles all hold.',
+        'paginated update lookup, local build hygiene, APK signature profiles and\n' +
+        'release-secret boundaries all hold.',
     );
   }
 } catch (error) {

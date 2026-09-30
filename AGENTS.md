@@ -56,13 +56,27 @@ What still runs on EAS infrastructure is the part that genuinely needs it:
 else — `release-ota.yml`, `preview-update.yml`, `branch-cleanup.yml` — only
 talks to the EAS API from the runner.
 
+`release-apk-sms.yml` owns the SMS auto-read APK, and is the only release job
+that compiles on a GitHub runner rather than on EAS. It runs Gradle through
+`scripts/build-sms-apk.mjs` after `release-apk.yml` and `release-ota.yml`, takes
+its version, signer and signing-scheme profile from the standard APK they
+attached, and checks its runtime against the update on `production-sms`, the
+channel only it follows.
+`release-ota.yml` publishes each release to both channels, one matrix leg each.
+Its signing key lives in the `release-signing` Environment, limited to `main`.
+`sms-apk-check.yml` builds the same APK with a throwaway key on pull requests,
+with no secrets, and `npm run check:release` in CI keeps the asset names,
+channels and tag provenance of these workflows in step with the app. Every
+release workflow first calls `verify-release-tag.yml` and checks out the commit
+it returns.
+
 Every workflow that touches EAS starts with the same `EXPO_TOKEN` guard step, so
 a fork without an Expo account gets a green skip instead of a red run. Keep that
 shape when adding one.
 
-Releases are distributed as the APK attached to the GitHub Release. Nothing here
-builds or submits a store binary, and nothing should be added that does without
-agreeing the distribution channel first.
+Releases are distributed as the two APKs attached to the GitHub Release. Nothing
+here builds or submits a store binary, and nothing should be added that does
+without agreeing the distribution channel first.
 
 The EAS project id is committed in `app.json`. It is not a secret — the app
 sends it to `u.expo.dev` on every launch — and `owner` already pins the repo to

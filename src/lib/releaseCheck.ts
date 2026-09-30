@@ -23,6 +23,35 @@ const DOWNLOAD_URL_PREFIX = `https://github.com/${REPO_SLUG}/releases/download/`
 
 const REQUEST_TIMEOUT_MS = 8_000;
 
+/** The release asset a standard build installs from. */
+export const STANDARD_APK_ASSET = 'israeli-bank-importer.apk';
+
+/**
+ * The release asset of the SMS auto-read build.
+ *
+ * Its name sorts after {@link STANDARD_APK_ASSET}. GitHub does not document
+ * the order of a release's `assets` array, so the release workflow verifies
+ * the actual response after upload and withdraws this asset unless the
+ * standard one is first. The later-sorting name is defense in depth for
+ * responses and interfaces that sort assets by name.
+ */
+export const SMS_APK_ASSET = 'israeli-bank-importer.sms.apk';
+
+/** Executable adb command for installing the SMS APK downloaded from a release. */
+export const SMS_APK_INSTALL_COMMAND = `adb install -r ${SMS_APK_ASSET}`;
+
+/**
+ * The release asset a build installs from. A standard build is never offered
+ * the SMS package, whose internet-sideloaded install Play Protect may block,
+ * and an SMS build is never offered the standard package, which would drop
+ * auto-read.
+ * @param autoRead - Whether the running build is the SMS auto-read build.
+ * @returns The asset name.
+ */
+export function apkAssetFor(autoRead: boolean): string {
+  return autoRead ? SMS_APK_ASSET : STANDARD_APK_ASSET;
+}
+
 /**
  * Matches a bare `major.minor.patch`. Anchored at both ends and bounded, so a
  * tag padded with a long run of digits cannot force the engine to backtrack.
@@ -108,19 +137,20 @@ function readString(source: unknown, key: string): string | null {
 }
 
 /**
- * Finds the Android package among a release's assets, rejecting any download
- * URL that does not sit under this repository's releases.
+ * Finds the named Android package among a release's assets, rejecting any
+ * download URL that does not sit under this repository's releases.
  * @param assets - The untrusted `assets` array from the release payload.
+ * @param assetName - The exact file name of the package to offer.
  * @returns The verified download URL, or null when there is none.
  */
-export function findApkDownloadUrl(assets: unknown): string | null {
+export function findApkDownloadUrl(assets: unknown, assetName: string): string | null {
   if (!Array.isArray(assets)) {
     return null;
   }
   const entries = assets as unknown[];
   for (const asset of entries) {
     const url = readString(asset, 'browser_download_url');
-    if (url !== null && url.startsWith(DOWNLOAD_URL_PREFIX) && url.endsWith('.apk')) {
+    if (url !== null && url.startsWith(DOWNLOAD_URL_PREFIX) && url.endsWith(`/${assetName}`)) {
       return url;
     }
   }
@@ -129,11 +159,15 @@ export function findApkDownloadUrl(assets: unknown): string | null {
 
 /**
  * Asks GitHub for the latest release and reports it when it is newer than the
- * running version and ships a downloadable Android package.
+ * running version and ships the named Android package.
  * @param currentVersion - The version the app is running.
+ * @param assetName - The package to offer, from {@link apkAssetFor}.
  * @returns The newer release, or null when there is nothing to offer.
  */
-export async function fetchLatestRelease(currentVersion: string): Promise<AvailableRelease | null> {
+export async function fetchLatestRelease(
+  currentVersion: string,
+  assetName: string,
+): Promise<AvailableRelease | null> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
@@ -147,7 +181,7 @@ export async function fetchLatestRelease(currentVersion: string): Promise<Availa
       return null;
     }
     const data = (await res.json()) as { tag_name?: unknown; assets?: unknown };
-    return toAvailableRelease(data, currentVersion);
+    return toAvailableRelease(data, currentVersion, assetName);
   } catch {
     // Silent on purpose: the app is fully usable on the version it already has,
     // so a failed check is not a problem the reader has to hear about. Saying
@@ -162,17 +196,19 @@ export async function fetchLatestRelease(currentVersion: string): Promise<Availa
  * Validates a release payload against the running version.
  * @param data - The untrusted release payload.
  * @param currentVersion - The version the app is running.
+ * @param assetName - The package to offer.
  * @returns The newer release, or null when it is not usable.
  */
 function toAvailableRelease(
   data: { tag_name?: unknown; assets?: unknown },
   currentVersion: string,
+  assetName: string,
 ): AvailableRelease | null {
   const tag = typeof data.tag_name === 'string' ? data.tag_name : '';
   const version = normalizeVersion(tag);
   if (version === null || !isNewerVersion(version, currentVersion)) {
     return null;
   }
-  const downloadUrl = findApkDownloadUrl(data.assets);
+  const downloadUrl = findApkDownloadUrl(data.assets, assetName);
   return downloadUrl === null ? null : { version, downloadUrl };
 }

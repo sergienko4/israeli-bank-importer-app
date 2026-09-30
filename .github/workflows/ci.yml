@@ -73,6 +73,11 @@ jobs:
       # without them and every other check was green.
       - name: Manifest wires up SMS auto-read
         run: npm run check:manifest
+      # The release workflows name the APK assets and update channels the app
+      # expects, and build only the commit a verified tag points at. A
+      # mismatch still builds and publishes; the release is just wrong.
+      - name: Release workflows match the app
+        run: npm run check:release
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

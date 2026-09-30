@@ -96,9 +96,10 @@ of submitting a wrong code is a bank-side attempt, and those run out.
 - **Auto-submit is off until you turn it on.** In **OTP settings** you can let a
   filled code send itself. It then sends after a three-second countdown you can
   cancel, at most once per request.
-- **Zero-touch capture is not in the released APK.** It is the only part of this
-  that needs an SMS permission, and that permission is what makes an APK
-  impossible to install — see below.
+- **Zero-touch capture is not in the standard APK.** It is the only part of this
+  that needs an SMS permission. On affected devices, Play Protect blocks an APK
+  with that permission when it comes from a browser or files app. Each release
+  carries it as a second APK, installed over ADB — see below.
 
 ### Zero-touch capture
 
@@ -107,40 +108,40 @@ in OTP settings removes that: Android asks for `RECEIVE_SMS`, and once you grant
 it a code can be captured and submitted while the phone is in your pocket and
 the app is closed — no dialog, no tap.
 
-That is a different privacy bargain, and it is also one you have to build for
-yourself.
+That is a different privacy bargain, so it comes as a separate APK that you
+choose to install.
 
-**The released APK does not include it.** Google Play Protect's enhanced fraud
-protection refuses to install a sideloaded app that declares an SMS permission,
-and offers no way past the warning, so a release that declared `RECEIVE_SMS`
-could not be installed by tapping the APK at all. The feature's code is still
-here and still tested; only the manifest declaration is withheld. In the
-released build the app simply has to be on screen when the code arrives, which
-is what everything above covers.
+**The standard APK does not include it.** On Android devices with Google Play
+services, Google Play Protect's
+[enhanced fraud protection](https://developers.google.com/android/play-protect/warning-dev-guidance)
+blocks apps from internet-sideloading sources such as browsers and file managers
+when they declare `RECEIVE_SMS`; Google says this protection is active in select
+markets. On affected devices, tapping the downloaded SMS APK cannot install it.
+The feature's code is still here and still tested; only the manifest declaration
+is withheld. With the standard APK the app simply has to be on screen when the
+code arrives, which is what everything above covers.
 
-To build one that does include it, add the flag to the `apk` profile in
-`eas.json`. A shell variable will not do: the build resolves this config on an
-EAS builder rather than on your machine, so the value has to travel with the
-profile.
-
-```json
-"apk": {
-  "autoIncrement": true,
-  "channel": "production",
-  "env": { "OTP_SMS_AUTOREAD": "1" },
-  "android": { "buildType": "apk" }
-}
-```
-
-Then build it, download the artifact, and install it over `adb` — which does
-not consult Play Protect, and is the whole reason this is installable at all:
+**Each release also carries `israeli-bank-importer.sms.apk`, which does
+include it.** It has the same package, version and signing profile as the
+standard APK, so it installs over that APK and keeps your pairing and settings.
+It adds the SMS permission and native components and follows its own update
+channel. Install [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools),
+add its directory to `PATH`, enable USB debugging, download the SMS APK, and
+open a terminal in the directory containing it. Then install it over ADB, which
+also works when Play Protect blocks the browser or files-app installation path:
 
 ```sh
-eas build --platform android --profile apk
-adb install -r ./path/to/the-downloaded.apk
+adb install -r israeli-bank-importer.sms.apk
 ```
 
-The rest of this section describes that opt-in build:
+To go back, install `israeli-bank-importer.apk` over it the same way.
+
+The SMS APK updates itself like the standard one. Every release publishes its
+over-the-air update to a second channel, `production-sms`, which only this APK
+follows. When a release needs a new APK, its banner asks you to install it from
+a computer with the same command.
+
+About the SMS APK:
 
 - It **declares** `RECEIVE_SMS`, so you will see it listed among the app's
   permissions before you have agreed to anything. Declaring is not holding: it is
@@ -158,10 +159,18 @@ The rest of this section describes that opt-in build:
 - `READ_SMS` is blocked outright in every build, so none of this can reach your
   message history — only messages arriving while the app is installed, paired
   and switched on.
-- Leaving `OTP_SMS_AUTOREAD` unset — the default, and what every release is built
-  from — leaves the permission, the receiver and the service out of the APK
-  altogether. That build is otherwise identical, and it hides the switch rather
-  than offering one that could never work.
+- The standard APK is built without the `OTP_SMS_AUTOREAD` flag, which leaves
+  the permission, the receiver and the service out of it altogether, and it
+  hides the switch rather than offering one that could never work. The two APKs
+  have the same package, version, version code, signer certificate and signing
+  schemes. The SMS APK intentionally has those native components and follows
+  its own `production-sms` update channel and runtime.
+- The release job builds the SMS APK with `scripts/build-sms-apk.mjs`, on a
+  GitHub runner rather than EAS. It refuses to attach one whose package,
+  version, version code, signer certificate or signing-scheme profile differs
+  from the standard APK of the same release, or whose update runtime has no
+  matching update on `production-sms`. An APK you build yourself is signed with
+  your own key, so Android will not install it over one from the Releases page.
 
 **A code that arrives before the importer asks is held, not lost.** Banks often
 send the code first, and Android delivers that broadcast exactly once. Rather
@@ -304,10 +313,12 @@ page once `EXPO_TOKEN` is configured — no Play Store needed.
 
 1. Open the latest release and download `israeli-bank-importer.apk` (if no APK
    asset is attached, the build is still in progress or was skipped — check back
-   or use the dev build).
-2. On your phone, allow installing from your browser or files app
-   (Settings → Apps → Special access → Install unknown apps).
-3. Open the APK to install, then point the app at your importer's portal.
+   or use the dev build). The release also carries
+   `israeli-bank-importer.sms.apk`, which adds zero-touch SMS capture and uses
+   the ADB installation steps in [Zero-touch capture](#zero-touch-capture).
+2. For the standard APK, allow installing from your browser or files app
+   (Settings → Apps → Special access → Install unknown apps), then open it.
+3. Point the app at your importer's portal.
 
 You only do this once. From then on the app updates itself — see
 [Staying up to date](#staying-up-to-date).
@@ -337,6 +348,10 @@ A sideloaded app gets no store to update it, so the app looks after itself.
   the new APK. Keyboard-safe layout is one of these: it is built on
   [`react-native-keyboard-controller`](https://kirillzyusko.github.io/react-native-keyboard-controller/),
   a native module, so it reaches you as a new APK rather than as an update.
+- **The SMS APK** gets both the same way, from its own `production-sms` update
+  channel. Its **Download** banner links to the new SMS APK and asks you to
+  install it from a computer. That ADB path works on affected devices where
+  Play Protect blocks installation from a browser or files app.
 
 Both checks are silent when they find nothing, and every failure — offline, rate
 limited, malformed response — is treated as "no update" rather than an error the
@@ -357,10 +372,21 @@ user cannot act on.
   release and, in that same run, fans out to **APK publish**
   (`release-apk.yml`), which builds the Android APK on EAS and attaches it to the
   release, and **OTA publish** (`release-ota.yml`), which pushes the bundle to
-  the EAS `production` channel so installed apps update themselves. Both are
-  chained rather than triggered by the release event: the tag is created with the
-  default `GITHUB_TOKEN`, and GitHub never starts a new workflow run from a
-  `GITHUB_TOKEN` event.
+  the EAS `production` channel, and to `production-sms` for the SMS APK, so
+  installed apps update themselves. Once both finish, **SMS APK publish**
+  (`release-apk-sms.yml`) builds the SMS APK with Gradle on the runner — no EAS
+  build — signs it with the same key from the `release-signing` Environment, and
+  attaches it to the same release as `israeli-bank-importer.sms.apk`. All of
+  them are chained rather than triggered by the release event: the tag is
+  created with the default `GITHUB_TOKEN`, and GitHub never starts a new
+  workflow run from a `GITHUB_TOKEN` event. Each first runs
+  `verify-release-tag.yml` and builds the commit it returns, so a tag that is
+  not on `main` builds nothing.
+- **Release wiring**: `npm run check:release` runs in CI and checks the
+  workflows against the app: asset names, update channels, tag provenance, and
+  the PR check's isolation. `sms-apk-check.yml` builds the SMS APK with a
+  throwaway key on every PR that touches its native inputs, so a break shows up
+  before a release rather than after it.
 - **Preview updates**: `preview-update.yml` publishes every non-`main` branch to
   its own EAS update branch, and `branch-cleanup.yml` deletes that update branch
   when the git branch goes away. `development-build.yml` queues a development
@@ -368,7 +394,7 @@ user cannot act on.
 - **Everything runs in GitHub Actions.** Publishing an update only uploads a
   JavaScript bundle, so it needs no EAS compute — and a GitHub-hosted runner
   does it in about two minutes instead of waiting out the EAS free-plan queue.
-  Only `eas build` itself runs on EAS builders.
+  Only `eas build` itself runs on EAS builders, and the SMS APK does not use it.
 - **E2E**: `.maestro/` holds two flows and `eas.json` has an `e2e-test` build
   profile, but nothing runs them automatically — hosted Maestro runs need a paid
   EAS plan. Run them by hand until the account is upgraded.
@@ -376,9 +402,10 @@ user cannot act on.
   patch and a breaking change bumps the minor, so the version stays in the `0.x`
   lane until the app is declared stable
   (`bump-patch-for-minor-pre-major` + `bump-minor-pre-major`).
-- **No store submission**: releases are distributed as the APK attached to the
-  GitHub Release. Nothing in this repository builds or submits a store binary,
-  so no Apple Developer or Google Play account is required to cut a release.
+- **No store submission**: releases are distributed as the two APKs attached to
+  the GitHub Release. Nothing in this repository builds or submits a store
+  binary, so no Apple Developer or Google Play account is required to cut a
+  release.
 - Secret-gated jobs self-skip until `EXPO_TOKEN` / `SONAR_TOKEN` are set, so CI
   stays green without them.
 
@@ -405,9 +432,9 @@ user cannot act on.
 
 ## Releasing a beta
 
-The release pipeline is already wired (`release-please` → tag → APK attached to
-the release). To cut device builds and distribute a beta, one-time setup is
-needed:
+The release pipeline is already wired (`release-please` → tag → both APKs
+attached to the release). To cut device builds and distribute a beta, one-time
+setup is needed:
 
 1. Create an [Expo](https://expo.dev) account and add an **`EXPO_TOKEN`** repository
    secret (Settings → Secrets and variables → Actions) — this unlocks the APK
@@ -415,9 +442,24 @@ needed:
 2. Set **`expo.owner`** and **`extra.eas.projectId`** in `app.json` to your Expo
    account and project (`eas init` writes the id for you). The id is not a
    secret — the app sends it to `u.expo.dev` on every update check.
-3. Merge the open **`release-please`** PR to tag a release. The same run attaches
-   the Android APK to the GitHub Release and publishes the over-the-air update to
-   the `production` channel.
+3. Create a **`release-signing`** Environment (Settings → Environments), limit
+   its deployment branches to `main`, and add the key EAS signs the standard APK
+   with, so the SMS APK installs over it. `eas credentials -p android` →
+   `credentials.json: Upload/Download` → **Download credentials from EAS to
+   credentials.json** writes `credentials.json` and
+   `credentials/android/keystore.jks`, both git-ignored. Add them as four
+   Environment secrets:
+   - `ANDROID_KEYSTORE_BASE64` — the keystore, from
+     `base64 -i credentials/android/keystore.jks | gh secret set ANDROID_KEYSTORE_BASE64 --env release-signing`
+   - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` —
+     the `keystorePassword`, `keyAlias` and `keyPassword` values in
+     `credentials.json`
+
+   With `EXPO_TOKEN` set and this Environment missing, the SMS APK job fails
+   rather than skips, so a release never silently lacks its SMS APK.
+4. Merge the open **`release-please`** PR to tag a release. The same run attaches
+   both Android APKs to the GitHub Release and publishes the over-the-air update
+   to the `production` and `production-sms` channels.
 
 ## License
 

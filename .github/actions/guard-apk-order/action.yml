@@ -1,0 +1,38 @@
+name: Guard APK release order
+description: >
+  Keeps the standard APK first for clients that predate variant-aware release
+  selection. If the order is unsafe, withdraws the SMS APK and fails closed.
+
+inputs:
+  release_tag:
+    description: 'Release tag whose assets should be checked'
+    required: true
+  github_token:
+    description: 'Token with contents: write for reading and deleting release assets'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Keep the standard APK first for older apps
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
+      run: |
+        first=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+          --jq '[.assets[].browser_download_url | select(endswith(".apk"))][0]')
+        case "$first" in
+          */israeli-bank-importer.apk)
+            echo "The standard APK is still the first .apk asset."
+            ;;
+          *)
+            if ! gh release delete-asset "$RELEASE_TAG" israeli-bank-importer.sms.apk \
+              --repo "$GITHUB_REPOSITORY" --yes; then
+              echo "::error::Older apps would be offered $first, and the unsafe SMS APK could not be removed."
+              exit 1
+            fi
+            echo "::error::Older apps would be offered $first, so the SMS APK was removed from the release."
+            exit 1
+            ;;
+        esac

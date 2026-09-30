@@ -57,6 +57,21 @@ const RECEIVE_SMS = 'android.permission.RECEIVE_SMS';
 /** Reading the message history. Refused outright, in every build. */
 const READ_SMS = 'android.permission.READ_SMS';
 
+/**
+ * The update channel an auto-read build asks for. Its updates are built from
+ * the same flag, so they share its runtime; the standard channel's never do.
+ */
+const AUTO_READ_CHANNEL = 'production-sms';
+
+/** The variable a build made outside EAS Build sets its versionCode with. */
+const VERSION_CODE_VARIABLE = 'ANDROID_VERSION_CODE';
+
+/** The largest versionCode Google Play accepts. */
+const MAX_VERSION_CODE = 2_100_000_000;
+
+/** A whole number from 1 upward, written without a leading zero or sign. */
+const VERSION_CODE_PATTERN = /^[1-9]\d{0,9}$/;
+
 /** The application node the manifest plugin edits. */
 type ManifestApplication = Parameters<
   typeof AndroidConfig.Manifest.getMainApplicationOrThrow
@@ -77,11 +92,12 @@ type ManifestApplication = Parameters<
  * is what happened in `v0.2.9`.
  *
  * Everything the feature needs is still compiled in and still tested; only the
- * manifest declaration is withheld. Build with `OTP_SMS_AUTOREAD=1` to get it
- * back, and install that APK over `adb`, which does not consult Play Protect.
+ * manifest declaration is withheld. `scripts/build-sms-apk.mjs` sets
+ * `OTP_SMS_AUTOREAD=1` to build the APK that declares it, which is installed
+ * over `adb`, since that does not consult Play Protect.
  *
- * Set it for `eas update` as well as for the build if you do. `eas build`
- * resolves this config on one machine and `eas update` on another, and under the
+ * Set it for `eas update` as well as for the build. The build resolves this
+ * config on one machine and `eas update` on another, and under the
  * `fingerprint` runtime version policy a different config is a different runtime
  * id — so setting it for only one of the two would leave updates unable to reach
  * the binary. Leaving it unset everywhere, which is the default, cannot drift
@@ -91,6 +107,36 @@ type ManifestApplication = Parameters<
  */
 function isAutoReadBuild(): boolean {
   return process.env.OTP_SMS_AUTOREAD === '1';
+}
+
+/**
+ * The versionCode a build made outside EAS Build must carry.
+ *
+ * EAS Build owns the number through remote versioning and never reads this.
+ * A build made elsewhere copies it from the standard APK of the same release,
+ * because Android installs one APK over another of the same package only when
+ * the number does not go down. A value that was quietly dropped or rounded
+ * would produce an APK that cannot be installed over the one it belongs with,
+ * so anything but a whole number Play accepts stops config resolution.
+ *
+ * @returns The number, or `undefined` when the variable is unset.
+ */
+function versionCodeFromEnv(): number | undefined {
+  // Typed as unknown because this file sees `process.env` as `any`.
+  const raw: unknown = process.env.ANDROID_VERSION_CODE;
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (
+    typeof raw !== 'string' ||
+    !VERSION_CODE_PATTERN.test(raw) ||
+    Number(raw) > MAX_VERSION_CODE
+  ) {
+    throw new Error(
+      `${VERSION_CODE_VARIABLE} must be a whole number from 1 to ${String(MAX_VERSION_CODE)}, got ${JSON.stringify(raw)}`,
+    );
+  }
+  return Number(raw);
 }
 
 /**
@@ -154,6 +200,7 @@ const withOtpSmsAutoRead: ConfigPlugin = (config) =>
  */
 export default ({ config }: ConfigContext): ExpoConfig => {
   const autoRead = isAutoReadBuild();
+  const versionCode = versionCodeFromEnv();
 
   const resolved: ExpoConfig = {
     ...config,
@@ -161,9 +208,24 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     slug: config.slug ?? 'israeli-bank-importer-app',
     android: {
       ...config.android,
+      ...(versionCode === undefined ? {} : { versionCode }),
       blockedPermissions: [READ_SMS],
       ...(autoRead ? { permissions: [RECEIVE_SMS] } : {}),
     },
+    // A build made outside EAS Build names its channel in a request header;
+    // Expo writes it into the manifest. The standard build's channel is set by
+    // EAS Build, so it gets no header.
+    ...(autoRead
+      ? {
+          updates: {
+            ...config.updates,
+            requestHeaders: {
+              ...config.updates?.requestHeaders,
+              'expo-channel-name': AUTO_READ_CHANNEL,
+            },
+          },
+        }
+      : {}),
     extra: {
       ...config.extra,
       otpSmsAutoRead: autoRead,

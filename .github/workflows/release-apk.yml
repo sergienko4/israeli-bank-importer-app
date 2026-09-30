@@ -30,14 +30,32 @@ on:
         required: true
         type: string
 
-# Least privilege: the workflow token is read-only by default and the single job
-# below opts in to the write it needs to attach the APK asset.
+# Least privilege: the workflow token is read-only by default and only the build
+# job opts in to the write it needs to attach the APK asset.
 permissions:
   contents: read
 
+# `gh release upload --clobber` deletes before it re-uploads, which can change
+# asset order. Share this per-tag group with the SMS uploader so only one can
+# mutate a release at a time; neither mutation is safe to cancel halfway.
+concurrency:
+  group: release-apk-assets-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
+  # Runs first, holds no secret and checks out nothing: it decides which
+  # commit the job below may build (see verify-release-tag.yml).
+  verify:
+    name: Verify release tag
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-release-tag.yml
+    with:
+      tag: ${{ inputs.tag }}
+
   build-apk:
     name: Build & attach Android APK
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write # `gh release upload` attaches the APK to the release
@@ -56,6 +74,9 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The verified commit, not the tag name: a tag re-pointed after the
+          # check cannot change what gets built.
+          ref: ${{ needs.verify.outputs.sha }}
           persist-credentials: false
       - if: steps.guard.outputs.run == 'true'
         uses: ./.github/actions/setup-node
@@ -63,20 +84,29 @@ jobs:
         uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
       - if: steps.guard.outputs.run == 'true'
         name: Point the build at this account's update server
         # `updates.url` is derived from the committed project id. It is
         # configured here rather than committed so the value cannot drift from
         # the id; without it the binary ships with no update endpoint and could
         # never pick up an over-the-air release. Idempotent.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas update:configure --platform android --non-interactive
       - if: steps.guard.outputs.run == 'true'
         name: Build Android APK (EAS cloud)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas build --platform android --profile apk --non-interactive --wait --json \
+            > "$RUNNER_TEMP/eas-build.json"
+      - if: steps.guard.outputs.run == 'true'
+        name: Read Android APK artifact URL
         id: build
         run: |
-          URL=$(eas build --platform android --profile apk --non-interactive --wait --json \
-            | jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl')
+          URL=$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl' \
+            "$RUNNER_TEMP/eas-build.json")
+          rm -f "$RUNNER_TEMP/eas-build.json"
           case "$URL" in
             https://*) : ;;
             *) echo "::error::Unexpected APK artifact URL"; exit 1 ;;
@@ -88,8 +118,31 @@ jobs:
           APK_URL: ${{ steps.build.outputs.url }}
         run: curl -fL -o israeli-bank-importer.apk "$APK_URL"
       - if: steps.guard.outputs.run == 'true'
+        name: Preserve and withdraw the SMS APK
+        id: prepare-upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node scripts/standard-apk-replacement.mjs --prepare
+      - if: steps.guard.outputs.run == 'true'
         name: Attach APK to the GitHub Release
+        id: upload
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: gh release upload "$RELEASE_TAG" israeli-bank-importer.apk --clobber
+      - name: Restore the SMS APK after standard replacement
+        if: success() && steps.prepare-upload.outputs.restore_sms == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node scripts/standard-apk-replacement.mjs --restore
+      - if: always() && steps.guard.outputs.run == 'true' && steps.upload.outcome == 'success'
+        name: Keep the standard APK first for older apps
+        uses: ./.github/actions/guard-apk-order
+        with:
+          release_tag: ${{ inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove the preserved SMS APK
+        if: always() && steps.guard.outputs.run == 'true'
+        run: rm -rf "$RUNNER_TEMP/release-asset-backup"

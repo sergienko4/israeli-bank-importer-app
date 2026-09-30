@@ -39,13 +39,18 @@ jobs:
         uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
       - if: steps.guard.outputs.run == 'true'
         name: Delete the update branch
+        id: delete
+        continue-on-error: true
+        env:
+          BRANCH: ${{ github.event.ref }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas branch:delete "$BRANCH" --non-interactive
+      - if: steps.guard.outputs.run == 'true' && steps.delete.outcome == 'failure'
+        name: Report an absent update branch
         env:
           BRANCH: ${{ github.event.ref }}
         # A branch that never published an update has nothing to delete, and
         # that is a normal outcome rather than a failed cleanup.
-        run: |
-          eas branch:delete "$BRANCH" --non-interactive \
-            || echo "::notice::No EAS update branch named $BRANCH"
+        run: echo "::notice::No EAS update branch named $BRANCH"

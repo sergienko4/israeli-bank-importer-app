@@ -61,3 +61,21 @@ jobs:
       tag: ${{ needs.release-please.outputs.tag_name }}
     secrets:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+  # Runs after both: the SMS APK takes its version, signer and signing-scheme
+  # profile from the APK attached above, and it is only attached once its update
+  # is on the `production-sms` channel. It builds on a GitHub runner, not in the
+  # EAS queue, so it adds one runner build to the release.
+  apk-sms:
+    name: Attach SMS APK
+    needs: [release-please, apk, ota]
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: write # `gh release upload` attaches the SMS APK asset
+    uses: ./.github/workflows/release-apk-sms.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+    # The signing key is not passed: the callee reads it from the
+    # `release-signing` Environment, which only its build job can enter.
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

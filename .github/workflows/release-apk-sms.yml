@@ -1,0 +1,195 @@
+name: Release SMS APK
+
+# Builds the SMS auto-read APK of a release on this runner, with Gradle and no
+# EAS build, and attaches it to the same GitHub Release as
+# israeli-bank-importer.sms.apk.
+#
+# It has the same package, version, versionCode, signer and signing schemes as
+# the standard APK. Its RECEIVE_SMS components and `production-sms` channel
+# deliberately differ. On affected devices, Play Protect blocks its browser or
+# files-app install, so ADB is the consistent installation path.
+#
+# scripts/build-sms-apk.mjs takes the version, signer and scheme profile from
+# the standard APK, refuses native mismatches, and reports the SMS APK's
+# runtime. A later workflow step uses find-matching-update.mjs to require an
+# update with that runtime, tag and commit on the branch currently mapped to
+# `production-sms`. So this runs after both APK and OTA publishers.
+#
+# Reusable rather than a `release: published` listener for the same reason as
+# release-apk.yml: releases created with GITHUB_TOKEN do not start new runs.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag to attach the SMS APK to'
+        required: true
+        type: string
+    secrets:
+      EXPO_TOKEN:
+        # Optional so a fork without an Expo account still gets a green run:
+        # the guard step below turns an absent token into a skip, not a failure.
+        description: 'Expo access token used to read the EAS environment and updates'
+        required: false
+      # The signing key comes from the `release-signing` Environment, and no
+      # caller passes it. GitHub uses an Environment's secret over a passed
+      # one once the job names the Environment; these are declared so the
+      # names are part of the interface and linters can type-check them.
+      ANDROID_KEYSTORE_BASE64:
+        description: 'Upload keystore (JKS, base64); set in the release-signing Environment'
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        description: 'Keystore password; set in the release-signing Environment'
+        required: false
+      ANDROID_KEY_ALIAS:
+        description: 'Key alias; set in the release-signing Environment'
+        required: false
+      ANDROID_KEY_PASSWORD:
+        description: 'Key password; set in the release-signing Environment'
+        required: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag (e.g. israeli-bank-importer-app-v0.3.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Share this per-tag group with the standard uploader. `--clobber` deletes an
+# existing asset before re-uploading it, so concurrent mutations could change
+# which APK older clients see first; neither mutation is safe to cancel midway.
+concurrency:
+  group: release-apk-assets-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs first, holds no secret and checks out nothing: it decides which
+  # commit the job below may build (see verify-release-tag.yml).
+  verify:
+    name: Verify release tag
+    permissions:
+      contents: read
+    uses: ./.github/workflows/verify-release-tag.yml
+    with:
+      tag: ${{ inputs.tag }}
+
+  build-apk-sms:
+    name: Build & attach SMS APK
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # The upload key lives in this Environment, which only `main` may use.
+    environment: release-signing
+    permissions:
+      contents: write # `gh release upload` attaches the SMS APK to the release
+    steps:
+      - name: Gate on EXPO_TOKEN
+        id: guard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::notice::EXPO_TOKEN secret not set - skipping the SMS APK build. Add it in repo settings to publish APKs to Releases."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The verified commit, not the tag name: a tag re-pointed after the
+          # check cannot change what gets built.
+          ref: ${{ needs.verify.outputs.sha }}
+          persist-credentials: false
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-node
+      - if: steps.guard.outputs.run == 'true'
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # 9.0.0
+        with:
+          eas-version: latest
+      - if: steps.guard.outputs.run == 'true'
+        name: Point the build at this account's update server
+        # Without the SMS flag: this writes the resolved `updates` into
+        # app.json, and the flag's channel header must not land there.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas update:configure --platform android --non-interactive
+      - if: steps.guard.outputs.run == 'true'
+        uses: ./.github/actions/setup-android-build
+      - if: steps.guard.outputs.run == 'true'
+        name: Download the standard APK of this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern israeli-bank-importer.apk --dir "$RUNNER_TEMP/reference"
+      - if: steps.guard.outputs.run == 'true'
+        name: Pull the production EAS environment
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          umask 077
+          eas env:pull --environment production \
+            --path "$RUNNER_TEMP/eas-production.env" --non-interactive
+      - if: steps.guard.outputs.run == 'true'
+        name: Write the upload keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::The release-signing environment is missing ANDROID_KEYSTORE_BASE64."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"
+      - if: steps.guard.outputs.run == 'true'
+        name: Build the SMS APK (Gradle on this runner)
+        id: build
+        # The pulled file gives the build the same readable EAS `production`
+        # variables as the update. Pre-build EAS commands have exited before
+        # the keystore and passwords exist, and Node's inherited variables
+        # override that file.
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/upload.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EXPO_TOKEN: ''
+        run: |
+          node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs \
+            --reference "$RUNNER_TEMP/reference/israeli-bank-importer.apk" \
+            --out israeli-bank-importer.sms.apk
+      - name: Remove the build credentials
+        if: always() && steps.guard.outputs.run == 'true'
+        run: |
+          rm -f "$RUNNER_TEMP/upload.keystore" "$RUNNER_TEMP/eas-production.env"
+          rm -rf .eas/.env
+      - if: steps.guard.outputs.run == 'true'
+        name: Check the matching update serves production-sms
+        # An SMS APK without its update would run this release's native code
+        # with no way to receive later JavaScript fixes. The helper resolves the
+        # channel's current branch, then pages through every group and reads
+        # each one in full for its commit.
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          BUILD_SHA: ${{ needs.verify.outputs.sha }}
+          RUNTIME: ${{ steps.build.outputs.runtime }}
+        run: node scripts/find-matching-update.mjs
+      - if: steps.guard.outputs.run == 'true'
+        name: Attach the SMS APK to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" israeli-bank-importer.sms.apk \
+            --repo "$GITHUB_REPOSITORY" --clobber
+      - if: steps.guard.outputs.run == 'true'
+        name: Keep the standard APK first for older apps
+        uses: ./.github/actions/guard-apk-order
+        with:
+          release_tag: ${{ inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

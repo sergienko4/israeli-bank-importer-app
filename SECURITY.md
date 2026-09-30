@@ -27,19 +27,24 @@ the importer you point it at. Relevant concerns include:
 - Handling of the portal bearer token and stored password (at rest and in
   transit).
 - OTP code handling in the app-based OTP flow, including SMS capture. The
-  released build holds **no SMS permission** at all: it uses the SMS User Consent
+  standard APK holds **no SMS permission** at all: it uses the SMS User Consent
   API, so the user approves each individual message in a system dialog and the app
   can read nothing else. A captured message body is parsed for
   digits and discarded in the same step — it is never stored, logged, or sent
   anywhere. Automatic submission is opt-in, bounded to one send per request, and
   cancellable.
 - Opt-in **auto-read** trades that dialog for zero interaction and is the one
-  path that uses `RECEIVE_SMS`. It is left out of the released APK — Play Protect
-  refuses to install a sideloaded app that declares an SMS permission — so only a
-  build made with `OTP_SMS_AUTOREAD=1` carries the permission, receiver and
-  service at all. Even in that build it is a runtime permission: nothing is
-  granted until the user turns the switch on and approves Android's dialog, and
-  the receiver is inert until then.
+  path that uses `RECEIVE_SMS`. It is left out of the standard APK because Play
+  Protect's enhanced fraud protection blocks internet-sideloaded apps with that
+  permission on affected devices with Google Play services. Each release also
+  carries a separate SMS APK, `israeli-bank-importer.sms.apk`, built with
+  `OTP_SMS_AUTOREAD=1`, which alone carries the permission, receiver and service;
+  it is installed over `adb`, including on affected devices where tapping a
+  browser or files-app download is blocked. It is signed with the same key as
+  the standard APK and must match its version, so the two can replace each
+  other. Even in that build, it remains a runtime permission: nothing is granted
+  until the user turns the switch on and approves Android's dialog, and the
+  receiver is inert until then.
   Reports about it are in scope, in particular any way to make its receiver act
   on a message while the user has not opted in, to make it submit while no
   scrape is waiting for a code, or to reach it from another app.

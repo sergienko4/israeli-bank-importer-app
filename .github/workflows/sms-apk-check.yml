@@ -1,0 +1,138 @@
+name: SMS APK check
+
+# Builds the SMS auto-read APK on a pull request, the way release-apk-sms.yml
+# builds it on a release, so a change that breaks the Gradle build on a GitHub
+# runner fails here rather than on release day.
+#
+# Separate from the release workflow on purpose: this one has no Environment,
+# no write permission and no secret, so fork and Dependabot pull requests run
+# it exactly as others do. It signs with a key made for this run alone and
+# uploads nothing.
+#
+# Only the inputs of prebuild and Gradle trigger it. A JavaScript-only change
+# is already bundled for both platforms by ci.yml on every pull request.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app.config.ts'
+      - 'app.json'
+      - 'fingerprint.config.js'
+      - 'metro.config.js'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'patches/**'
+      - 'modules/**'
+      - 'assets/**'
+      - 'scripts/apk-signature-profile.mjs'
+      - 'scripts/build-sms-apk.mjs'
+      - 'scripts/compare-apk-signatures.mjs'
+      - '.github/actions/**'
+      - '.github/workflows/sms-apk-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sms-apk-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+# `shell: bash` adds `-o pipefail`, which the implicit default does not.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-apk-sms:
+    name: Build the SMS APK (Gradle on this runner)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-android-build
+      - name: Build with a throwaway key
+        # There is no release APK to match here, so --self-reference takes the
+        # signer from this key, the versionName from the app config and the
+        # versionCode from ANDROID_VERSION_CODE. The password is made in this
+        # step and reaches keytool and the script by variable name only.
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/check.keystore
+          ANDROID_KEY_ALIAS: sms-apk-check
+          ANDROID_VERSION_CODE: '1'
+        run: |
+          ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 16)
+          ANDROID_KEY_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
+          export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_PASSWORD
+          keytool -genkeypair -keystore "$ANDROID_KEYSTORE_PATH" -storetype PKCS12 \
+            -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 \
+            -dname 'CN=SMS APK check' \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          output="$RUNNER_TEMP/israeli-bank-importer.sms.apk"
+          node scripts/build-sms-apk.mjs --self-reference \
+            --out "$output"
+
+          versions=node_modules/react-native/gradle/libs.versions.toml
+          build_tools=$(sed -n -E 's/^buildTools[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$versions")
+          apksigner="$ANDROID_HOME/build-tools/$build_tools/apksigner"
+          mismatch="$RUNNER_TEMP/signature-mismatch"
+          "$apksigner" sign --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$mismatch" "$output"
+          if node scripts/compare-apk-signatures.mjs \
+            --apksigner "$apksigner" --reference "$output" --actual "$mismatch" \
+            2> "$RUNNER_TEMP/signature-mismatch.log"; then
+            echo "::error::The validator accepted a same-certificate APK with a different signing profile."
+            exit 1
+          fi
+          grep -F 'signing schemes differ:' "$RUNNER_TEMP/signature-mismatch.log" > /dev/null
+          rm -f "$mismatch" "$RUNNER_TEMP/signature-mismatch.log"
+
+          rotated_keystore="$RUNNER_TEMP/rotated.keystore"
+          rotated_alias=sms-apk-check-rotated
+          keytool -genkeypair -keystore "$rotated_keystore" -storetype PKCS12 \
+            -alias "$rotated_alias" -keyalg RSA -keysize 2048 -validity 1 \
+            -dname 'CN=SMS APK rotated check' \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          lineage="$RUNNER_TEMP/signing-lineage"
+          "$apksigner" rotate --out "$lineage" \
+            --old-signer --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --new-signer --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD
+          lineaged="$RUNNER_TEMP/signature-lineage"
+          "$apksigner" sign --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --next-signer --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --lineage "$lineage" --rotation-min-sdk-version 28 \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$lineaged" "$output"
+          no_lineage="$RUNNER_TEMP/signature-no-lineage"
+          "$apksigner" sign --ks "$rotated_keystore" --ks-key-alias "$rotated_alias" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$no_lineage" "$output"
+          if node scripts/compare-apk-signatures.mjs \
+            --apksigner "$apksigner" --reference "$lineaged" --actual "$no_lineage" \
+            2> "$RUNNER_TEMP/signature-lineage.log"; then
+            echo "::error::The validator accepted an APK with an unsupported signing-key lineage."
+            exit 1
+          fi
+          grep -F 'signing-key lineage is unsupported' \
+            "$RUNNER_TEMP/signature-lineage.log" > /dev/null
+          rm -f "$rotated_keystore" "$lineage" "$lineaged" "$no_lineage" \
+            "$RUNNER_TEMP/signature-lineage.log"
+      - name: Remove the throwaway key
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/check.keystore" "$RUNNER_TEMP/rotated.keystore" \
+            "$RUNNER_TEMP/signing-lineage" "$RUNNER_TEMP/signature-lineage" \
+            "$RUNNER_TEMP/signature-no-lineage" "$RUNNER_TEMP/signature-lineage.log"

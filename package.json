@@ -5,9 +5,9 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@sinclair/typebox": "^0.34.52",
-    "expo": "~57.0.25",
+    "expo": "~57.0.26",
     "expo-asset": "~57.0.18",
-    "expo-constants": "~57.0.16",
+    "expo-constants": "~57.0.20",
     "expo-crypto": "~57.0.3",
     "expo-dev-client": "~57.0.19",
     "expo-device": "~57.0.2",
@@ -18,8 +18,8 @@
     "expo-notifications": "~57.0.21",
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
-    "expo-task-manager": "~57.0.20",
-    "expo-updates": "~57.0.23",
+    "expo-task-manager": "~57.0.21",
+    "expo-updates": "~57.0.24",
     "expo-web-browser": "~57.0.3",
     "react": "19.2.3",
     "react-native": "0.86.3",
@@ -53,7 +53,8 @@
     "prettier": "^3.9.9",
     "sonarqube-scanner": "^5.0.1",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.70.1"
+    "typescript-eslint": "^8.70.1",
+    "yaml": "^2.9.0"
   },
   "overrides": {
     "postcss": "^8.5.18",
@@ -86,7 +87,9 @@
     "contract:check": "node scripts/check-contract.mjs",
     "contract:sync": "node scripts/check-contract.mjs --write",
     "check:bundle": "node scripts/check-bundle.mjs",
-    "check:manifest": "node scripts/check-manifest.mjs"
+    "check:manifest": "node scripts/check-manifest.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "build:sms-apk": "node scripts/build-sms-apk.mjs"
   },
   "engines": {
     "node": ">=22"

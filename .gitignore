@@ -20,6 +20,12 @@ modules/*/android/build/
 *.key
 *.mobileprovision
 
+# EAS local credentials: `eas credentials` downloads credentials.json and the
+# keystore into the project root
+credentials.json
+credentials/
+*.keystore
+
 # Metro
 .metro-health-check*
 

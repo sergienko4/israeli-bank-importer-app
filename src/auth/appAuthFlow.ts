@@ -175,15 +175,17 @@ function tokenError(status: number): Error {
  * @throws Error carrying a user-facing message when the portal refuses.
  */
 async function redeem(baseUrl: string, code: string, verifier: string): Promise<AppTokens> {
-  const res = await timedFetch(`${baseUrl}/auth/app/token`, {
+  const init: RequestInit = {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code, code_verifier: verifier, redirect_uri: REDIRECT_URI }),
+  };
+  return timedFetch(`${baseUrl}/auth/app/token`, init, async (res) => {
+    if (!res.ok) {
+      throw tokenError(res.status);
+    }
+    return toAppTokens(await res.json());
   });
-  if (!res.ok) {
-    throw tokenError(res.status);
-  }
-  return toAppTokens(await res.json());
 }
 
 /**

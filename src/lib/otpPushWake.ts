@@ -25,7 +25,7 @@ import { autoReadWindowDeadline } from './otpAutoReadWindow';
  * device, a network, or a delivered notification.
  */
 export interface PushWakePorts {
-  /** The stored connection, or null when the device is not paired. */
+  /** A usable session, or null when unpaired or capture is switched off. */
   readonly loadSession: () => Promise<Session | null>;
   /** The importer's current outstanding one-time-code requests. */
   readonly getPending: (session: Session) => Promise<PendingOtpRequest[]>;

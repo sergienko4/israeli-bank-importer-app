@@ -156,6 +156,7 @@ describe('refresh-token ownership across screen and background (property)', () =
             return later(() => (approved ? { status: 'success' } : { status: 'failed' }));
           });
           const capture = createUnattendedSession({
+            allowed: () => Promise.resolve(true),
             load,
             save,
             refresh: (_baseUrl, token) => later(() => importer.refresh('background', token)),

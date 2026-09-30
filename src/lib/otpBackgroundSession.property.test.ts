@@ -6,7 +6,8 @@
  * again. So for any run of captures — clocks jumping ahead, retries that
  * overlap, saves that fail — the loader must never present a spent token, must
  * never hand back an expired one, and must never leave a renewed access token
- * in storage that the screen could send without an unlock.
+ * in storage that the screen could send without an unlock. And while the user
+ * has capture switched off it must not spend a token at all.
  */
 import * as fc from 'fast-check';
 
@@ -24,12 +25,14 @@ interface Step {
   readonly advanceMs: number;
   readonly overlapping: number;
   readonly saveFails: boolean;
+  readonly switchedOn: boolean;
 }
 
 const stepArb: fc.Arbitrary<Step> = fc.record({
   advanceMs: fc.integer({ min: 0, max: 2 * TOKEN_TTL }),
   overlapping: fc.integer({ min: 1, max: 3 }),
   saveFails: fc.boolean(),
+  switchedOn: fc.boolean(),
 });
 
 /** How long the stored access token has left when the first capture starts. */
@@ -78,7 +81,9 @@ describe('createUnattendedSession (property)', () => {
           expiresAt: START + life,
         };
         let saveFails = false;
+        let switchedOn = true;
         const loader = createUnattendedSession({
+          allowed: () => Promise.resolve(switchedOn),
           load: () => Promise.resolve(stored),
           save: (next) => {
             if (saveFails) return Promise.reject(new Error('Keystore unavailable.'));
@@ -93,12 +98,18 @@ describe('createUnattendedSession (property)', () => {
         const capture = async (step: Step): Promise<void> => {
           clock += step.advanceMs;
           saveFails = step.saveFails;
+          switchedOn = step.switchedOn;
           const issuedBefore = importer.issuedCount();
           const sessions = await Promise.all(
             Array.from({ length: step.overlapping }, async () => loader()),
           );
 
           expect(importer.replays).toEqual([]);
+          if (!step.switchedOn) {
+            expect(importer.issuedCount()).toBe(issuedBefore);
+            expect(sessions.every((session) => session === null)).toBe(true);
+            return;
+          }
           expect(importer.issuedCount() - issuedBefore).toBeLessThanOrEqual(1);
           for (const session of sessions) {
             expect(session?.baseUrl).toBe(BASE_URL);

@@ -33,6 +33,7 @@ function connection(overrides: Partial<Connection> = {}): Connection {
 function harness(initial: Connection | null) {
   let stored = initial;
   let issued = 0;
+  let clock = NOW;
   const presented: string[] = [];
   const save = jest.fn((next: Connection) => {
     stored = next;
@@ -44,11 +45,11 @@ function harness(initial: Connection | null) {
     return Promise.resolve({
       accessToken: `access-renewed-${String(issued)}`,
       refreshToken: `refresh-renewed-${String(issued)}`,
-      expiresAt: NOW + FIFTEEN_MINUTES,
+      expiresAt: clock + FIFTEEN_MINUTES,
     });
   });
   const load = jest.fn(() => Promise.resolve(stored));
-  const loader = createUnattendedSession({ load, save, refresh, now: () => NOW });
+  const loader = createUnattendedSession({ load, save, refresh, now: () => clock });
   return {
     loader,
     save,
@@ -57,6 +58,9 @@ function harness(initial: Connection | null) {
     stored: () => stored,
     replaceStored: (next: Connection) => {
       stored = next;
+    },
+    advance: (ms: number) => {
+      clock += ms;
     },
   };
 }
@@ -115,6 +119,16 @@ describe('loadUnattendedSession', () => {
     await h.loader();
     await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
     expect(h.presented).toEqual(['refresh-at-unlock']);
+  });
+
+  it('never replays a token storage kept after two saves failed in a row', async () => {
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    h.save.mockRejectedValue(new Error('Keychain unavailable.'));
+    await h.loader();
+    h.advance(FIFTEEN_MINUTES);
+    await h.loader();
+    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-2' });
+    expect(h.presented).toEqual(['refresh-at-unlock', 'refresh-renewed-1']);
   });
 
   it('defers to a newer pair the screen saved after an unlock', async () => {

@@ -860,6 +860,23 @@ function checkBuildHygiene() {
     finallyBody?.includes('rmSync(ANDROID_DIR, { recursive: true, force: true });') === true,
     `${SMS_BUILD_SCRIPT} should recursively remove ANDROID_DIR in its main finally block`,
   );
+  check(
+    rule,
+    /function run\(\s*command,\s*args,\s*\{\s*env = sanitizedEnvironment\(\),\s*cwd = ROOT,\s*binary = false\s*\}\s*=\s*\{\},?\s*\)\s*\{/mu.test(
+      source,
+    ),
+    `${SMS_BUILD_SCRIPT} should remove signing passwords from the default short-command environment`,
+  );
+  check(
+    rule,
+    (source.match(/\benv: signingEnvironment\(\)/gu) ?? []).length === 2,
+    `${SMS_BUILD_SCRIPT} should expose signing passwords to exactly keytool export and apksigner sign`,
+  );
+  check(
+    rule,
+    !/\benv\s*[:=]\s*process\.env\b/u.test(source),
+    `${SMS_BUILD_SCRIPT} should never pass the complete parent environment to a child`,
+  );
 }
 
 try {

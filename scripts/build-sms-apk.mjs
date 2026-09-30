@@ -2,14 +2,15 @@
  * Builds the SMS auto-read APK without EAS Build, and proves it belongs with the
  * standard APK of the same release.
  *
- * The standard APK cannot declare `RECEIVE_SMS`: Play Protect refuses to install
- * a sideloaded app that does. The SMS APK is the same app with that permission,
- * installed over `adb`. Android accepts one over the other only when both carry
- * the same package, the same versionCode or a higher one, and the same signing
- * certificate, and the SMS APK receives updates only when its runtime matches
- * the updates published to its channel. A build that misses any of those still
- * builds, signs and installs on a clean device - it just never installs over the
- * other APK, or never updates - so each is asserted on the signed file itself.
+ * The standard APK cannot declare `RECEIVE_SMS`: on affected devices, Play
+ * Protect blocks its browser or files-app installation. The SMS APK is the same
+ * app with that permission, installed over `adb`. Android accepts one over the
+ * other only when both carry the same package, the same versionCode or a higher
+ * one, and the same signing certificate, and the SMS APK receives updates only
+ * when its runtime matches the updates published to its channel. A build that
+ * misses any of those still builds, signs and installs on a clean device - it
+ * just never installs over the other APK, or never updates - so each is asserted
+ * on the signed file itself.
  *
  * The reference is the standard APK of the same release, which EAS Build made:
  * its versionCode is copied into this build, and its versionName and signer
@@ -111,6 +112,29 @@ const REQUIRED_ENV = [
 
 /** Variables no child but `keytool` and `apksigner` may see. */
 const SECRET_ENV = ['ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_PASSWORD'];
+
+/**
+ * The environment inherited by commands that do not need signing passwords.
+ *
+ * @returns {NodeJS.ProcessEnv} A copy without either password.
+ */
+function sanitizedEnvironment() {
+  const dropped = new Set(SECRET_ENV);
+  return Object.fromEntries(Object.entries(process.env).filter(([name]) => !dropped.has(name)));
+}
+
+/**
+ * The environment inherited only by commands that consume signing passwords.
+ *
+ * @returns {NodeJS.ProcessEnv} The sanitized environment plus both passwords.
+ */
+function signingEnvironment() {
+  return {
+    ...sanitizedEnvironment(),
+    ANDROID_KEYSTORE_PASSWORD: process.env.ANDROID_KEYSTORE_PASSWORD,
+    ANDROID_KEY_PASSWORD: process.env.ANDROID_KEY_PASSWORD,
+  };
+}
 
 /** How long a stopped build may take to exit before it is killed outright. */
 const GRACE_MS = 30_000;
@@ -254,7 +278,7 @@ process.on('SIGTERM', onSignal);
  *   The environment and directory to run in, and whether to return raw bytes.
  * @returns {string | Buffer} Its stdout.
  */
-function run(command, args, { env = process.env, cwd = ROOT, binary = false } = {}) {
+function run(command, args, { env = sanitizedEnvironment(), cwd = ROOT, binary = false } = {}) {
   checkpoint();
   try {
     return execFileSync(command, args, {
@@ -459,9 +483,10 @@ function locateTools() {
  * @returns {NodeJS.ProcessEnv} The environment.
  */
 function buildEnvironment(versionCode) {
-  const dropped = new Set([...SECRET_ENV, 'ANDROID_NDK_HOME']);
+  const env = sanitizedEnvironment();
+  Reflect.deleteProperty(env, 'ANDROID_NDK_HOME');
   return {
-    ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !dropped.has(name))),
+    ...env,
     OTP_SMS_AUTOREAD: '1',
     ANDROID_VERSION_CODE: versionCode,
     EXPO_NO_GIT_STATUS: '1',
@@ -533,7 +558,7 @@ function keystoreDigest(keytool, keystore) {
       '-storepass:env',
       'ANDROID_KEYSTORE_PASSWORD',
     ],
-    { binary: true },
+    { binary: true, env: signingEnvironment() },
   );
   return createHash('sha256').update(certificate).digest('hex');
 }
@@ -943,27 +968,31 @@ async function main(options) {
     );
 
     mkdirSync(dirname(options.out), { recursive: true });
-    run(tools.apksigner, [
-      'sign',
-      '--ks',
-      options.keystore,
-      '--ks-key-alias',
-      process.env.ANDROID_KEY_ALIAS,
-      '--ks-pass',
-      'env:ANDROID_KEYSTORE_PASSWORD',
-      '--key-pass',
-      'env:ANDROID_KEY_PASSWORD',
-      // By default apksigner adds a JAR (v1) signature even at minSdk 24; the
-      // standard APK has none.
-      '--v1-signing-enabled',
-      'false',
-      // The release ships the APK alone; a v4 signature is a separate .idsig file.
-      '--v4-signing-enabled',
-      'false',
-      '--out',
-      options.out,
-      BUILT_APK,
-    ]);
+    run(
+      tools.apksigner,
+      [
+        'sign',
+        '--ks',
+        options.keystore,
+        '--ks-key-alias',
+        process.env.ANDROID_KEY_ALIAS,
+        '--ks-pass',
+        'env:ANDROID_KEYSTORE_PASSWORD',
+        '--key-pass',
+        'env:ANDROID_KEY_PASSWORD',
+        // By default apksigner adds a JAR (v1) signature even at minSdk 24; the
+        // standard APK has none.
+        '--v1-signing-enabled',
+        'false',
+        // The release ships the APK alone; a v4 signature is a separate .idsig file.
+        '--v4-signing-enabled',
+        'false',
+        '--out',
+        options.out,
+        BUILT_APK,
+      ],
+      { env: signingEnvironment() },
+    );
 
     const signer = inspect(options.out, expected, { runtime, updateUrl: updateUrl.derived }, tools);
     return {

@@ -25,7 +25,9 @@ on:
       - 'patches/**'
       - 'modules/**'
       - 'assets/**'
+      - 'scripts/apk-signature-profile.mjs'
       - 'scripts/build-sms-apk.mjs'
+      - 'scripts/compare-apk-signatures.mjs'
       - '.github/actions/**'
       - '.github/workflows/sms-apk-check.yml'
 
@@ -69,8 +71,27 @@ jobs:
             -alias "$ANDROID_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 1 \
             -dname 'CN=SMS APK check' \
             -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
+          output="$RUNNER_TEMP/israeli-bank-importer.sms.apk"
           node scripts/build-sms-apk.mjs --self-reference \
-            --out "$RUNNER_TEMP/israeli-bank-importer.sms.apk"
+            --out "$output"
+
+          versions=node_modules/react-native/gradle/libs.versions.toml
+          build_tools=$(sed -n -E 's/^buildTools[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$versions")
+          apksigner="$ANDROID_HOME/build-tools/$build_tools/apksigner"
+          mismatch="$RUNNER_TEMP/signature-mismatch"
+          "$apksigner" sign --ks "$ANDROID_KEYSTORE_PATH" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --v3-signing-enabled true --v4-signing-enabled false \
+            --out "$mismatch" "$output"
+          if node scripts/compare-apk-signatures.mjs \
+            --apksigner "$apksigner" --reference "$output" --actual "$mismatch" \
+            2> "$RUNNER_TEMP/signature-mismatch.log"; then
+            echo "::error::The validator accepted a same-certificate APK with a different signing profile."
+            exit 1
+          fi
+          grep -F 'signing schemes differ:' "$RUNNER_TEMP/signature-mismatch.log" > /dev/null
+          rm -f "$mismatch" "$RUNNER_TEMP/signature-mismatch.log"
       - name: Remove the throwaway key
         if: always()
         run: rm -f "$RUNNER_TEMP/check.keystore"

@@ -51,6 +51,13 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
+import {
+  describeSigningSchemes,
+  parseApkSignatureProfile,
+  sameSigningSchemes,
+  signingSchemeArguments,
+} from './apk-signature-profile.mjs';
+
 const require = createRequire(import.meta.url);
 
 /** The repository root, whatever directory the script is started from. */
@@ -141,6 +148,15 @@ const GRACE_MS = 30_000;
 
 /** Signature files a JAR (v1) signature leaves in the archive. */
 const V1_SIGNATURE_ENTRY = /^META-INF\/[^/]+\.(?:SF|RSA|DSA|EC)$/iu;
+
+/** The EAS-built standard APK's current profile, used when CI has no reference APK. */
+const SELF_REFERENCE_SCHEMES = {
+  v1: false,
+  v2: true,
+  v3: false,
+  'v3.1': false,
+  v4: false,
+};
 
 /** A usage mistake: exits 2 without touching anything. */
 class UsageError extends Error {}
@@ -582,18 +598,16 @@ function badging(aapt2, apk) {
 }
 
 /**
- * Verifies an APK's signature and lists the certificates that signed it.
+ * Verifies an APK's certificate and complete signing-scheme profile.
  *
  * @param {string} apksigner - The `apksigner` executable.
  * @param {string} apk - The APK.
- * @returns {string[]} Each signer's SHA-256 certificate digest; empty when the
- *   signature does not verify.
+ * @returns {ReturnType<typeof parseApkSignatureProfile> | undefined} Its profile,
+ *   or `undefined` when the signature does not verify.
  */
-function signers(apksigner, apk) {
-  const output = tryRun(apksigner, ['verify', '--print-certs', apk]) ?? '';
-  return [...output.matchAll(/^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$/gmu)].map(
-    (match) => match[1],
-  );
+function signatureProfile(apksigner, apk) {
+  const output = tryRun(apksigner, ['verify', '--verbose', '--print-certs', apk]);
+  return output === undefined ? undefined : parseApkSignatureProfile(output);
 }
 
 /**
@@ -762,18 +776,30 @@ function checkManifest(xmltree, updateUrl, check) {
  *
  * @param {ReturnType<typeof locateTools>} tools - The SDK tools.
  * @param {string} apk - The reference APK.
- * @returns {{ package: string, versionCode: string, versionName: string, signer: string }}
- *   Its identity and its one signer's digest.
+ * @returns {{
+ *   package: string,
+ *   versionCode: string,
+ *   versionName: string,
+ *   signer: string,
+ *   schemes: Record<string, boolean>
+ * }} Its identity and complete signing profile.
  */
 function readReference(tools, apk) {
   const identity = badging(tools.aapt2, apk);
-  const digests = signers(tools.apksigner, apk);
-  if (digests.length !== 1) {
+  const profile = signatureProfile(tools.apksigner, apk);
+  if (profile === undefined || profile.signers.length !== 1) {
     throw new InvariantError([
-      `reference: ${apk} has ${String(digests.length)} verified signers, not 1`,
+      `reference: ${apk} has ${String(profile?.signers.length ?? 0)} verified signers, not 1`,
     ]);
   }
-  return { ...identity, signer: digests[0] };
+  try {
+    signingSchemeArguments(profile.schemes);
+  } catch (error) {
+    throw new InvariantError([
+      `referenceSignature: ${error instanceof Error ? error.message : String(error)}`,
+    ]);
+  }
+  return { ...identity, signer: profile.signers[0], schemes: profile.schemes };
 }
 
 /**
@@ -842,11 +868,20 @@ function inspect(apk, expected, build, tools) {
     );
   }
 
-  const digests = signers(tools.apksigner, apk);
-  check(
-    digests.length === 1 && digests[0] === expected.signer,
-    `signer: verified signers are [${digests.join(', ')}], expected exactly ${expected.signer}`,
-  );
+  const profile = signatureProfile(tools.apksigner, apk);
+  check(profile !== undefined, 'signature: apksigner could not verify the generated APK');
+  if (profile !== undefined) {
+    check(
+      profile.signers.length === 1 && profile.signers[0] === expected.signer,
+      `signer: verified signers are [${profile.signers.join(', ')}], expected exactly ${expected.signer}`,
+    );
+    check(
+      sameSigningSchemes(expected.schemes, profile.schemes),
+      `signatureProfile: generated ${describeSigningSchemes(
+        profile.schemes,
+      )}, expected ${describeSigningSchemes(expected.schemes)}`,
+    );
+  }
 
   checkManifest(
     run(tools.aapt2, ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk]),
@@ -869,14 +904,16 @@ function inspect(apk, expected, build, tools) {
     .split('\n')
     .filter((entry) => V1_SIGNATURE_ENTRY.test(entry));
   check(
-    leftovers.length === 0,
-    `v1Signature: ${leftovers.join(', ')} present, but the standard APK has no JAR signature`,
+    leftovers.length > 0 === expected.schemes.v1,
+    `v1Signature: archive entries are [${leftovers.join(
+      ', ',
+    )}], but the standard profile has v1=${String(expected.schemes.v1)}`,
   );
 
   if (failures.length > 0) {
     throw new InvariantError(failures);
   }
-  return digests[0];
+  return profile.signers[0];
 }
 
 /**
@@ -910,6 +947,7 @@ async function main(options) {
     versionCode,
     versionName: config.version,
     signer: keystore,
+    schemes: SELF_REFERENCE_SCHEMES,
   };
 
   const original = readFileSync(APP_JSON);
@@ -980,13 +1018,9 @@ async function main(options) {
         'env:ANDROID_KEYSTORE_PASSWORD',
         '--key-pass',
         'env:ANDROID_KEY_PASSWORD',
-        // By default apksigner adds a JAR (v1) signature even at minSdk 24; the
-        // standard APK has none.
-        '--v1-signing-enabled',
-        'false',
-        // The release ships the APK alone; a v4 signature is a separate .idsig file.
-        '--v4-signing-enabled',
-        'false',
+        // apksigner's defaults depend on SDK bounds. Explicit switches keep the
+        // generated artifact's profile equal to the standard release APK.
+        ...signingSchemeArguments(expected.schemes),
         '--out',
         options.out,
         BUILT_APK,

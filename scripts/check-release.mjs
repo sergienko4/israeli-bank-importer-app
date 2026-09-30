@@ -28,6 +28,8 @@
  *   8. update lookup - the SMS build uses the paginated update-group lookup.
  *   9. build hygiene - the local builder removes its generated native project
  *                      on success, failure and interruption.
+ *  10. signature profile - the builder compares every APK signing scheme, not
+ *                          only the signing certificate.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -40,6 +42,11 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 
+import {
+  parseApkSignatureProfile,
+  sameSigningSchemes,
+  signingSchemeArguments,
+} from './apk-signature-profile.mjs';
 import { branchFromChannelView, findMatchingUpdate } from './find-matching-update.mjs';
 
 /** The repository root, whatever directory the script is started from. */
@@ -74,6 +81,9 @@ const UPDATE_LOOKUP = 'scripts/find-matching-update.mjs';
 
 /** The local SMS APK builder that generates the Android project. */
 const SMS_BUILD_SCRIPT = 'scripts/build-sms-apk.mjs';
+
+/** The CLI that compares two real APK signing profiles. */
+const APK_SIGNATURE_CHECK = 'scripts/compare-apk-signatures.mjs';
 
 /** The workflow that publishes the updates. */
 const OTA_WORKFLOW = 'release-ota.yml';
@@ -879,6 +889,99 @@ function checkBuildHygiene() {
   );
 }
 
+/**
+ * Asserts rule 10: equal certificates do not hide different signing schemes.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ */
+function checkSignatureProfile(workflows) {
+  const rule = 'signature profile';
+  const digest = 'a'.repeat(64);
+  const v2Only = parseApkSignatureProfile(`Verified
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Signer #1 certificate SHA-256 digest: ${digest}
+`);
+  const v2AndV3 = parseApkSignatureProfile(`Verified
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): true
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Signer #1 certificate SHA-256 digest: ${digest}
+`);
+  check(
+    rule,
+    v2Only.signers.length === 1 && v2Only.signers[0] === digest,
+    'the apksigner profile parser should preserve the certificate digest',
+  );
+  check(
+    rule,
+    !sameSigningSchemes(v2Only.schemes, v2AndV3.schemes),
+    'the same certificate with v2-only and v2+v3 should not have the same signature profile',
+  );
+  check(
+    rule,
+    JSON.stringify(signingSchemeArguments(v2Only.schemes)) ===
+      JSON.stringify([
+        '--v1-signing-enabled',
+        'false',
+        '--v2-signing-enabled',
+        'true',
+        '--v3-signing-enabled',
+        'false',
+        '--v4-signing-enabled',
+        'false',
+      ]),
+    'the standard profile should become explicit apksigner flags',
+  );
+
+  const source = readText(SMS_BUILD_SCRIPT);
+  check(rule, source !== undefined, `${SMS_BUILD_SCRIPT} is missing`);
+  if (source === undefined) {
+    return;
+  }
+  check(
+    rule,
+    source.includes("'verify', '--verbose', '--print-certs'"),
+    `${SMS_BUILD_SCRIPT} should ask apksigner for the verified scheme flags`,
+  );
+  check(
+    rule,
+    source.includes('sameSigningSchemes(expected.schemes, profile.schemes)'),
+    `${SMS_BUILD_SCRIPT} should compare the reference and generated signing schemes`,
+  );
+  check(
+    rule,
+    source.includes('...signingSchemeArguments(expected.schemes)'),
+    `${SMS_BUILD_SCRIPT} should sign with the reference APK's supported scheme profile`,
+  );
+
+  const comparison = readText(APK_SIGNATURE_CHECK);
+  check(rule, comparison !== undefined, `${APK_SIGNATURE_CHECK} is missing`);
+  const prCheck = workflows.get(PR_CHECK);
+  const prPaths = prCheck?.doc?.on?.pull_request?.paths ?? [];
+  const buildRun = stepsOf(prCheck?.doc)
+    .map((step) => step.run)
+    .filter((run) => typeof run === 'string')
+    .join('\n');
+  check(
+    rule,
+    prPaths.includes(APK_SIGNATURE_CHECK) && prPaths.includes('scripts/apk-signature-profile.mjs'),
+    `${PR_CHECK} should run when either signature-profile script changes`,
+  );
+  check(
+    rule,
+    buildRun.includes('--v3-signing-enabled true') &&
+      buildRun.includes(`node ${APK_SIGNATURE_CHECK}`) &&
+      buildRun.includes('accepted a same-certificate APK with a different signing profile'),
+    `${PR_CHECK} should reject a real same-certificate APK whose v3 flag differs`,
+  );
+}
+
 try {
   const workflows = loadWorkflows();
   const actions = loadActions();
@@ -891,6 +994,7 @@ try {
   checkAssetSafety(workflows, actions);
   checkUpdateLookup(workflows);
   checkBuildHygiene();
+  checkSignatureProfile(workflows);
 
   if (failures.length > 0) {
     console.error(
@@ -903,7 +1007,7 @@ try {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
         'provenance, gh tokens, pull-request isolation, orchestration, asset safety,\n' +
-        'paginated update lookup and local build hygiene all hold.',
+        'paginated update lookup, local build hygiene and APK signature profiles all hold.',
     );
   }
 } catch (error) {

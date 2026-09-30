@@ -89,6 +89,12 @@ const RECEIVE_SMS = 'android.permission.RECEIVE_SMS';
 /** Reading the message history. Refused in every build. */
 const READ_SMS = 'android.permission.READ_SMS';
 
+/** Lets the capture service outlive the freeze that follows the broadcast. */
+const FOREGROUND_SERVICE = 'android.permission.FOREGROUND_SERVICE';
+
+/** `ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE`, as the compiled manifest stores it. */
+const SHORT_SERVICE_FLAG = 0x800;
+
 /** Held by the system alone, so only the OS can deliver to the receiver. */
 const BROADCAST_SMS = 'android.permission.BROADCAST_SMS';
 
@@ -765,6 +771,10 @@ function checkManifest(xmltree, updateUrl, check) {
   ].map((entry) => entry.attributes.name);
   check(permissions.includes(RECEIVE_SMS), `permission: ${RECEIVE_SMS} is not requested`);
   check(!permissions.includes(READ_SMS), `permission: ${READ_SMS} is requested`);
+  check(
+    permissions.includes(FOREGROUND_SERVICE),
+    `permission: ${FOREGROUND_SERVICE} is not requested, so Android freezes the capture`,
+  );
 
   const receivers = children(application, 'receiver', RECEIVER);
   const receiver = receivers[0];
@@ -777,8 +787,10 @@ function checkManifest(xmltree, updateUrl, check) {
   );
   const services = children(application, 'service', SERVICE);
   check(
-    services.length === 1 && services[0].attributes.exported === 'false',
-    `service: ${SERVICE} is not declared once and unexported`,
+    services.length === 1 &&
+      services[0].attributes.exported === 'false' &&
+      Number(services[0].attributes.foregroundServiceType) === SHORT_SERVICE_FLAG,
+    `service: ${SERVICE} is not declared once, unexported, and as a shortService`,
   );
 
   /**

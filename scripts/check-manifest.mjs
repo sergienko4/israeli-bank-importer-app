@@ -31,6 +31,9 @@ const RECEIVE_SMS = 'android.permission.RECEIVE_SMS';
 /** Reading the message history. Must be refused in every build. */
 const READ_SMS = 'android.permission.READ_SMS';
 
+/** Lets the capture service outlive the freeze that follows the broadcast. */
+const FOREGROUND_SERVICE = 'android.permission.FOREGROUND_SERVICE';
+
 /** The receiver the system hands the broadcast to. */
 const RECEIVER = 'expo.modules.otpsmsconsent.OtpSmsAutoReadReceiver';
 
@@ -202,6 +205,12 @@ function checkAutoReadBuild(config) {
     services.filter((name) => name === SERVICE).length === 1,
     `${SERVICE} should be declared exactly once`,
   );
+  check(
+    permissions.includes(FOREGROUND_SERVICE),
+    // Without it the service starts as an ordinary one, and Android freezes the
+    // process before the code reaches the importer.
+    `${FOREGROUND_SERVICE} should be requested, so the capture service can run in the foreground`,
+  );
 
   const receiver = (application.receiver ?? []).find(
     (entry) => entry.$['android:name'] === RECEIVER,
@@ -228,6 +237,11 @@ function checkAutoReadBuild(config) {
     // Only this app's own receiver ever starts it, and it acts on whatever body
     // it is handed. Exported, any app on the device could start it directly.
     'the service should not be exported, since only the receiver starts it',
+  );
+  check(
+    service?.$['android:foregroundServiceType'] === 'shortService',
+    // Android 14 refuses a foreground start for a service that declares no type.
+    'the service should declare foregroundServiceType="shortService"',
   );
 
   const headers = metaValues(config, REQUEST_HEADERS_META);

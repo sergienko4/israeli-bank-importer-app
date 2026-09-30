@@ -1,6 +1,12 @@
 package expo.modules.otpsmsconsent
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.util.Log
 import com.facebook.react.HeadlessJsTaskService
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.jstasks.HeadlessJsTaskConfig
@@ -24,14 +30,41 @@ private const val TASK_NAME = "OtpSmsAutoRead"
  */
 private const val TASK_TIMEOUT_MS = 60_000L
 
+/** Identifies this service's notification; any stable non-zero value works. */
+private const val NOTIFICATION_ID = 0x07B5
+
+/** The channel the notification posts on, created on first use. */
+private const val CHANNEL_ID = "otp_sms_capture"
+
+/** Tags outcome-only log lines; never a message, a code, or an address. */
+internal const val LOG_TAG = "OtpSmsAutoRead"
+
 /**
  * Runs the JavaScript that submits a captured code, with no screen involved.
  *
  * Started by [OtpSmsAutoReadReceiver]. React Native spins up a JavaScript
  * context if one is not already running, runs the registered task, and then
  * lets the process go back to sleep.
+ *
+ * It runs as a short foreground service. A plain started service in a process
+ * that has ever shown a screen still counts as cached, and Android freezes a
+ * cached process within seconds, network and all, so the code never reached
+ * the importer on a real phone. `shortService` needs no permission beyond
+ * `FOREGROUND_SERVICE` and allows about three minutes, far longer than the task
+ * may run. Android 12 and later hold back the notification of a service that
+ * finishes within ten seconds, which an ordinary capture does.
  */
 class OtpSmsAutoReadService : HeadlessJsTaskService() {
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    promote()
+    val result = super.onStartCommand(intent, flags, startId)
+    if (result == START_NOT_STICKY) {
+      // No task was started, so nothing would ever stop this service.
+      stopSelf(startId)
+    }
+    return result
+  }
+
   override fun getTaskConfig(intent: Intent?): HeadlessJsTaskConfig? {
     val extras = intent?.extras ?: return null
     return HeadlessJsTaskConfig(
@@ -44,5 +77,52 @@ class OtpSmsAutoReadService : HeadlessJsTaskService() {
       // it at its default would crash the app in the commonest case there is.
       true,
     )
+  }
+
+  /** Android 14 asks a short service to stop once its time is up. */
+  override fun onTimeout(startId: Int) {
+    stopSelf()
+  }
+
+  /** Android 15 and later also ask through this form. */
+  override fun onTimeout(startId: Int, fgsType: Int) {
+    stopSelf()
+  }
+
+  /**
+   * Makes this a foreground service for as long as the task runs.
+   *
+   * A refusal leaves it an ordinary service, which still runs until Android
+   * freezes it. That is the old behaviour, not a crash.
+   */
+  private fun promote() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    try {
+      val notification = captureNotification()
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE,
+        )
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
+      }
+    } catch (error: RuntimeException) {
+      Log.w(LOG_TAG, "foreground-refused:${error.javaClass.simpleName}")
+    }
+  }
+
+  /** Builds the quiet notification a foreground service must carry. */
+  private fun captureNotification(): Notification {
+    val manager = getSystemService(NotificationManager::class.java)
+    manager?.createNotificationChannel(
+      NotificationChannel(CHANNEL_ID, "Bank code capture", NotificationManager.IMPORTANCE_LOW),
+    )
+    return Notification.Builder(this, CHANNEL_ID)
+      .setSmallIcon(android.R.drawable.stat_notify_sync)
+      .setContentTitle("Checking for a bank code")
+      .setOngoing(true)
+      .build()
   }
 }

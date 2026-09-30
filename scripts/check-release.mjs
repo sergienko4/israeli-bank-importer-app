@@ -22,7 +22,10 @@
  *   4. token       - every step that runs `gh` sets GH_TOKEN;
  *   5. isolation   - the pull-request build check can reach no secret;
  *   6. orchestration - release-please calls the SMS build only after the
- *                      standard APK and both OTA legs succeed.
+ *                      standard APK and both OTA legs succeed;
+ *   7. asset safety - both APK uploaders serialize by tag and run the same
+ *                     fail-closed standard-first guard after every upload;
+ *   8. update lookup - the SMS build uses the paginated update-group lookup.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -34,6 +37,8 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
+
+import { findMatchingUpdate } from './find-matching-update.mjs';
 
 /** The repository root, whatever directory the script is started from. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,6 +63,12 @@ const STANDARD_WORKFLOW = 'release-apk.yml';
 
 /** The workflow that attaches the SMS APK. */
 const SMS_WORKFLOW = 'release-apk-sms.yml';
+
+/** The shared action that protects older apps from the SMS APK. */
+const APK_ORDER_ACTION = 'guard-apk-order';
+
+/** The script that finds the matching EAS update across every result page. */
+const UPDATE_LOOKUP = 'scripts/find-matching-update.mjs';
 
 /** The workflow that publishes the updates. */
 const OTA_WORKFLOW = 'release-ota.yml';
@@ -168,6 +179,16 @@ function runsOf(doc) {
 }
 
 /**
+ * The steps of a workflow, in job and declaration order.
+ *
+ * @param {any} doc - The parsed workflow.
+ * @returns {any[]} Every step.
+ */
+function stepsOf(doc) {
+  return jobsOf(doc).flatMap(([, job]) => job.steps ?? []);
+}
+
+/**
  * The value a single capture group takes wherever a pattern matches.
  *
  * @param {string[]} texts - The texts to search.
@@ -191,11 +212,24 @@ function constantOf(source, name) {
 }
 
 /**
+ * Reads a private string constant from a script.
+ *
+ * @param {string} source - The source text.
+ * @param {string} name - The constant.
+ * @returns {string | undefined} Its value when it is declared exactly once.
+ */
+function privateConstantOf(source, name) {
+  const values = captures([source], new RegExp(`^const ${name} = '([^']+)';$`, 'gmu'));
+  return values.length === 1 ? values[0] : undefined;
+}
+
+/**
  * Asserts rule 1: the asset names in the release workflows are the app's.
  *
  * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ * @param {Map<string, any>} actions - Every composite action.
  */
-function checkNames(workflows) {
+function checkNames(workflows, actions) {
   const rule = 'names';
   const source = readText(RELEASE_CHECK);
   const standard = source === undefined ? undefined : constantOf(source, 'STANDARD_APK_ASSET');
@@ -216,8 +250,16 @@ function checkNames(workflows) {
 
   const standardRuns = runsOf(workflows.get(STANDARD_WORKFLOW)?.doc);
   const smsRuns = runsOf(workflows.get(SMS_WORKFLOW)?.doc);
+  const guardRuns = (actions.get(APK_ORDER_ACTION)?.runs?.steps ?? [])
+    .map((step) => step.run)
+    .filter((run) => typeof run === 'string');
   check(rule, workflows.has(STANDARD_WORKFLOW), `${WORKFLOWS}/${STANDARD_WORKFLOW} is missing`);
   check(rule, workflows.has(SMS_WORKFLOW), `${WORKFLOWS}/${SMS_WORKFLOW} is missing`);
+  check(
+    rule,
+    actions.has(APK_ORDER_ACTION),
+    `${ACTIONS}/${APK_ORDER_ACTION}/action.yml is missing`,
+  );
 
   const expectOnly = (runs, pattern, want, what) => {
     const found = captures(runs, pattern);
@@ -234,8 +276,15 @@ function checkNames(workflows) {
   if (workflows.has(SMS_WORKFLOW)) {
     expectOnly(smsRuns, upload, sms, `${SMS_WORKFLOW} upload`);
     expectOnly(smsRuns, /--pattern\s+(\S+)/gu, standard, `${SMS_WORKFLOW} reference download`);
-    expectOnly(smsRuns, /delete-asset\s+\S+\s+(\S+)/gu, sms, `${SMS_WORKFLOW} withdrawn asset`);
-    expectOnly(smsRuns, /^\s*\*\/(\S+)\)/gmu, standard, `${SMS_WORKFLOW} first-asset guard`);
+  }
+  if (actions.has(APK_ORDER_ACTION)) {
+    expectOnly(
+      guardRuns,
+      /delete-asset\s+\S+\s+(\S+)/gu,
+      sms,
+      `${APK_ORDER_ACTION} withdrawn asset`,
+    );
+    expectOnly(guardRuns, /^\s*\*\/(\S+)\)/gmu, standard, `${APK_ORDER_ACTION} first-asset guard`);
   }
 
   const known = new Set([standard, sms]);
@@ -250,6 +299,13 @@ function checkNames(workflows) {
         `${name} names ${asset}, which is neither ${standard} nor ${sms}`,
       );
     }
+  }
+  for (const asset of new Set(guardRuns.flatMap((run) => run.match(APK_NAME) ?? []))) {
+    check(
+      rule,
+      known.has(asset),
+      `${APK_ORDER_ACTION} names ${asset}, which is neither ${standard} nor ${sms}`,
+    );
   }
 }
 
@@ -339,12 +395,13 @@ function checkChannel(workflows) {
     `${OTA_WORKFLOW} should publish once, with --channel "$CHANNEL" and CHANNEL and OTP_SMS_AUTOREAD from the matrix`,
   );
   // eas update creates a missing channel with a branch of the same name, which
-  // is the branch the SMS workflow looks the update up on.
-  const branches = captures(runsOf(workflows.get(SMS_WORKFLOW)?.doc), /--branch\s+(\S+)/gu);
+  // is the branch the SMS workflow's lookup helper reads.
+  const lookup = readText(UPDATE_LOOKUP);
+  const lookupBranch = lookup === undefined ? undefined : privateConstantOf(lookup, 'BRANCH');
   check(
     rule,
-    branches.length === 1 && branches[0] === smsChannel,
-    `${SMS_WORKFLOW} should look the update up on --branch ${smsChannel}, found ${JSON.stringify(branches)}`,
+    lookupBranch === smsChannel,
+    `${UPDATE_LOOKUP} should look the update up on branch ${smsChannel}, found ${JSON.stringify(lookupBranch)}`,
   );
 }
 
@@ -605,14 +662,159 @@ function checkOrchestration(workflows) {
   );
 }
 
+/**
+ * Asserts rule 7: every APK mutation is serialized and checked fail closed.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ * @param {Map<string, any>} actions - Every composite action.
+ */
+function checkAssetSafety(workflows, actions) {
+  const rule = 'asset safety';
+  const standard = workflows.get(STANDARD_WORKFLOW)?.doc;
+  const sms = workflows.get(SMS_WORKFLOW)?.doc;
+  const group = standard?.concurrency?.group;
+  check(
+    rule,
+    typeof group === 'string' && group.includes('${{ inputs.tag }}'),
+    `${STANDARD_WORKFLOW} should serialize uploads by inputs.tag`,
+  );
+  check(
+    rule,
+    sms?.concurrency?.group === group,
+    `${STANDARD_WORKFLOW} and ${SMS_WORKFLOW} should use the same concurrency group`,
+  );
+  check(
+    rule,
+    standard?.concurrency?.['cancel-in-progress'] === false &&
+      sms?.concurrency?.['cancel-in-progress'] === false,
+    'APK upload workflows should not cancel an in-progress release mutation',
+  );
+
+  const guard = actions.get(APK_ORDER_ACTION);
+  check(rule, guard !== undefined, `${ACTIONS}/${APK_ORDER_ACTION}/action.yml is missing`);
+  const guardRun = (guard?.runs?.steps ?? [])
+    .map((step) => step.run)
+    .filter((run) => typeof run === 'string')
+    .join('\n');
+  check(
+    rule,
+    guardRun.includes('.assets[].browser_download_url') &&
+      guardRun.includes('select(endswith(".apk"))') &&
+      guardRun.includes('delete-asset') &&
+      (guardRun.match(/\bexit 1\b/gu) ?? []).length === 2,
+    `${APK_ORDER_ACTION} should inspect the first APK, withdraw the SMS asset and fail on unsafe order`,
+  );
+
+  for (const [name, doc] of [
+    [STANDARD_WORKFLOW, standard],
+    [SMS_WORKFLOW, sms],
+  ]) {
+    const steps = stepsOf(doc);
+    const uploadIndex = steps.findIndex(
+      (step) => typeof step.run === 'string' && /\bgh release upload\b/u.test(step.run),
+    );
+    const guards = steps
+      .map((step, index) => ({ step, index }))
+      .filter(({ step }) => step.uses === `./${ACTIONS}/${APK_ORDER_ACTION}`);
+    check(rule, uploadIndex >= 0, `${name} should upload one APK`);
+    check(
+      rule,
+      guards.length === 1 &&
+        guards[0].index > uploadIndex &&
+        guards[0].step.if === "steps.guard.outputs.run == 'true'" &&
+        guards[0].step.with?.release_tag === '${{ inputs.tag }}' &&
+        guards[0].step.with?.github_token === '${{ secrets.GITHUB_TOKEN }}',
+      `${name} should run ${APK_ORDER_ACTION} once after upload with the release tag and GitHub token`,
+    );
+  }
+}
+
+/**
+ * Asserts rule 8: the SMS workflow delegates to the paginated update lookup.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ */
+function checkUpdateLookup(workflows) {
+  const rule = 'update lookup';
+  check(rule, readText(UPDATE_LOOKUP) !== undefined, `${UPDATE_LOOKUP} is missing`);
+  const matches = stepsOf(workflows.get(SMS_WORKFLOW)?.doc).filter(
+    (step) =>
+      typeof step.run === 'string' &&
+      (step.run.includes('eas update:list') || step.run.includes(UPDATE_LOOKUP)),
+  );
+  check(
+    rule,
+    matches.length === 1 &&
+      matches[0].run.trim() === `node ${UPDATE_LOOKUP}` &&
+      matches[0].env?.RELEASE_TAG === '${{ inputs.tag }}' &&
+      matches[0].env?.BUILD_SHA === '${{ needs.verify.outputs.sha }}' &&
+      matches[0].env?.RUNTIME === '${{ steps.build.outputs.runtime }}',
+    `${SMS_WORKFLOW} should run ${UPDATE_LOOKUP} once with the release tag, build SHA and runtime`,
+  );
+
+  const identity = {
+    releaseTag: 'israeli-bank-importer-app-v9.9.9',
+    buildSha: '0123456789abcdef0123456789abcdef01234567',
+    runtime: 'fedcba9876543210fedcba9876543210fedcba98',
+  };
+  const firstPage = Array.from({ length: 50 }, (_, index) => `old-group-${index}`);
+  const matchingGroup = 'matching-group-after-first-page';
+  const requests = [];
+  const found = findMatchingUpdate(identity, {
+    listGroups: (offset, limit) => {
+      requests.push([offset, limit]);
+      return offset === 0 ? firstPage : [matchingGroup];
+    },
+    readGroup: (group) =>
+      group === matchingGroup
+        ? [
+            {
+              branch: 'production-sms',
+              platform: 'android',
+              runtimeVersion: identity.runtime,
+              message: identity.releaseTag,
+              gitCommitHash: identity.buildSha,
+            },
+          ]
+        : [],
+  });
+  check(
+    rule,
+    found === matchingGroup &&
+      JSON.stringify(requests) ===
+        JSON.stringify([
+          [0, 50],
+          [50, 50],
+        ]),
+    `${UPDATE_LOOKUP} should find a matching group after a full first page`,
+  );
+
+  const exhaustedRequests = [];
+  const exhausted = findMatchingUpdate(identity, {
+    listGroups: (offset, limit) => {
+      exhaustedRequests.push([offset, limit]);
+      return firstPage.slice(0, 49);
+    },
+    readGroup: () => [],
+  });
+  check(
+    rule,
+    exhausted === null && JSON.stringify(exhaustedRequests) === JSON.stringify([[0, 50]]),
+    `${UPDATE_LOOKUP} should stop without another request after a short final page`,
+  );
+}
+
 try {
   const workflows = loadWorkflows();
-  checkNames(workflows);
+  const actions = loadActions();
+  checkNames(workflows, actions);
   checkChannel(workflows);
   checkProvenance(workflows);
-  checkToken(workflows, loadActions());
+  checkToken(workflows, actions);
   checkIsolation(workflows);
   checkOrchestration(workflows);
+  checkAssetSafety(workflows, actions);
+  checkUpdateLookup(workflows);
 
   if (failures.length > 0) {
     console.error(
@@ -624,7 +826,8 @@ try {
   } else {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
-        'provenance, gh tokens, pull-request isolation and release orchestration all hold.',
+        'provenance, gh tokens, pull-request isolation, orchestration, asset safety\n' +
+        'and paginated update lookup all hold.',
     );
   }
 } catch (error) {

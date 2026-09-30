@@ -35,6 +35,13 @@ on:
 permissions:
   contents: read
 
+# `gh release upload --clobber` deletes before it re-uploads, which can change
+# asset order. Share this per-tag group with the SMS uploader so only one can
+# mutate a release at a time; neither mutation is safe to cancel halfway.
+concurrency:
+  group: release-apk-assets-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   # Runs first, holds no secret and checks out nothing: it decides which
   # commit the job below may build (see verify-release-tag.yml).
@@ -107,3 +114,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: gh release upload "$RELEASE_TAG" israeli-bank-importer.apk --clobber
+      - if: steps.guard.outputs.run == 'true'
+        name: Keep the standard APK first for older apps
+        uses: ./.github/actions/guard-apk-order
+        with:
+          release_tag: ${{ inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

@@ -56,10 +56,11 @@ on:
 permissions:
   contents: read
 
-# A release-triggered run and a manual re-run of the same tag would otherwise
-# race to upload the same asset. Queue instead of cancelling.
+# Share this per-tag group with the standard uploader. `--clobber` deletes an
+# existing asset before re-uploading it, so concurrent mutations could change
+# which APK older clients see first; neither mutation is safe to cancel midway.
 concurrency:
-  group: release-apk-sms-${{ inputs.tag }}
+  group: release-apk-assets-${{ inputs.tag }}
   cancel-in-progress: false
 
 # `shell: bash` adds `-o pipefail`, which the implicit default does not, so a
@@ -179,27 +180,13 @@ jobs:
       - if: steps.guard.outputs.run == 'true'
         name: Check the matching update is on production-sms
         # An SMS APK without its update would run this release's native code
-        # with no way to receive later JavaScript fixes. `update:list` prints a
-        # decorated message and no commit, so each group is read in full.
+        # with no way to receive later JavaScript fixes. The helper pages
+        # through every group and reads each one in full for its commit.
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           BUILD_SHA: ${{ needs.verify.outputs.sha }}
           RUNTIME: ${{ steps.build.outputs.runtime }}
-        run: |
-          groups=$(eas update:list --branch production-sms --runtime-version "$RUNTIME" \
-            --platform android --limit 50 --json --non-interactive | jq -r '.currentPage[].group')
-          for group in $groups; do
-            if eas update:view "$group" --json | jq -e \
-              --arg tag "$RELEASE_TAG" --arg sha "$BUILD_SHA" --arg runtime "$RUNTIME" \
-              'any(.[]; .branch == "production-sms" and .platform == "android"
-                and .runtimeVersion == $runtime and .message == $tag and .gitCommitHash == $sha)' \
-              > /dev/null; then
-              echo "Update group $group on production-sms matches this APK."
-              exit 0
-            fi
-          done
-          echo "::error::No production-sms update for $RELEASE_TAG at $BUILD_SHA with runtime $RUNTIME. Publish it with release-ota.yml first."
-          exit 1
+        run: node scripts/find-matching-update.mjs
       - if: steps.guard.outputs.run == 'true'
         name: Attach the SMS APK to the GitHub Release
         env:
@@ -210,26 +197,10 @@ jobs:
             --repo "$GITHUB_REPOSITORY" --clobber
       - if: steps.guard.outputs.run == 'true'
         name: Keep the standard APK first for older apps
-        # Apps up to v0.2.12 download the first `.apk` asset of the release.
-        # This job starts only after the standard APK upload, but GitHub does
-        # not document the order of the assets array. Check the actual response
-        # and withdraw the SMS APK rather than offer it to phones that cannot
-        # install it.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          first=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
-            --jq '[.assets[].browser_download_url | select(endswith(".apk"))][0]')
-          case "$first" in
-            */israeli-bank-importer.apk) echo "The standard APK is still the first .apk asset." ;;
-            *)
-              gh release delete-asset "$RELEASE_TAG" israeli-bank-importer.sms.apk \
-                --repo "$GITHUB_REPOSITORY" --yes
-              echo "::error::Older apps would be offered $first, so the SMS APK was removed from the release."
-              exit 1
-              ;;
-          esac
+        uses: ./.github/actions/guard-apk-order
+        with:
+          release_tag: ${{ inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Remove the upload keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.keystore"

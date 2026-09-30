@@ -147,6 +147,9 @@ About the SMS APK:
   permissions before you have agreed to anything. Declaring is not holding: it is
   a runtime permission, nothing is granted until you turn the switch on and
   approve Android's dialog, and until then the receiver is inert.
+- It also declares `FOREGROUND_SERVICE`, which Android grants without a dialog.
+  It lets the capture task finish before Android freezes the app; nothing else
+  runs in the foreground.
 - Turning either switch back off stops the app acting on messages, and erases
   everything being held in the same write. The Android grant itself outlives the
   switch — the app cannot hand a permission back, so it stays listed as granted
@@ -194,6 +197,12 @@ arriving message wakes it. `SMS_RECEIVED` is one of the few broadcasts Android
 still delivers to an app that is not running, so the receiver runs with the app
 closed, keeps the message, and starts a short background task that asks the
 importer what is outstanding — never trusting the message to say so.
+
+That task runs as a short foreground service. Android freezes a background app
+within seconds of the broadcast, network and all, and on a real phone that
+stopped the code short of the importer. On Android 12 and later a task that ends
+within ten seconds — the usual case — shows nothing; a slower one shows a quiet
+"Checking for a bank code" notification until it ends.
 
 **Opening the app once is enough.** The importer's access token lasts minutes,
 so by the time a code arrives it has usually expired. On screen, renewing it

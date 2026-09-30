@@ -58,6 +58,18 @@ const RECEIVE_SMS = 'android.permission.RECEIVE_SMS';
 const READ_SMS = 'android.permission.READ_SMS';
 
 /**
+ * Lets the capture service run in the foreground. Without that, Android freezes
+ * the process seconds after the message arrives, before the code is submitted.
+ */
+const FOREGROUND_SERVICE = 'android.permission.FOREGROUND_SERVICE';
+
+/**
+ * The foreground service type for a few minutes of work that must not be cut
+ * off. It needs no permission beyond {@link FOREGROUND_SERVICE}.
+ */
+const SHORT_SERVICE = 'shortService';
+
+/**
  * The update channel an auto-read build asks for. Its updates are built from
  * the same flag, so they share its runtime; the standard channel's never do.
  */
@@ -186,7 +198,13 @@ const withOtpSmsAutoRead: ConfigPlugin = (config) =>
       ...(application.service ?? []).filter(
         (entry) => entry.$['android:name'] !== AUTO_READ_SERVICE,
       ),
-      { $: { 'android:name': AUTO_READ_SERVICE, 'android:exported': 'false' } },
+      {
+        $: {
+          'android:name': AUTO_READ_SERVICE,
+          'android:exported': 'false',
+          'android:foregroundServiceType': SHORT_SERVICE,
+        },
+      },
     ];
 
     return mod;
@@ -210,7 +228,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.android,
       ...(versionCode === undefined ? {} : { versionCode }),
       blockedPermissions: [READ_SMS],
-      ...(autoRead ? { permissions: [RECEIVE_SMS] } : {}),
+      ...(autoRead ? { permissions: [RECEIVE_SMS, FOREGROUND_SERVICE] } : {}),
     },
     // A build made outside EAS Build names its channel in a request header;
     // Expo writes it into the manifest. The standard build's channel is set by

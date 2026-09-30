@@ -9,10 +9,10 @@ name: Release SMS APK
 # update channel. Play Protect refuses to install a sideloaded app that
 # declares an SMS permission, so this one is installed over adb.
 #
-# scripts/build-sms-apk.mjs takes the version and signer from the standard APK
-# this release already carries and refuses to produce an APK that differs from
-# it, or whose runtime is not the one the `production-sms` update was published
-# under. So this runs after release-apk.yml and release-ota.yml.
+# scripts/build-sms-apk.mjs takes the version and signer from the standard APK,
+# refuses native mismatches, and reports the SMS APK's runtime. A later workflow
+# step uses find-matching-update.mjs to require an update with that runtime, tag
+# and commit on `production-sms`. So this runs after both APK and OTA publishers.
 #
 # Reusable rather than a `release: published` listener for the same reason as
 # release-apk.yml: releases created with GITHUB_TOKEN do not start new runs.

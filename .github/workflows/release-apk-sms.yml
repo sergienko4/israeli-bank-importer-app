@@ -4,16 +4,16 @@ name: Release SMS APK
 # EAS build, and attaches it to the same GitHub Release as
 # israeli-bank-importer.sms.apk.
 #
-# It is the standard APK plus the RECEIVE_SMS permission, with the same
-# version, versionCode and signing key, and it follows the `production-sms`
-# update channel. On affected devices, Play Protect blocks its browser or
+# It has the same package, version, versionCode, signer and signing schemes as
+# the standard APK. Its RECEIVE_SMS components and `production-sms` channel
+# deliberately differ. On affected devices, Play Protect blocks its browser or
 # files-app install, so ADB is the consistent installation path.
 #
-# scripts/build-sms-apk.mjs takes the version and signer from the standard APK,
-# refuses native mismatches, and reports the SMS APK's runtime. A later workflow
-# step uses find-matching-update.mjs to require an update with that runtime, tag
-# and commit on the branch currently mapped to `production-sms`. So this runs
-# after both APK and OTA publishers.
+# scripts/build-sms-apk.mjs takes the version, signer and scheme profile from
+# the standard APK, refuses native mismatches, and reports the SMS APK's
+# runtime. A later workflow step uses find-matching-update.mjs to require an
+# update with that runtime, tag and commit on the branch currently mapped to
+# `production-sms`. So this runs after both APK and OTA publishers.
 #
 # Reusable rather than a `release: published` listener for the same reason as
 # release-apk.yml: releases created with GITHUB_TOKEN do not start new runs.

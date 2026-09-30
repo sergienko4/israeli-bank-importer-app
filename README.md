@@ -122,9 +122,10 @@ is withheld. With the standard APK the app simply has to be on screen when the
 code arrives, which is what everything above covers.
 
 **Each release also carries `israeli-bank-importer.sms.apk`, which does
-include it.** It is the same app with the same version and signing key, plus the
-permission, so it installs over the standard APK and keeps your pairing and
-settings. Install [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools),
+include it.** It has the same package, version and signing profile as the
+standard APK, so it installs over that APK and keeps your pairing and settings.
+It adds the SMS permission and native components and follows its own update
+channel. Install [Android SDK Platform Tools](https://developer.android.com/tools/releases/platform-tools),
 add its directory to `PATH`, enable USB debugging, download the SMS APK, and
 open a terminal in the directory containing it. Then install it over ADB, which
 also works when Play Protect blocks the browser or files-app installation path:
@@ -159,15 +160,17 @@ About the SMS APK:
   message history — only messages arriving while the app is installed, paired
   and switched on.
 - The standard APK is built without the `OTP_SMS_AUTOREAD` flag, which leaves
-  the permission, the receiver and the service out of it altogether. It is
-  otherwise identical, and it hides the switch rather than offering one that
-  could never work.
+  the permission, the receiver and the service out of it altogether, and it
+  hides the switch rather than offering one that could never work. The two APKs
+  have the same package, version, version code, signer certificate and signing
+  schemes. The SMS APK intentionally has those native components and follows
+  its own `production-sms` update channel and runtime.
 - The release job builds the SMS APK with `scripts/build-sms-apk.mjs`, on a
-  GitHub runner rather than EAS. It refuses to attach one whose version or
-  signing key differs from the standard APK of the same release, or whose update
-  runtime has no matching update on `production-sms`. An APK you build yourself
-  is signed with your own key, so Android will not install it over one from the
-  Releases page.
+  GitHub runner rather than EAS. It refuses to attach one whose package,
+  version, version code, signer certificate or signing-scheme profile differs
+  from the standard APK of the same release, or whose update runtime has no
+  matching update on `production-sms`. An APK you build yourself is signed with
+  your own key, so Android will not install it over one from the Releases page.
 
 **A code that arrives before the importer asks is held, not lost.** Banks often
 send the code first, and Android delivers that broadcast exactly once. Rather

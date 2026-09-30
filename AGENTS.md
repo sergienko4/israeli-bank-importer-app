@@ -59,8 +59,9 @@ talks to the EAS API from the runner.
 `release-apk-sms.yml` owns the SMS auto-read APK, and is the only release job
 that compiles on a GitHub runner rather than on EAS. It runs Gradle through
 `scripts/build-sms-apk.mjs` after `release-apk.yml` and `release-ota.yml`, takes
-its version and signer from the standard APK they attached, and checks its
-runtime against the update on `production-sms`, the channel only it follows.
+its version, signer and signing-scheme profile from the standard APK they
+attached, and checks its runtime against the update on `production-sms`, the
+channel only it follows.
 `release-ota.yml` publishes each release to both channels, one matrix leg each.
 Its signing key lives in the `release-signing` Environment, limited to `main`.
 `sms-apk-check.yml` builds the same APK with a throwaway key on pull requests,

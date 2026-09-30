@@ -24,7 +24,8 @@
  *   6. orchestration - release-please calls the SMS build only after the
  *                      standard APK and both OTA legs succeed;
  *   7. asset safety - both APK uploaders serialize by tag and run the same
- *                     fail-closed standard-first guard after every upload;
+ *                     fail-closed standard-first guard after every upload,
+ *                     and standard replacement withdraws SMS before clobber;
  *   8. update lookup - the SMS build uses the paginated update-group lookup.
  *   9. build hygiene - the local builder removes its generated native project
  *                      on success, failure and interruption.
@@ -50,6 +51,7 @@ import {
   signingSchemeArguments,
 } from './apk-signature-profile.mjs';
 import { branchFromChannelView, findMatchingUpdate } from './find-matching-update.mjs';
+import { prepareStandardApkReplacement } from './standard-apk-replacement.mjs';
 
 /** The repository root, whatever directory the script is started from. */
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -77,6 +79,9 @@ const SMS_WORKFLOW = 'release-apk-sms.yml';
 
 /** The shared action that protects older apps from the SMS APK. */
 const APK_ORDER_ACTION = 'guard-apk-order';
+
+/** The transactional helper that withdraws SMS before standard replacement. */
+const STANDARD_REPLACEMENT = 'scripts/standard-apk-replacement.mjs';
 
 /** The script that finds the matching EAS update across every result page. */
 const UPDATE_LOOKUP = 'scripts/find-matching-update.mjs';
@@ -303,6 +308,12 @@ function checkNames(workflows, actions) {
     );
     expectOnly(guardRuns, /^\s*\*\/(\S+)\)/gmu, standard, `${APK_ORDER_ACTION} first-asset guard`);
   }
+  const replacement = readText(STANDARD_REPLACEMENT);
+  check(
+    rule,
+    replacement !== undefined && privateConstantOf(replacement, 'SMS_APK_ASSET') === sms,
+    `${STANDARD_REPLACEMENT} should preserve exactly ${sms}`,
+  );
 
   const known = new Set([standard, sms]);
   for (const name of [STANDARD_WORKFLOW, SMS_WORKFLOW, PR_CHECK]) {
@@ -734,17 +745,115 @@ function checkAssetSafety(workflows, actions) {
     const guards = steps
       .map((step, index) => ({ step, index }))
       .filter(({ step }) => step.uses === `./${ACTIONS}/${APK_ORDER_ACTION}`);
+    const expectedGuardCondition =
+      name === STANDARD_WORKFLOW
+        ? "always() && steps.guard.outputs.run == 'true' && steps.upload.outcome == 'success'"
+        : "steps.guard.outputs.run == 'true'";
     check(rule, uploadIndex >= 0, `${name} should upload one APK`);
     check(
       rule,
       guards.length === 1 &&
         guards[0].index > uploadIndex &&
-        guards[0].step.if === "steps.guard.outputs.run == 'true'" &&
+        guards[0].step.if === expectedGuardCondition &&
         guards[0].step.with?.release_tag === '${{ inputs.tag }}' &&
         guards[0].step.with?.github_token === '${{ secrets.GITHUB_TOKEN }}',
       `${name} should run ${APK_ORDER_ACTION} once after upload with the release tag and GitHub token`,
     );
   }
+
+  const standardSteps = stepsOf(standard);
+  const prepareIndex = standardSteps.findIndex(
+    (step) =>
+      typeof step.run === 'string' && step.run.includes(`node ${STANDARD_REPLACEMENT} --prepare`),
+  );
+  const standardUploadIndex = standardSteps.findIndex(
+    (step) => typeof step.run === 'string' && /\bgh release upload\b/u.test(step.run),
+  );
+  const restoreIndex = standardSteps.findIndex(
+    (step) =>
+      typeof step.run === 'string' && step.run.includes(`node ${STANDARD_REPLACEMENT} --restore`),
+  );
+  const standardGuardIndex = standardSteps.findIndex(
+    (step) => step.uses === `./${ACTIONS}/${APK_ORDER_ACTION}`,
+  );
+  const backupCleanup = standardSteps.find((step) => step.name === 'Remove the preserved SMS APK');
+  check(
+    rule,
+    prepareIndex >= 0 &&
+      prepareIndex < standardUploadIndex &&
+      standardUploadIndex < restoreIndex &&
+      restoreIndex < standardGuardIndex,
+    `${STANDARD_WORKFLOW} should withdraw SMS before standard clobber and restore it before the final guard`,
+  );
+  check(
+    rule,
+    standardSteps[restoreIndex]?.if ===
+      "success() && steps.prepare-upload.outputs.restore_sms == 'true'",
+    `${STANDARD_WORKFLOW} should restore SMS only after a successful standard upload`,
+  );
+  check(
+    rule,
+    backupCleanup?.if === "always() && steps.guard.outputs.run == 'true'" &&
+      backupCleanup.run === 'rm -rf "$RUNNER_TEMP/release-asset-backup"',
+    `${STANDARD_WORKFLOW} should always remove its private SMS backup`,
+  );
+
+  const events = [];
+  const prepared = prepareStandardApkReplacement(
+    {
+      assets: [
+        {
+          id: 17,
+          name: 'israeli-bank-importer.sms.apk',
+          size: 4,
+        },
+      ],
+    },
+    {
+      downloadAsset: () => {
+        events.push('download');
+        return Buffer.from('safe');
+      },
+      writeBackup: () => events.push('backup'),
+      deleteAsset: () => events.push('delete'),
+    },
+  );
+  check(
+    rule,
+    prepared && JSON.stringify(events) === JSON.stringify(['download', 'backup', 'delete']),
+    `${STANDARD_REPLACEMENT} should preserve SMS before withdrawing it`,
+  );
+  let deletedAfterBadDownload = false;
+  let backedUpBadDownload = false;
+  try {
+    prepareStandardApkReplacement(
+      {
+        assets: [
+          {
+            id: 17,
+            name: 'israeli-bank-importer.sms.apk',
+            size: 5,
+          },
+        ],
+      },
+      {
+        downloadAsset: () => Buffer.from('bad'),
+        writeBackup: () => {
+          backedUpBadDownload = true;
+        },
+        deleteAsset: () => {
+          deletedAfterBadDownload = true;
+        },
+      },
+    );
+  } catch {
+    // The size mismatch is the expected fail-closed path.
+  }
+  check(
+    rule,
+    !backedUpBadDownload && !deletedAfterBadDownload,
+    `${STANDARD_REPLACEMENT} should never preserve or delete SMS after an incomplete download`,
+  );
 }
 
 /**

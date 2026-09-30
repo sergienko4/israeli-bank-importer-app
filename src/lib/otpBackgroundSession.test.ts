@@ -6,11 +6,34 @@
  * it uses anything. And a refresh token is never presented twice, because the
  * portal reads a second presentation as a stolen copy and ends the session.
  */
-import type { AppTokens } from '../api/appTokens';
-import type { Connection } from '../auth/connectionStore';
-import { createTokenLedger } from '../auth/tokenLedger';
-import { createUnattendedSession, SAVED_EXPIRED, WITHHELD_ACCESS } from './otpBackgroundSession';
+import { type AppTokens, refreshTokens } from '../api/appTokens';
+import { type Connection, loadConnection } from '../auth/connectionStore';
+import { createTokenLedger, processLedger } from '../auth/tokenLedger';
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import {
+  createUnattendedSession,
+  loadUnattendedSession,
+  SAVED_EXPIRED,
+  WITHHELD_ACCESS,
+} from './otpBackgroundSession';
 import { TASK_TIMEOUT_MS } from './otpDeadline';
+
+jest.mock('../api/appTokens', () => ({
+  ...jest.requireActual<Record<string, unknown>>('../api/appTokens'),
+  refreshTokens: jest.fn(),
+}));
+jest.mock('../auth/connectionStore', () => ({
+  clearConnection: jest.fn(),
+  loadConnection: jest.fn(),
+  saveConnection: jest.fn(),
+}));
+jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+
+const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
+const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
+const mockedAllowed = loadBackgroundCaptureAllowed as jest.MockedFunction<
+  typeof loadBackgroundCaptureAllowed
+>;
 
 const NOW = 1_700_000_000_000;
 const BASE_URL = 'https://importer.example.ts.net';
@@ -35,6 +58,7 @@ function harness(initial: Connection | null) {
   let stored = initial;
   let issued = 0;
   let clock = NOW;
+  let allowed = true;
   const presented: string[] = [];
   const save = jest.fn((next: Connection) => {
     stored = next;
@@ -51,6 +75,7 @@ function harness(initial: Connection | null) {
   });
   const load = jest.fn(() => Promise.resolve(stored));
   const loader = createUnattendedSession({
+    allowed: () => Promise.resolve(allowed),
     load,
     save,
     refresh,
@@ -59,6 +84,7 @@ function harness(initial: Connection | null) {
   });
   return {
     loader,
+    load,
     save,
     refresh,
     presented,
@@ -68,6 +94,9 @@ function harness(initial: Connection | null) {
     },
     advance: (ms: number) => {
       clock += ms;
+    },
+    switchOff: () => {
+      allowed = false;
     },
   };
 }
@@ -154,10 +183,52 @@ describe('loadUnattendedSession', () => {
     await expect(h.loader()).resolves.toBeNull();
   });
 
+  it('spends nothing for a user who has switched capture off', async () => {
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    h.switchOff();
+    await expect(h.loader()).resolves.toBeNull();
+    expect(h.load).not.toHaveBeenCalled();
+    expect(h.refresh).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('hands out not even a live token while capture is switched off', async () => {
+    const h = harness(connection());
+    h.switchOff();
+    await expect(h.loader()).resolves.toBeNull();
+  });
+
   it('reports a refused renewal as a failure and stores nothing', async () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
     h.refresh.mockRejectedValueOnce(new Error('The importer did not respond in time.'));
     await expect(h.loader()).rejects.toThrow('did not respond');
     expect(h.save).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadUnattendedSession as every background path receives it', () => {
+  beforeEach(() => {
+    processLedger.forget();
+    mockedLoad.mockResolvedValue(connection({ expiresAt: NOW - 1 }));
+    mockedRefresh.mockResolvedValue({
+      accessToken: 'access-renewed',
+      refreshToken: 'refresh-renewed',
+      expiresAt: Date.now() + FIFTEEN_MINUTES,
+    });
+  });
+
+  it('checks the capture switches before spending the refresh token', async () => {
+    mockedAllowed.mockResolvedValue(false);
+    await expect(loadUnattendedSession()).resolves.toBeNull();
+    expect(mockedRefresh).not.toHaveBeenCalled();
+  });
+
+  it('renews once the switches allow it', async () => {
+    mockedAllowed.mockResolvedValue(true);
+    await expect(loadUnattendedSession()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed',
+    });
+    expect(mockedRefresh).toHaveBeenCalledWith(BASE_URL, 'refresh-at-unlock');
   });
 });

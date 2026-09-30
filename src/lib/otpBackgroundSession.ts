@@ -12,8 +12,9 @@
  * never answers off screen. This renews without one instead, and contains what
  * that buys:
  *
- * - Every caller checks the user's two capture switches first, so nothing here
- *   runs for a user who has not opted in.
+ * - It checks the user's capture switches itself before touching anything, so
+ *   no entry point can spend a token for a user who has not opted in — the
+ *   push wake, which reaches it before any switch is read, included.
  * - The renewed pair is saved with its access token withheld and already
  *   expired. The rotated refresh token has to be stored, because the one it
  *   replaced is spent, but the access token stays in memory: the screen reads
@@ -26,6 +27,7 @@ import { toSession } from '../auth/appSession';
 import { type Connection, loadConnection, saveConnection } from '../auth/connectionStore';
 import { withRefreshLock } from '../auth/refreshLock';
 import { processLedger, type TokenLedger } from '../auth/tokenLedger';
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import { TASK_TIMEOUT_MS } from './otpDeadline';
 
 /** Saved in place of a background renewal's real expiry, so the screen never uses it unprompted. */
@@ -36,6 +38,8 @@ export const WITHHELD_ACCESS = '';
 
 /** What an unattended renewal needs, injected so it can be tested without a device. */
 export interface UnattendedSessionPorts {
+  /** Whether the user's switches currently allow background capture. */
+  readonly allowed: () => Promise<boolean>;
   /** The stored connection, or null when the device is not paired. */
   readonly load: () => Promise<Connection | null>;
   /** Replaces the stored connection. */
@@ -63,14 +67,16 @@ export interface UnattendedSessionPorts {
  * Runs under the refresh lock, because the screen spends the same single-use
  * refresh token and a second presentation ends the whole session.
  *
- * @param ports - The injected storage, portal, clock, and ledger.
- * @returns A loader resolving to a usable session, or `null` when unpaired.
+ * @param ports - The injected switches, storage, portal, clock, and ledger.
+ * @returns A loader resolving to a usable session, or `null` when unpaired or
+ * when capture is switched off.
  */
 export function createUnattendedSession(
   ports: UnattendedSessionPorts,
 ): () => Promise<Session | null> {
   return () =>
     withRefreshLock(async () => {
+      if (!(await ports.allowed())) return null;
       const stored = await ports.load();
       if (stored === null) {
         ports.ledger.forget();
@@ -100,11 +106,13 @@ export function createUnattendedSession(
 /**
  * Loads a session for background work, renewing the token without a prompt.
  *
- * @returns A usable session, or `null` when the device is not paired.
+ * @returns A usable session, or `null` when the device is not paired or the
+ *   user's switches do not allow background capture.
  * @throws Error when the portal refused or could not be reached; every caller
  *   treats that as a failed attempt worth retrying.
  */
 export const loadUnattendedSession: () => Promise<Session | null> = createUnattendedSession({
+  allowed: loadBackgroundCaptureAllowed,
   load: loadConnection,
   save: saveConnection,
   refresh: refreshTokens,

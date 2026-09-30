@@ -21,7 +21,12 @@ import { TopBanner, type TopBannerIcon } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { resolveOtaState, resolveUpdatePrompt, type UpdatePrompt } from '../lib/otaUpdate';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
-import { apkAssetFor, type AvailableRelease, fetchLatestRelease } from '../lib/releaseCheck';
+import {
+  apkAssetFor,
+  type AvailableRelease,
+  fetchLatestRelease,
+  SMS_APK_INSTALL_COMMAND,
+} from '../lib/releaseCheck';
 
 /**
  * The version of the running update. `Constants.expoConfig` is read from the
@@ -60,7 +65,7 @@ const COPY = {
  */
 function downloadDetail(version: string): string {
   return isAutoReadBuild()
-    ? `Version ${version} is ready. Install it from a computer: adb install -r.`
+    ? `Version ${version} is ready. Install it from a computer: ${SMS_APK_INSTALL_COMMAND}.`
     : `Version ${version} is ready to install.`;
 }
 

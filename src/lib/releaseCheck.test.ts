@@ -6,6 +6,7 @@ import {
   isNewerVersion,
   normalizeVersion,
   SMS_APK_ASSET,
+  SMS_APK_INSTALL_COMMAND,
   STANDARD_APK_ASSET,
 } from './releaseCheck';
 
@@ -95,6 +96,10 @@ describe('apkAssetFor', () => {
 
   it('keeps the standard asset first when release assets are sorted by name', () => {
     expect([SMS_APK_ASSET, STANDARD_APK_ASSET].sort()).toEqual([STANDARD_APK_ASSET, SMS_APK_ASSET]);
+  });
+
+  it('gives the SMS build an executable install command with its APK path', () => {
+    expect(SMS_APK_INSTALL_COMMAND).toBe('adb install -r israeli-bank-importer.sms.apk');
   });
 });
 

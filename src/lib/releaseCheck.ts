@@ -37,6 +37,9 @@ export const STANDARD_APK_ASSET = 'israeli-bank-importer.apk';
  */
 export const SMS_APK_ASSET = 'israeli-bank-importer.sms.apk';
 
+/** Executable adb command for installing the SMS APK downloaded from a release. */
+export const SMS_APK_INSTALL_COMMAND = `adb install -r ${SMS_APK_ASSET}`;
+
 /**
  * The release asset a build installs from. A standard build is never offered
  * the SMS package, which Play Protect refuses to install on the device, and an

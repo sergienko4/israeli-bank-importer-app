@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.13](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.12...israeli-bank-importer-app-v0.2.13) (2026-09-30)
+
+
+### Features
+
+* **sms:** publish zero-touch APK variant ([#135](https://github.com/sergienko4/israeli-bank-importer-app/issues/135)) ([11b79e1](https://github.com/sergienko4/israeli-bank-importer-app/commit/11b79e136e2c5ba4c8d74936faa90573bd3b9552))
+
+
+### Bug Fixes
+
+* **deps:** resolve 5 Dependabot security alerts ([#133](https://github.com/sergienko4/israeli-bank-importer-app/issues/133)) ([59d684b](https://github.com/sergienko4/israeli-bank-importer-app/commit/59d684b802958464e725b2541a32298eff6796ce))
+
 ## [0.2.12](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.11...israeli-bank-importer-app-v0.2.12) (2026-08-31)
 
 

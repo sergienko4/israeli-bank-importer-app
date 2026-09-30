@@ -22,7 +22,8 @@
  * is absent the URL is derived from `extra.eas.projectId` exactly as that
  * command would write it, and the file is put back byte for byte afterwards,
  * however the run ends. Prebuild also rewrites the `android` and `ios` scripts
- * in `package.json`, so that file is put back the same way.
+ * in `package.json`, so that file is put back the same way. The generated
+ * `android` project is short-lived CNG output and is removed on every exit.
  *
  * Usage:
  *   node scripts/build-sms-apk.mjs --reference <standard.apk> --out <sms.apk> [--abi x86_64]
@@ -976,6 +977,7 @@ async function main(options) {
     restore(APP_JSON, original);
     restore(PACKAGE_JSON, originalPackage);
     rmSync(BUILT_APK, { force: true });
+    rmSync(ANDROID_DIR, { recursive: true, force: true });
   }
 }
 
@@ -987,7 +989,9 @@ async function main(options) {
  */
 function report(error) {
   if (state.signal !== undefined) {
-    log(`Stopped by ${state.signal}; app.json and package.json are as they were.`);
+    log(
+      `Stopped by ${state.signal}; app.json and package.json are as they were, and any generated android/ was removed.`,
+    );
     return 128 + constants.signals[state.signal];
   }
   if (error instanceof UsageError) {

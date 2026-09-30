@@ -26,6 +26,8 @@
  *   7. asset safety - both APK uploaders serialize by tag and run the same
  *                     fail-closed standard-first guard after every upload;
  *   8. update lookup - the SMS build uses the paginated update-group lookup.
+ *   9. build hygiene - the local builder removes its generated native project
+ *                      on success, failure and interruption.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -69,6 +71,9 @@ const APK_ORDER_ACTION = 'guard-apk-order';
 
 /** The script that finds the matching EAS update across every result page. */
 const UPDATE_LOOKUP = 'scripts/find-matching-update.mjs';
+
+/** The local SMS APK builder that generates the Android project. */
+const SMS_BUILD_SCRIPT = 'scripts/build-sms-apk.mjs';
 
 /** The workflow that publishes the updates. */
 const OTA_WORKFLOW = 'release-ota.yml';
@@ -804,6 +809,30 @@ function checkUpdateLookup(workflows) {
   );
 }
 
+/**
+ * Asserts rule 9: the local build never leaves its generated Android project.
+ */
+function checkBuildHygiene() {
+  const rule = 'build hygiene';
+  const source = readText(SMS_BUILD_SCRIPT);
+  check(rule, source !== undefined, `${SMS_BUILD_SCRIPT} is missing`);
+  if (source === undefined) {
+    return;
+  }
+  const mainStart = source.indexOf('async function main(');
+  const finallyStart = source.indexOf('  } finally {', mainStart);
+  const reportStart = source.indexOf('/**\n * Reports a failure', finallyStart);
+  const finallyBody =
+    mainStart >= 0 && finallyStart >= 0 && reportStart >= 0
+      ? source.slice(finallyStart, reportStart)
+      : undefined;
+  check(
+    rule,
+    finallyBody?.includes('rmSync(ANDROID_DIR, { recursive: true, force: true });') === true,
+    `${SMS_BUILD_SCRIPT} should recursively remove ANDROID_DIR in its main finally block`,
+  );
+}
+
 try {
   const workflows = loadWorkflows();
   const actions = loadActions();
@@ -815,19 +844,20 @@ try {
   checkOrchestration(workflows);
   checkAssetSafety(workflows, actions);
   checkUpdateLookup(workflows);
+  checkBuildHygiene();
 
   if (failures.length > 0) {
     console.error(
       'The release workflows do not match the app or each other:\n' +
         failures.map((failure) => `  - ${failure}`).join('\n') +
-        '\n\nEach of these still builds and publishes; the release would just be wrong.',
+        '\n\nNo individual compiler or workflow schema check proves these release invariants.',
     );
     process.exitCode = 1;
   } else {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
-        'provenance, gh tokens, pull-request isolation, orchestration, asset safety\n' +
-        'and paginated update lookup all hold.',
+        'provenance, gh tokens, pull-request isolation, orchestration, asset safety,\n' +
+        'paginated update lookup and local build hygiene all hold.',
     );
   }
 } catch (error) {

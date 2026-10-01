@@ -30,6 +30,12 @@ export const REFRESH_MARGIN_MS = 120_000;
 /** Why a renewal ended the connection when the device had already been unpaired. */
 export const NO_LONGER_PAIRED = 'This device was disconnected. Connect again to continue.';
 
+/** Why a renewal stopped when the saved pairing could not be read. */
+export const STORAGE_UNREADABLE = 'Could not read the saved connection. Try again.';
+
+/** Stands for a store that could not be read, apart from one that holds nothing. */
+const UNREADABLE = Symbol('unreadable');
+
 /**
  * Which sign-in a renewal judged, counted from the start of this process.
  *
@@ -81,7 +87,7 @@ function endedBy(error: unknown): 'ended' | 'declined' {
 }
 
 /**
- * Renews a connection behind a biometric prompt.
+ * Renews the stored connection behind a biometric prompt.
  *
  * The prompt is fail-closed: only an explicit success spends the refresh token,
  * so a phone picked up by someone else cannot quietly reach the importer.
@@ -89,10 +95,13 @@ function endedBy(error: unknown): 'ended' | 'declined' {
  * A device with no biometrics enrolled cannot protect a long-lived token at
  * all, so that case ends the connection instead of silently using it — the same
  * stance the previous version took with the stored password.
- * @param connection - The stored connection.
+ *
+ * It renews whatever storage holds when its turn on the refresh lock comes, not
+ * the screen's copy: the background or a newer sign-in may have replaced that
+ * copy while the prompt was up.
  * @returns What happened, including the renewed connection on success.
  */
-export async function refreshConnection(connection: Connection): Promise<RefreshOutcome> {
+export async function refreshConnection(): Promise<RefreshOutcome> {
   const pairing = signIns;
   const unlock = await authenticateBiometric('Unlock to reconnect to your importer');
   if (unlock.status === 'unsupported') {
@@ -101,24 +110,28 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
   if (unlock.status !== 'success') {
     return { status: 'declined', message: 'Unlock to reconnect to your importer.' };
   }
-  return withRefreshLock(async (hold) => renewLatest(connection, hold));
+  return withRefreshLock(async (hold) => renewLatest(hold));
 }
 
 /**
  * Reads the pair to renew from storage rather than from the screen's copy.
  *
  * The background capture renews on its own and saves the pair it was issued,
- * which retires the refresh token the screen loaded at launch, so the stored
- * pair wins. An empty store means the device was unpaired while this renewal
- * waited, and renewing would quietly pair it again.
- * @param connection - The screen's copy, used only when storage cannot be read.
- * @returns The stored pair, or `null` when the device is no longer paired.
+ * which retires the refresh token the screen loaded at launch, and a sign-in
+ * may have replaced the whole pairing, so the stored pair wins. An empty store
+ * means the device was unpaired while this renewal waited, and renewing would
+ * quietly pair it again.
+ *
+ * A store that cannot be read is reported as such rather than answered with the
+ * screen's copy, which may belong to a pairing that was since replaced.
+ * @returns The stored pair, `null` when the device is no longer paired, or
+ *   {@link UNREADABLE} when storage could not be read.
  */
-async function latestStored(connection: Connection): Promise<Connection | null> {
+async function latestStored(): Promise<Connection | null | typeof UNREADABLE> {
   try {
     return await loadConnection();
   } catch {
-    return connection;
+    return UNREADABLE;
   }
 }
 
@@ -131,13 +144,18 @@ async function latestStored(connection: Connection): Promise<Connection | null> 
  * The caller is answered on the usual deadline, but a reply that arrives later
  * is still recorded and saved under the lock: the portal retired the presented
  * token on accepting it, so that reply holds the only live one.
- * @param connection - The screen's copy of the connection.
+ *
+ * Unreadable storage declines without spending anything: the user can retry,
+ * whereas a token spent from the wrong pairing cannot be taken back.
  * @param hold - Keeps the lock until a late reply has been kept.
  * @returns What happened, including the renewed connection on success.
  */
-async function renewLatest(connection: Connection, hold: HoldLock): Promise<RefreshOutcome> {
+async function renewLatest(hold: HoldLock): Promise<RefreshOutcome> {
   const pairing = signIns;
-  const stored = await latestStored(connection);
+  const stored = await latestStored();
+  if (stored === UNREADABLE) {
+    return { status: 'declined', message: STORAGE_UNREADABLE };
+  }
   if (stored === null) {
     return { status: 'ended', message: NO_LONGER_PAIRED, pairing };
   }

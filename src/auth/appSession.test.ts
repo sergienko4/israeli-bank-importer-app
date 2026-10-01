@@ -19,6 +19,7 @@ import {
   REFRESH_MARGIN_MS,
   refreshConnection,
   type RefreshOutcome,
+  STORAGE_UNREADABLE,
   toSession,
 } from './appSession';
 import {
@@ -100,20 +101,20 @@ describe('isExpiring', () => {
 
 describe('refreshConnection when the user unlocks', () => {
   it('rotates the tokens and stores the result', async () => {
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
     expect(mockedSave).toHaveBeenCalledTimes(1);
     expect(mockedSave).toHaveBeenCalledWith(ROTATED);
   });
 
   it('spends the stored refresh token against the stored address', async () => {
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
   });
 
   it('keeps the rotated pair when the secure store refuses the write', async () => {
     mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
   });
 
@@ -122,22 +123,26 @@ describe('refreshConnection when the user unlocks', () => {
     // that copy's refresh token. Presenting it again would read as a stolen copy
     // and end the whole session.
     mockedLoad.mockResolvedValue({ ...CONNECTION, refreshToken: 'refresh-background' });
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
     expect(mockedRefresh).not.toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
   });
 
-  it('falls back to the screen copy when storage cannot be read', async () => {
+  it('declines without spending a token when storage cannot be read', async () => {
+    // The screen's copy may belong to a pairing a newer sign-in replaced while
+    // this renewal waited, and renewing it would save that pairing back.
     mockedLoad.mockRejectedValue(new Error('Keychain unavailable.'));
-    await refreshConnection(CONNECTION);
-    expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
+    const outcome = await refreshConnection();
+    expect(outcome).toEqual({ status: 'declined', message: STORAGE_UNREADABLE });
+    expect(mockedRefresh).not.toHaveBeenCalled();
+    expect(mockedSave).not.toHaveBeenCalled();
   });
 
   it('does not pair the device again once storage holds nothing', async () => {
     // Disconnect ran while this renewal waited its turn; spending the screen's
     // copy now would quietly restore the pairing the user just removed.
     mockedLoad.mockResolvedValue(null);
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome).toEqual({
       status: 'ended',
       message: NO_LONGER_PAIRED,
@@ -149,20 +154,20 @@ describe('refreshConnection when the user unlocks', () => {
 
   it('renews from its own pair when its save failed, never replaying the spent token', async () => {
     mockedSave.mockRejectedValueOnce(new Error('Keychain unavailable.'));
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     mockedRefresh.mockResolvedValueOnce({
       accessToken: 'access-3',
       refreshToken: 'refresh-3',
       expiresAt: 2_000_001_800_000,
     });
-    await refreshConnection(ROTATED);
+    await refreshConnection();
     expect(mockedRefresh.mock.calls.map(([, token]) => token)).toEqual(['refresh-1', 'refresh-2']);
   });
 
   it('renews from the background pair when the background could not save it', async () => {
     const background: Connection = { ...ROTATED, refreshToken: 'refresh-background' };
     processLedger.record(CONNECTION, background);
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
   });
 });
@@ -235,7 +240,7 @@ describe('dropConnection after a renewal ended', () => {
         refuse = reject;
       }),
     );
-    const renewal = refreshConnection(CONNECTION);
+    const renewal = refreshConnection();
     await new Promise<void>((resolve) => {
       setImmediate(() => {
         resolve();
@@ -258,14 +263,14 @@ describe('dropConnection after a renewal ended', () => {
     ],
   ])('removes the pairing when %s and nothing replaced it', async (_label, arrange) => {
     arrange();
-    const outcome = ended(await refreshConnection(CONNECTION));
+    const outcome = ended(await refreshConnection());
     await expect(dropConnection(outcome.pairing)).resolves.toBe(true);
     expect(mockedClear).toHaveBeenCalledTimes(1);
   });
 
   it('removes whatever is paired when the user disconnects', async () => {
     mockedRefresh.mockRejectedValue(new SessionEndedError());
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     await adoptConnection(SIGNED_IN);
     await expect(dropConnection()).resolves.toBe(true);
     expect(mockedClear).toHaveBeenCalledTimes(1);
@@ -299,13 +304,13 @@ describe('refreshConnection when the reply is late', () => {
         }, 20_000);
       }),
     );
-    const first = refreshConnection(CONNECTION);
+    const first = refreshConnection();
     await jest.advanceTimersByTimeAsync(15_000);
     await expect(first).resolves.toEqual({ status: 'declined', message: NO_RESPONSE });
     expect(mockedSave).not.toHaveBeenCalled();
     await jest.advanceTimersByTimeAsync(5_000);
     expect(mockedSave).toHaveBeenCalledWith(ROTATED);
-    await refreshConnection(CONNECTION);
+    await refreshConnection();
     expect(mockedRefresh.mock.calls.map(([, token]) => token)).toEqual(['refresh-1', 'refresh-2']);
   });
 });
@@ -313,7 +318,7 @@ describe('refreshConnection when the reply is late', () => {
 describe('refreshConnection when the user does not unlock', () => {
   it('does not reach the network when the prompt fails', async () => {
     mockedUnlock.mockResolvedValue({ status: 'failed' });
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('declined');
     expect(mockedRefresh).not.toHaveBeenCalled();
     expect(mockedSave).not.toHaveBeenCalled();
@@ -321,7 +326,7 @@ describe('refreshConnection when the user does not unlock', () => {
 
   it('ends the connection when the device has no screen lock', async () => {
     mockedUnlock.mockResolvedValue({ status: 'unsupported' });
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('ended');
     expect(mockedRefresh).not.toHaveBeenCalled();
   });
@@ -332,7 +337,7 @@ describe('the message on a terminal outcome', () => {
   // message. Without one they would arrive there with no idea what happened.
   it('names the fix when the device has no screen lock', async () => {
     mockedUnlock.mockResolvedValue({ status: 'unsupported' });
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome).toEqual({
       status: 'ended',
       message: 'Set up a screen lock to stay signed in.',
@@ -342,7 +347,7 @@ describe('the message on a terminal outcome', () => {
 
   it('says what to do when the portal retires the session', async () => {
     mockedRefresh.mockRejectedValue(new SessionEndedError());
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('ended');
     expect(outcome).toHaveProperty('message', SESSION_ENDED);
     expect(SESSION_ENDED).toMatch(/sign in again/i);
@@ -352,7 +357,7 @@ describe('the message on a terminal outcome', () => {
 describe('refreshConnection when the portal refuses', () => {
   it('treats an ended session as terminal', async () => {
     mockedRefresh.mockRejectedValue(new SessionEndedError());
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('ended');
     expect(mockedSave).not.toHaveBeenCalled();
   });
@@ -362,25 +367,25 @@ describe('refreshConnection when the portal refuses', () => {
     // terminality by reading the sentence would sign the user out for a
     // failure a retry would have fixed.
     mockedRefresh.mockRejectedValue(new Error(SESSION_ENDED));
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('declined');
   });
 
   it('treats a rate limit as worth retrying later', async () => {
     mockedRefresh.mockRejectedValue(new Error('Too many attempts. Wait a minute, then try again.'));
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('declined');
   });
 
   it('treats a server error as worth retrying later', async () => {
     mockedRefresh.mockRejectedValue(new Error('The importer is not answering right now.'));
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome.status).toBe('declined');
   });
 
   it('survives a rejection that is not an Error', async () => {
     mockedRefresh.mockRejectedValue('nope');
-    const outcome = await refreshConnection(CONNECTION);
+    const outcome = await refreshConnection();
     expect(outcome).toEqual({ status: 'declined', message: 'Could not reconnect. Try again.' });
   });
 });

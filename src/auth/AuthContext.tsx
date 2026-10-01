@@ -155,7 +155,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     if (!connection) {
       return null;
     }
-    const outcome = await refreshConnection(connection);
+    const outcome = await refreshConnection();
     if (outcome.status === 'refreshed') {
       setConnection(outcome.connection);
       setSessionExpired(false);

@@ -30,11 +30,23 @@ export const REFRESH_MARGIN_MS = 120_000;
 /** Why a renewal ended the connection when the device had already been unpaired. */
 export const NO_LONGER_PAIRED = 'This device was disconnected. Connect again to continue.';
 
+/**
+ * Which sign-in a renewal judged, counted from the start of this process.
+ *
+ * An ended renewal reaches the screen only after it returns, and a sign-in that
+ * was already waiting on the refresh lock can save a new pairing in that gap.
+ * Handing this back to {@link dropConnection} lets the drop tell the two apart.
+ */
+export type Pairing = number;
+
 /** What happened when the app tried to renew a connection. */
 export type RefreshOutcome =
   | { status: 'refreshed'; connection: Connection }
   | { status: 'declined'; message: string }
-  | { status: 'ended'; message: string };
+  | { status: 'ended'; message: string; pairing: Pairing };
+
+/** Sign-ins adopted in this process; changed only under the refresh lock. */
+let signIns: Pairing = 0;
 
 /**
  * Narrows a stored connection to what the API client needs.
@@ -81,9 +93,10 @@ function endedBy(error: unknown): 'ended' | 'declined' {
  * @returns What happened, including the renewed connection on success.
  */
 export async function refreshConnection(connection: Connection): Promise<RefreshOutcome> {
+  const pairing = signIns;
   const unlock = await authenticateBiometric('Unlock to reconnect to your importer');
   if (unlock.status === 'unsupported') {
-    return { status: 'ended', message: 'Set up a screen lock to stay signed in.' };
+    return { status: 'ended', message: 'Set up a screen lock to stay signed in.', pairing };
   }
   if (unlock.status !== 'success') {
     return { status: 'declined', message: 'Unlock to reconnect to your importer.' };
@@ -123,9 +136,10 @@ async function latestStored(connection: Connection): Promise<Connection | null> 
  * @returns What happened, including the renewed connection on success.
  */
 async function renewLatest(connection: Connection, hold: HoldLock): Promise<RefreshOutcome> {
+  const pairing = signIns;
   const stored = await latestStored(connection);
   if (stored === null) {
-    return { status: 'ended', message: NO_LONGER_PAIRED };
+    return { status: 'ended', message: NO_LONGER_PAIRED, pairing };
   }
   const renewal = renewFrom(processLedger.current(stored));
   hold(renewal);
@@ -133,7 +147,9 @@ async function renewLatest(connection: Connection, hold: HoldLock): Promise<Refr
     return { status: 'refreshed', connection: await answerInTime(renewal) };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not reconnect. Try again.';
-    return { status: endedBy(error), message };
+    return endedBy(error) === 'ended'
+      ? { status: 'ended', message, pairing }
+      : { status: 'declined', message };
   }
 }
 
@@ -172,6 +188,7 @@ export async function adoptConnection(connection: Connection): Promise<void> {
   await withRefreshLock(async () => {
     await saveConnection(connection);
     processLedger.forget();
+    signIns += 1;
   });
 }
 
@@ -180,10 +197,15 @@ export async function adoptConnection(connection: Connection): Promise<void> {
  *
  * Runs under the refresh lock, so a renewal that is still in flight cannot save
  * the pairing back after the user removed it.
+ * @param pairing - The sign-in an ended renewal judged. When given, a pairing
+ *   adopted since then is left alone; the user tapping Disconnect omits it.
+ * @returns Whether the pairing was removed.
  */
-export async function dropConnection(): Promise<void> {
-  await withRefreshLock(async () => {
+export async function dropConnection(pairing?: Pairing): Promise<boolean> {
+  return withRefreshLock(async () => {
+    if (pairing !== undefined && pairing !== signIns) return false;
     await clearConnection();
     processLedger.forget();
+    return true;
   });
 }

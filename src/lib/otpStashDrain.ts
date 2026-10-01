@@ -97,11 +97,16 @@ export type StashDrainOutcome =
  */
 export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutcome> {
   try {
-    const live = liveStashEntries(await ports.list(), ports.now());
-    if (live.length === 0) return 'empty';
+    if (liveStashEntries(await ports.list(), ports.now()).length === 0) return 'empty';
 
     const session = await ports.loadSession();
     if (session === null) return 'no-session';
+
+    // Read again, because loading the session can wait behind a sign-in that
+    // forgot every code held for the pairing it replaced. A code from the first
+    // read would go to the new pairing's importer.
+    const live = liveStashEntries(await ports.list(), ports.now());
+    if (live.length === 0) return 'empty';
 
     const expectation = pickExpectation(await ports.getPending(session), ports.now());
     if (expectation === null) return 'no-pending';

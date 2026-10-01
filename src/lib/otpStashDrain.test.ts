@@ -434,7 +434,7 @@ describe('drainStash', () => {
     expect(consumed).toEqual(['msg-1']);
   });
 
-  it('reads the stash once and submits at most one code per run', async () => {
+  it('submits at most one code per run', async () => {
     let reads = 0;
     const { ports: p, submitted } = ports({
       list: () => {
@@ -444,7 +444,38 @@ describe('drainStash', () => {
     });
 
     await expect(drainStash(p)).resolves.toBe('submitted');
-    expect(reads).toBe(1);
+    expect(reads).toBe(2);
     expect(submitted).toHaveLength(1);
+  });
+
+  it('spends only what is still held once the session is loaded', async () => {
+    // Loading the session can wait behind a sign-in, which forgets every code
+    // held for the pairing it replaced. Sending one from the list read before
+    // that would hand it to the new pairing's importer.
+    let reads = 0;
+    const { ports: p, submitted } = ports({
+      list: () => {
+        reads += 1;
+        return Promise.resolve(reads === 1 ? [held()] : []);
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('empty');
+    expect(submitted).toEqual([]);
+  });
+
+  it('answers from a message held while the session was loading', async () => {
+    let reads = 0;
+    const { ports: p, submitted } = ports({
+      list: () => {
+        reads += 1;
+        return Promise.resolve(
+          reads === 1 ? [held()] : [held({ id: 'msg-2', body: 'Your code is 135790' })],
+        );
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(submitted).toEqual([{ id: 'req-1', code: '135790' }]);
   });
 });

@@ -15,7 +15,8 @@ import type { Connection } from './connectionStore';
 export interface TokenLedger {
   /**
    * Picks the pair whose refresh token is still live.
-   * @param stored - What storage holds, or the screen's copy when it cannot be read.
+   * @param stored - What storage holds; callers decline rather than guess when it
+   *   cannot be read, because the screen's copy can belong to a replaced pairing.
    * @returns The renewal this process made from it, or `stored` itself when
    *   storage holds something this process did not spend — a newer sign-in.
    */

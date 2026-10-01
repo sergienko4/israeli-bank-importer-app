@@ -26,6 +26,7 @@
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
+import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
 import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
 import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
@@ -108,41 +109,66 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const found = selectStashedCode(live, expectation.requestId, ports.now());
     if (found === null) return 'ambiguous';
 
-    const copies = stashedCopiesOf(live, found.code, ports.now());
-    const drop = (id: string): Promise<void> => ports.consume(id);
-    const record = (id: string): Promise<void> => ports.markAttempt(id, expectation.requestId);
-    const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
-    const allowance = sendWindow(ports);
-    if (allowance === null) return 'superseded';
-    const result = await sent(
-      () => ports.submit(session, expectation.requestId, found.code),
-      allowance,
-    );
-    if (result === 'unknown') {
-      // Marked spent rather than merely attempted, because the scope of the
-      // doubt is the code itself and not this request. Recording it against
-      // this request alone would leave it selectable by the next one, where a
-      // code the bank may already have seen would spend a second attempt — and
-      // would sit alongside the fresh message answering that request, whose
-      // different code makes the pair ambiguous and stops either being sent.
-      await acknowledgeEach(copies, orElse(drop, spend));
-      return 'unknown';
-    }
-    if (result.ok) {
-      // If both of these writes fail the entry stays spendable and a later drain
-      // can resubmit. Nothing here can close that: both go through the same
-      // native module, so a context that refuses one refuses any record we could
-      // keep instead. It has to be closed by the importer making a submit for a
-      // request id idempotent. Until then the entry expires within the TTL.
-      await acknowledgeEach(copies, orElse(drop, spend));
-      return 'submitted';
-    }
-    if (neverJudged(result.status)) return 'failed';
-    await acknowledgeEach(copies, orElse(record, drop));
-    return 'rejected';
+    return await spendChoice(ports, {
+      session,
+      requestId: expectation.requestId,
+      code: found.code,
+      copies: stashedCopiesOf(live, found.code, ports.now()),
+    });
   } catch {
     return 'failed';
   }
+}
+
+/** A held code chosen to answer a request, with every live copy of it. */
+interface Choice {
+  /** The session the code will be sent over. */
+  readonly session: Session;
+  /** The importer's id for the request the code answers. */
+  readonly requestId: string;
+  /** The code to send. */
+  readonly code: string;
+  /** Every live held message carrying that code, settled together. */
+  readonly copies: readonly StashedMessage[];
+}
+
+/**
+ * Sends the chosen code and records what became of every copy of it.
+ *
+ * @param ports - The injected outside world.
+ * @param choice - The code, the request it answers, and its copies.
+ * @returns What became of the code.
+ */
+async function spendChoice(ports: StashDrainPorts, choice: Choice): Promise<StashDrainOutcome> {
+  const { session, requestId, code, copies } = choice;
+  const drop = (id: string): Promise<void> => ports.consume(id);
+  const record = (id: string): Promise<void> => ports.markAttempt(id, requestId);
+  const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
+  const allowance = sendWindow(ports);
+  if (allowance === null) return 'superseded';
+  const result = await sent(() => ports.submit(session, requestId, code), allowance);
+  if (result === 'unknown') {
+    // Marked spent rather than merely attempted, because the scope of the
+    // doubt is the code itself and not this request. Recording it against
+    // this request alone would leave it selectable by the next one, where a
+    // code the bank may already have seen would spend a second attempt — and
+    // would sit alongside the fresh message answering that request, whose
+    // different code makes the pair ambiguous and stops either being sent.
+    await acknowledgeEach(copies, orElse(drop, spend));
+    return 'unknown';
+  }
+  if (result.ok) {
+    // If both of these writes fail the entry stays spendable and a later drain
+    // can resubmit. Nothing here can close that: both go through the same
+    // native module, so a context that refuses one refuses any record we could
+    // keep instead. It has to be closed by the importer making a submit for a
+    // request id idempotent. Until then the entry expires within the TTL.
+    await acknowledgeEach(copies, orElse(drop, spend));
+    return 'submitted';
+  }
+  if (neverJudged(result.status)) return 'failed';
+  await acknowledgeEach(copies, orElse(record, drop));
+  return 'rejected';
 }
 
 /**

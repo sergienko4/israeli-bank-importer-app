@@ -29,6 +29,25 @@ describe('authenticateBiometric', () => {
     },
   );
 
+  it.each(['hardware', 'enrolment'] as const)(
+    'fails without prompting when the app leaves the screen during the %s check',
+    async (check) => {
+      const leave = async (): Promise<boolean> => {
+        appState.currentState = 'background';
+        return Promise.resolve(true);
+      };
+      mocked.hasHardwareAsync.mockImplementation(
+        check === 'hardware' ? leave : async () => Promise.resolve(true),
+      );
+      mocked.isEnrolledAsync.mockImplementation(
+        check === 'enrolment' ? leave : async () => Promise.resolve(true),
+      );
+
+      await expect(authenticateBiometric('Unlock')).resolves.toEqual({ status: 'failed' });
+      expect(mocked.authenticateAsync).not.toHaveBeenCalled();
+    },
+  );
+
   it('returns unsupported without prompting when biometric hardware is absent', async () => {
     mocked.hasHardwareAsync.mockResolvedValue(false);
 

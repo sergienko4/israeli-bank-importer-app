@@ -6,8 +6,10 @@
  * again. So for any run of captures — clocks jumping ahead, retries that
  * overlap, saves that fail — the loader must never present a spent token, must
  * never hand back an expired one, and must never leave a renewed access token
- * in storage that the screen could send without an unlock. And while the user
- * has capture switched off it must not spend a token at all.
+ * in storage that the screen could send without an unlock. Once a save goes
+ * through, storage must name the live token, so a process that restarts then
+ * presents no spent one. And while the user has capture switched off it must
+ * not spend a token at all.
  */
 import * as fc from 'fast-check';
 
@@ -63,11 +65,11 @@ function portal(now: () => number) {
     accessExpiry.set(tokens.accessToken, tokens.expiresAt);
     return Promise.resolve(tokens);
   };
-  return { refresh, replays, accessExpiry, issuedCount: () => issued };
+  return { refresh, replays, accessExpiry, issuedCount: () => issued, live: () => live };
 }
 
 describe('createUnattendedSession (property)', () => {
-  it('never replays a refresh token, returns a live token, and stores renewals withheld', async () => {
+  it('never replays a token, returns a live one, and stores the live one withheld', async () => {
     await fc.assert(
       fc.asyncProperty(initialLifeArb, fc.array(stepArb, { maxLength: 8 }), async (life, steps) => {
         let clock = START;
@@ -116,6 +118,7 @@ describe('createUnattendedSession (property)', () => {
             const expiry = importer.accessExpiry.get(session?.token ?? '') ?? 0;
             expect(expiry).toBeGreaterThan(clock);
           }
+          if (!step.saveFails) expect(stored.refreshToken).toBe(importer.live());
           if (stored.refreshToken !== 'refresh-0') {
             expect(stored.accessToken).toBe(WITHHELD_ACCESS);
             expect(stored.expiresAt).toBe(SAVED_EXPIRED);

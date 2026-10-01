@@ -17,6 +17,7 @@ import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import { parsedBody } from './parseResponse';
 import type { RunEntry } from './status';
+import { timedFetch } from './timedFetch';
 
 const HTTPS = 'https://';
 
@@ -348,18 +349,44 @@ export async function setOtpSettings(session: Session, channel: OtpChannel): Pro
 }
 
 /**
+ * Reads the answer to `GET /api/otp/pending`.
+ * @param res - The importer's response.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the importer refused or sent something unreadable.
+ */
+async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
+  if (!res.ok) {
+    throw new Error(messageForStatus(res.status));
+  }
+  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  return pendingBody.requests;
+}
+
+/**
+ * Builds the `POST /api/otp/:id` request for a code.
+ * @param id - The pending request id.
+ * @param code - The OTP code.
+ * @returns The path and request options.
+ */
+function otpSubmission(id: string, code: string): { path: string; init: RequestInit } {
+  return {
+    path: `/api/otp/${encodeURIComponent(id)}`,
+    init: {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    },
+  };
+}
+
+/**
  * Loads the pending OTP requests via `GET /api/otp/pending`.
  * @param session - The active session.
  * @returns The pending requests (may be empty); never carries codes.
  * @throws Error when the request fails.
  */
 export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
-  const res = await authed(session, '/api/otp/pending');
-  if (!res.ok) {
-    throw new Error(messageForStatus(res.status));
-  }
-  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
-  return pendingBody.requests;
+  return pendingFrom(await authed(session, '/api/otp/pending'));
 }
 
 /**
@@ -370,10 +397,66 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @returns Success or a failure carrying the importer's error.
  */
 export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  const res = await authed(session, `/api/otp/${encodeURIComponent(id)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ code }),
-  });
+  const { path, init } = otpSubmission(id, code);
+  const res = await authed(session, path, init);
   return res.ok ? { ok: true } : toFailure(res);
+}
+
+/**
+ * Sends one request for work that runs while nobody is at the screen.
+ *
+ * It skips the screen's guard and its 401 recovery, because both can end in a
+ * biometric prompt, and a prompt with no activity to show on never calls back.
+ * The caller renewed the session without a prompt beforehand, so a 401 here is
+ * a plain answer. The deadline matters for the same reason: Android freezes a
+ * background task that is still waiting, with the code still undelivered.
+ * @param session - A session the caller already made current.
+ * @param request - The API path (e.g. `/api/otp/pending`) and fetch init.
+ * @param read - Turns the response into the result, inside the same deadline.
+ * @returns Whatever `read` returns, when the whole reply arrives in time.
+ * @throws Error when the importer is unreachable or does not answer in time.
+ */
+async function unattended<T>(
+  session: Session,
+  { path, init }: { readonly path: string; readonly init: RequestInit },
+  read: (res: Response) => Promise<T>,
+): Promise<T> {
+  const url = `${normalizeBaseUrl(session.baseUrl)}${path}`;
+  const bearer = `Bearer ${session.token}`;
+  return timedFetch(
+    url,
+    {
+      ...init,
+      headers: { ...(init.headers as Record<string, string> | undefined), authorization: bearer },
+    },
+    read,
+  );
+}
+
+/**
+ * Loads the pending OTP requests from background work, with no prompt behind it.
+ * @param session - A session renewed without a prompt.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the request fails or runs out of time.
+ */
+export async function getPendingOtpUnattended(session: Session): Promise<PendingOtpRequest[]> {
+  return unattended(session, { path: '/api/otp/pending', init: {} }, pendingFrom);
+}
+
+/**
+ * Submits an OTP code from background work, with no prompt behind it.
+ * @param session - A session renewed without a prompt.
+ * @param id - The pending request id.
+ * @param code - The OTP code read from the SMS.
+ * @returns Success or a failure carrying the importer's error.
+ * @throws Error when the importer is unreachable or does not answer in time.
+ */
+export async function submitOtpUnattended(
+  session: Session,
+  id: string,
+  code: string,
+): Promise<SaveResult> {
+  return unattended(session, otpSubmission(id, code), async (res) =>
+    res.ok ? { ok: true } : toFailure(res),
+  );
 }

@@ -25,17 +25,16 @@ import {
   setReauthHandler,
   setSessionGuard,
 } from '../api/importerClient';
-import { forgetHeldMessages } from '../lib/otpStashGate';
 import { getPushToken } from '../push/pushRegistration';
 import { signIn } from './appAuthFlow';
-import { isExpiring, refreshConnection, toSession } from './appSession';
 import {
-  clearConnection,
-  type Connection,
-  loadConnection,
-  migrateLegacySecrets,
-  saveConnection,
-} from './connectionStore';
+  adoptConnection,
+  dropConnection,
+  isExpiring,
+  refreshConnection,
+  toSession,
+} from './appSession';
+import { type Connection, loadConnection, migrateLegacySecrets } from './connectionStore';
 
 /** Lifecycle of the app's connection to an importer. */
 export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
@@ -121,11 +120,11 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       });
   }, []);
 
-  const forget = useCallback(async (reason?: string) => {
-    await clearConnection();
-    // Held messages were captured for an importer this app can no longer
-    // reach, so nothing will ever be able to spend them.
-    await forgetHeldMessages();
+  const forget = useCallback(async (reason?: string, pairing?: number) => {
+    // An ended renewal passes the pairing it judged, so a sign-in that landed
+    // after it is not removed; Disconnect passes none and always removes. The
+    // drop also forgets the messages held for the pairing it removes.
+    if (!(await dropConnection(pairing))) return;
     setConnection(null);
     setSessionExpired(false);
     setEndedReason(reason ?? null);
@@ -140,7 +139,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
     };
-    await saveConnection(next);
+    await adoptConnection(next);
     setConnection(next);
     setSessionExpired(false);
     setEndedReason(null);
@@ -152,14 +151,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     if (!connection) {
       return null;
     }
-    const outcome = await refreshConnection(connection);
+    const outcome = await refreshConnection();
     if (outcome.status === 'refreshed') {
       setConnection(outcome.connection);
       setSessionExpired(false);
       return toSession(outcome.connection);
     }
     if (outcome.status === 'ended') {
-      await forget(outcome.message);
+      await forget(outcome.message, outcome.pairing);
       return null;
     }
     setSessionExpired(true);

@@ -92,6 +92,34 @@ describe('refreshTokens', () => {
   });
 });
 
+describe('refreshTokens when the reply is slow', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('keeps waiting for a reply that arrives after the answer deadline', async () => {
+    // The portal retired the presented token when it accepted the request, so
+    // this reply is the only copy of the live one.
+    jest.useFakeTimers();
+    globalThis.fetch = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve({
+              ok: true,
+              status: 200,
+              json: () =>
+                Promise.resolve({ accessToken: 'a', refreshToken: 'late', expiresIn: 900 }),
+            });
+          }, 20_000);
+        }),
+    ) as unknown as typeof fetch;
+    const pending = refreshTokens(BASE, 'refresh-1');
+    await jest.advanceTimersByTimeAsync(20_000);
+    await expect(pending).resolves.toHaveProperty('refreshToken', 'late');
+  });
+});
+
 describe('toAppTokens', () => {
   it('converts the lifetime to a wall-clock deadline', () => {
     const before = Date.now();

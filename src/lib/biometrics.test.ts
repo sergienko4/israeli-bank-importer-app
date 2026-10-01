@@ -1,15 +1,52 @@
 import * as LocalAuthentication from 'expo-local-authentication';
+import { AppState } from 'react-native';
 
 import { authenticateBiometric } from './biometrics';
 
 jest.mock('expo-local-authentication');
 
 const mocked = LocalAuthentication as jest.Mocked<typeof LocalAuthentication>;
+// The test environment's AppState is a plain mock object, so the state is set
+// directly rather than driven through lifecycle events it does not emit.
+const appState = AppState as unknown as { currentState: string };
 
 describe('authenticateBiometric', () => {
   beforeEach(() => {
     jest.resetAllMocks();
+    appState.currentState = 'active';
   });
+
+  it.each(['background', 'inactive', 'unknown'])(
+    'fails without prompting while the app is %s',
+    async (state) => {
+      // A prompt raised off screen never answers, so asking would hang the caller.
+      appState.currentState = state;
+      mocked.hasHardwareAsync.mockResolvedValue(true);
+      mocked.isEnrolledAsync.mockResolvedValue(true);
+
+      await expect(authenticateBiometric('Unlock')).resolves.toEqual({ status: 'failed' });
+      expect(mocked.authenticateAsync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['hardware', 'enrolment'] as const)(
+    'fails without prompting when the app leaves the screen during the %s check',
+    async (check) => {
+      const leave = async (): Promise<boolean> => {
+        appState.currentState = 'background';
+        return Promise.resolve(true);
+      };
+      mocked.hasHardwareAsync.mockImplementation(
+        check === 'hardware' ? leave : async () => Promise.resolve(true),
+      );
+      mocked.isEnrolledAsync.mockImplementation(
+        check === 'enrolment' ? leave : async () => Promise.resolve(true),
+      );
+
+      await expect(authenticateBiometric('Unlock')).resolves.toEqual({ status: 'failed' });
+      expect(mocked.authenticateAsync).not.toHaveBeenCalled();
+    },
+  );
 
   it('returns unsupported without prompting when biometric hardware is absent', async () => {
     mocked.hasHardwareAsync.mockResolvedValue(false);

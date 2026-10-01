@@ -8,8 +8,8 @@
  * screen attached, so there is nowhere to report a problem and nothing lost by
  * leaving the code to be typed.
  */
-import { getPendingOtpUnattended, submitOtpUnattended } from '../api/importerClient';
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { getPendingOtpUnattended } from '../api/importerClient';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
 import { loadUnattendedSession } from './otpBackgroundSession';
 import { settleWithin, TASK_BUDGET_MS } from './otpDeadline';
 import { drainStash, type StashDrainOutcome } from './otpStashDrain';
@@ -161,7 +161,7 @@ export const drainHeldMessages: (budget: RemainingBudget) => Promise<StashRunOut
         drainStash({
           loadSession: () => loadUnattendedSession(lease.remainingMs),
           getPending: getPendingOtpUnattended,
-          submit: submitOtpUnattended,
+          submit: submitWhileAllowed,
           now: Date.now,
           list: stash.list,
           consume: stash.consume,

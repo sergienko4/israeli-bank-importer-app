@@ -15,6 +15,8 @@
  */
 import * as SecureStore from 'expo-secure-store';
 
+import { writeSwitch } from './otpCaptureSwitch';
+
 const AUTO_READ_KEY = 'otp.autoRead.v1';
 
 /** The only stored value that enables auto-read; anything else reads as off. */
@@ -43,9 +45,12 @@ export async function loadOtpAutoRead(): Promise<boolean> {
  *
  * Write failures propagate deliberately, so the caller can tell the user the
  * choice did not stick rather than showing a switch that lies.
+ *
+ * Stored in turn with background capture, so no renewal or send that read the
+ * value being replaced can still start once this returns.
  * @param enabled - True to read codes from incoming messages automatically.
  * @throws When the secure store cannot be written.
  */
 export async function saveOtpAutoRead(enabled: boolean): Promise<void> {
-  await SecureStore.setItemAsync(AUTO_READ_KEY, enabled ? ENABLED : DISABLED);
+  await writeSwitch(() => SecureStore.setItemAsync(AUTO_READ_KEY, enabled ? ENABLED : DISABLED));
 }

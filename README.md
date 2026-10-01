@@ -151,10 +151,12 @@ About the SMS APK:
   It lets the capture task finish before Android freezes the app; nothing else
   runs in the foreground.
 - Turning either switch back off stops the app acting on messages, and erases
-  everything being held in the same write. The Android grant itself outlives the
-  switch — the app cannot hand a permission back, so it stays listed as granted
-  until you remove it in Android's app settings. What changes is that the
-  receiver goes inert again and keeps nothing.
+  everything being held in the same write. A task already running reads the
+  switches again just before it renews a token or sends a code, so it stops
+  too; only a request already on its way finishes. The Android grant itself
+  outlives the switch — the app cannot hand a permission back, so it stays
+  listed as granted until you remove it in Android's app settings. What changes
+  is that the receiver goes inert again and keeps nothing.
 - The receiver ignores every message unless you have opted in. One it does act
   on is submitted only when the importer is actually waiting for a code and the
   message yields exactly one; one that yields none, or two that disagree, is

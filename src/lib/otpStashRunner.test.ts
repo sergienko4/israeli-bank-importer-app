@@ -5,7 +5,7 @@
  * them, so the switches have to be re-read at the moment of use rather than
  * trusted from whenever the capture happened.
  */
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
 import { loadUnattendedSession } from './otpBackgroundSession';
 import { TASK_BUDGET_MS } from './otpDeadline';
 import { drainStash, type StashDrainOutcome } from './otpStashDrain';
@@ -17,7 +17,10 @@ import {
   type StashRunOutcome,
 } from './otpStashRunner';
 
-jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+jest.mock('./otpBackgroundGate', () => ({
+  loadBackgroundCaptureAllowed: jest.fn(),
+  submitWhileAllowed: jest.fn(),
+}));
 jest.mock('./otpBackgroundSession', () => ({ loadUnattendedSession: jest.fn() }));
 jest.mock('./otpStashDrain', () => ({ drainStash: jest.fn() }));
 
@@ -281,5 +284,19 @@ describe('drainHeldMessages', () => {
     const [left] = load.mock.calls[0] as unknown as [() => number];
     expect(left()).toBeLessThanOrEqual(10_000);
     expect(left()).toBeGreaterThan(0);
+  });
+
+  it('sends a held code only through the submit that re-reads the switches', async () => {
+    // The gate above read the switches before the session and the pending
+    // request were fetched, and the user can turn capture off in between.
+    jest.mocked(loadBackgroundCaptureAllowed).mockResolvedValue(true);
+    let submit: unknown;
+    jest.mocked(drainStash).mockImplementation((drainPorts) => {
+      submit = drainPorts.submit;
+      return Promise.resolve('submitted');
+    });
+    await drainHeldMessages(() => 10_000);
+
+    expect(submit).toBe(submitWhileAllowed);
   });
 });

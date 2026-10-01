@@ -8,10 +8,10 @@
  */
 import { AppRegistry, Platform } from 'react-native';
 
-import { getPendingOtpUnattended, submitOtpUnattended } from '../api/importerClient';
+import { getPendingOtpUnattended } from '../api/importerClient';
 import { refreshSettled } from '../auth/refreshLock';
 import { isAutoReadBuild } from './otpAutoReadPermission';
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
 import { loadUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage, type BackgroundSubmitOutcome } from './otpBackgroundSubmit';
 import { RENEWAL_GRACE_MS, settleWithin, TASK_BUDGET_MS } from './otpDeadline';
@@ -96,7 +96,7 @@ function submitBody(body: string, left: RemainingBudget): Promise<BackgroundSubm
   return autoSubmitFromMessage(body, {
     loadSession: () => loadUnattendedSession(left),
     getPending: getPendingOtpUnattended,
-    submit: submitOtpUnattended,
+    submit: submitWhileAllowed,
     now: Date.now,
   });
 }

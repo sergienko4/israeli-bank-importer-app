@@ -20,6 +20,7 @@ import {
   SAVED_EXPIRED,
   WITHHELD_ACCESS,
 } from './otpBackgroundSession';
+import { writeSwitch } from './otpCaptureSwitch';
 import { TASK_TIMEOUT_MS } from './otpDeadline';
 
 jest.mock('../api/appTokens', () => ({
@@ -294,6 +295,43 @@ describe('loadUnattendedSession', () => {
     const h = harness(connection());
     h.switchOff();
     await expect(h.loader()).resolves.toBeNull();
+  });
+
+  it('spends nothing when capture is switched off while storage is read', async () => {
+    // The first check answered for the moment before the switch moved, and a
+    // token spent after the user said no is spent all the same.
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    h.load.mockImplementationOnce(async () => {
+      await writeSwitch(() => {
+        h.switchOff();
+        return Promise.resolve();
+      });
+      return connection({ expiresAt: NOW - 1 });
+    });
+    await expect(h.loader()).resolves.toBeNull();
+    expect(h.refresh).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it("judges its caller's time when the renewal would start, after any switch change", async () => {
+    // Waiting for a switch change to be stored also spends the caller's time,
+    // and a renewal must not start once none is left to see it kept.
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    let finish: () => void = () => undefined;
+    const storing = writeSwitch(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    let remaining = 1_000;
+    const queued = h.loader(() => remaining);
+    await nextTurn();
+    remaining = 0;
+    finish();
+    await storing;
+    await expect(queued).rejects.toThrow(NO_TIME_TO_RENEW);
+    expect(h.refresh).not.toHaveBeenCalled();
   });
 
   it('reports a refused renewal as a failure and stores nothing', async () => {

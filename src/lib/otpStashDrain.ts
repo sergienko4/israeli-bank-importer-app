@@ -29,6 +29,7 @@
 import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
 import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
+import { CaptureSwitchedOffError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import {
@@ -77,6 +78,8 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  * means the run ran out of its claim on the drain before it reached the send —
  * either a newer run has already taken over, or too little is left to record
  * what a send did — so whatever is worth doing is the next run's to do.
+ * `not-allowed` means the switches refused the send itself, so the code never
+ * left the device and nothing is recorded against it.
  */
 export type StashDrainOutcome =
   | 'empty'
@@ -87,7 +90,8 @@ export type StashDrainOutcome =
   | 'rejected'
   | 'failed'
   | 'unknown'
-  | 'superseded';
+  | 'superseded'
+  | 'not-allowed';
 
 /**
  * Spends at most one held message against the importer's pending request.
@@ -152,6 +156,7 @@ async function spendChoice(ports: StashDrainPorts, choice: Choice): Promise<Stas
   const allowance = sendWindow(ports);
   if (allowance === null) return 'superseded';
   const result = await sent(() => ports.submit(session, requestId, code), allowance);
+  if (result === 'not-allowed') return 'not-allowed';
   if (result === 'unknown') {
     // Marked spent rather than merely attempted, because the scope of the
     // doubt is the code itself and not this request. Recording it against
@@ -213,17 +218,25 @@ function sendWindow(ports: StashDrainPorts): number | null {
  * nothing would otherwise leave the caller with no answer to act on at the
  * moment it most needs one.
  *
+ * A send the switches refused is kept apart as well: it is the one failure that
+ * proves the code never left the device.
+ *
  * @param submit - The send, already bound to its session, request and code.
  * @param ms - How long to wait, already trimmed to what the run has left.
- * @returns What the importer said, or `unknown` when it never said anything.
+ * @returns What the importer said, `unknown` when it never said anything, or
+ *   `not-allowed` when the switches refused the send.
  */
 async function sent(
   submit: () => Promise<SaveResult>,
   ms: number,
-): Promise<SaveResult | 'unknown'> {
-  let answer: SaveResult | 'unknown' = 'unknown';
+): Promise<SaveResult | 'unknown' | 'not-allowed'> {
+  let answer: SaveResult | 'unknown' | 'not-allowed' = 'unknown';
   const asking = (async () => {
-    answer = await submit();
+    try {
+      answer = await submit();
+    } catch (error) {
+      if (error instanceof CaptureSwitchedOffError) answer = 'not-allowed';
+    }
   })();
   await settleWithin(asking, ms);
   return answer;

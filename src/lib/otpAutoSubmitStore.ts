@@ -16,6 +16,8 @@
  */
 import * as SecureStore from 'expo-secure-store';
 
+import { writeSwitch } from './otpCaptureSwitch';
+
 const AUTO_SUBMIT_KEY = 'otp.autoSubmit.v1';
 
 /** The only stored value that enables auto-submit; anything else reads as off. */
@@ -48,9 +50,12 @@ export async function loadOtpAutoSubmit(): Promise<boolean> {
  * Write failures propagate deliberately. A user who turns auto-submit off and
  * is not told the write failed would believe codes are no longer sent
  * automatically while they still are, so the caller has to surface this.
+ *
+ * Stored in turn with background capture, so no renewal or send that read the
+ * value being replaced can still start once this returns.
  * @param enabled - True to auto-submit a filled code, false to always confirm.
  * @throws When the secure store cannot be written.
  */
 export async function saveOtpAutoSubmit(enabled: boolean): Promise<void> {
-  await SecureStore.setItemAsync(AUTO_SUBMIT_KEY, enabled ? ENABLED : DISABLED);
+  await writeSwitch(() => SecureStore.setItemAsync(AUTO_SUBMIT_KEY, enabled ? ENABLED : DISABLED));
 }

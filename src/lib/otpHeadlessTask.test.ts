@@ -3,7 +3,7 @@
  * which messages it acts on, and which it ignores.
  */
 import { withRefreshLock } from '../auth/refreshLock';
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
 import { loadUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 import { RENEWAL_GRACE_MS, TASK_BUDGET_MS } from './otpDeadline';
@@ -11,7 +11,10 @@ import { OTP_SMS_TASK_NAME, runOtpSmsTask } from './otpHeadlessTask';
 import { RETRY_INTERVAL_MS, RETRY_WINDOW_MS } from './otpRetry';
 import { drainHeldMessages } from './otpStashRunner';
 
-jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+jest.mock('./otpBackgroundGate', () => ({
+  loadBackgroundCaptureAllowed: jest.fn(),
+  submitWhileAllowed: jest.fn(),
+}));
 jest.mock('./otpBackgroundSession', () => ({ loadUnattendedSession: jest.fn() }));
 jest.mock('./otpBackgroundSubmit', () => ({ autoSubmitFromMessage: jest.fn() }));
 jest.mock('./otpStashRunner', () => ({ drainHeldMessages: jest.fn() }));
@@ -75,6 +78,16 @@ describe('runOtpSmsTask', () => {
   it('submits when the user has enabled both switches', async () => {
     await runOtpSmsTask({ body: 'Your code is 123456' });
     expect(mockSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the code only through the submit that re-reads the switches', async () => {
+    // The switches were read when the task woke, and the user can turn
+    // capture off while the request it answers is being fetched.
+    await runOtpSmsTask({ body: 'Your code is 123456' });
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ submit: submitWhileAllowed }),
+    );
   });
 
   it('reads no message once the user has turned a switch off', async () => {

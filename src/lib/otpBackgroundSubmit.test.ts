@@ -1,5 +1,6 @@
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
+import { CaptureSwitchedOffError } from './otpCaptureSwitch';
 
 /**
  * The background submit path. This runs with no UI attached and possibly with
@@ -43,6 +44,16 @@ describe('autoSubmitFromMessage', () => {
 
     await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('submitted');
     expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
+  });
+
+  it('stops without a verdict when capture was switched off before the send', async () => {
+    // The code never left the device: neither a refusal by the importer nor a
+    // send whose fate is unknown, and nothing worth trying again.
+    const { ports: p } = ports({
+      submit: () => Promise.reject(new CaptureSwitchedOffError()),
+    });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('not-allowed');
   });
 
   it('reaches nothing over the network for a message with no code', async () => {

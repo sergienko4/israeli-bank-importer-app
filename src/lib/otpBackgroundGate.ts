@@ -19,8 +19,11 @@
  * switches are hidden on that channel, which would otherwise leave a receiver
  * collecting bank messages with nothing on screen to turn it off.
  */
+import { type Session, submitOtpUnattended } from '../api/importerClient';
+import type { SaveResult } from '../api/manifest';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
+import { CaptureSwitchedOffError, startIfAllowed } from './otpCaptureSwitch';
 import { loadOtpChannelIsApp } from './otpChannelStore';
 
 /**
@@ -54,4 +57,32 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
     loadOtpChannelIsApp(),
   ]);
   return backgroundCaptureAllowed(autoRead, autoSubmit, channelIsApp);
+}
+
+/**
+ * Sends a captured code from background work, if the switches still allow it.
+ *
+ * Every background path reads the switches when it wakes, but then fetches a
+ * session and the request it answers before it sends anything, and the user
+ * can turn capture off in between. So the switches are read again here, in
+ * turn with any change to them, straight before the code leaves the device.
+ *
+ * @param session - A session renewed without a prompt.
+ * @param id - The pending request id.
+ * @param code - The code read from the message.
+ * @returns What the importer said.
+ * @throws CaptureSwitchedOffError when the switches refused the send, so the
+ *   caller can tell a code that never left the device from one whose fate is
+ *   unknown; or whatever the send itself threw.
+ */
+export async function submitWhileAllowed(
+  session: Session,
+  id: string,
+  code: string,
+): Promise<SaveResult> {
+  const started = await startIfAllowed(loadBackgroundCaptureAllowed, () =>
+    submitOtpUnattended(session, id, code),
+  );
+  if (started === null) throw new CaptureSwitchedOffError();
+  return started.result;
 }

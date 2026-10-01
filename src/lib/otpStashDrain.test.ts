@@ -1,4 +1,5 @@
 import type { SaveResult } from '../api/manifest';
+import { CaptureSwitchedOffError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, SUBMIT_DEADLINE_MS, TASK_BUDGET_MS } from './otpDeadline';
 import { STASH_SPENT, STASH_TTL_MS, type StashedMessage } from './otpStash';
 import type { StashDrainPorts } from './otpStashDrain';
@@ -477,5 +478,23 @@ describe('drainStash', () => {
 
     await expect(drainStash(p)).resolves.toBe('submitted');
     expect(submitted).toEqual([{ id: 'req-1', code: '135790' }]);
+  });
+
+  it('records nothing when capture was switched off before the send', async () => {
+    // The code never left the device, so it is neither spent nor judged. The
+    // switch-off that refused it also empties the stash.
+    const {
+      ports: p,
+      submitted,
+      consumed,
+      attempts,
+    } = ports({
+      submit: () => Promise.reject(new CaptureSwitchedOffError()),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('not-allowed');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+    expect(attempts).toEqual([]);
   });
 });

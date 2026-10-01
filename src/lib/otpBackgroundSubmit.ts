@@ -21,6 +21,7 @@
 import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
 import type { PendingOtpRequest } from '../api/otp';
+import { CaptureSwitchedOffError } from './otpCaptureSwitch';
 import { pickExpectation } from './otpExpectedWindow';
 import { extractOtpCode } from './otpMessage';
 
@@ -47,9 +48,18 @@ export interface BackgroundSubmitPorts {
  * Every value except `submitted` means nothing was accepted. They are distinct
  * so the caller can tell "we chose not to" from "we tried and could not", and —
  * because this path has no screen and may be retried — "we do not know".
+ * `not-allowed` means the switches refused the send itself: the code never
+ * left the device.
  */
 export type BackgroundSubmitOutcome =
-  'no-code' | 'no-session' | 'no-pending' | 'submitted' | 'rejected' | 'failed' | 'unknown';
+  | 'no-code'
+  | 'no-session'
+  | 'no-pending'
+  | 'submitted'
+  | 'rejected'
+  | 'failed'
+  | 'unknown'
+  | 'not-allowed';
 
 /** The request a code should answer, once one has been found. */
 interface Target {
@@ -139,10 +149,13 @@ export function neverJudged(status: number | undefined): boolean {
  * 503 says the code was not looked at, so reporting it as a refusal would strand
  * an unspent code over an outage that clears in seconds.
  *
+ * A send the switches refused is the one throw that proves nothing went out.
+ *
  * @param ports - The injected outside world.
  * @param target - The session and request the code answers.
  * @param code - The digits taken from the message.
- * @returns Whether the code was accepted, refused, unjudged, or left in doubt.
+ * @returns Whether the code was accepted, refused, unjudged, left in doubt, or
+ *   never sent.
  */
 async function send(
   ports: BackgroundSubmitPorts,
@@ -153,7 +166,7 @@ async function send(
     const result = await ports.submit(target.session, target.requestId, code);
     if (result.ok) return 'submitted';
     return neverJudged(result.status) ? 'failed' : 'rejected';
-  } catch {
-    return 'unknown';
+  } catch (error) {
+    return error instanceof CaptureSwitchedOffError ? 'not-allowed' : 'unknown';
   }
 }

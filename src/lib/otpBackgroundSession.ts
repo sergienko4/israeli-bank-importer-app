@@ -14,7 +14,9 @@
  *
  * - It checks the user's capture switches itself before touching anything, so
  *   no entry point can spend a token for a user who has not opted in — the
- *   push wake, which reaches it before any switch is read, included.
+ *   push wake, which reaches it before any switch is read, included. It checks
+ *   them again, in turn with any change to them, straight before it spends the
+ *   refresh token.
  * - The renewed pair is saved with its access token withheld and already
  *   expired. The rotated refresh token has to be stored, because the one it
  *   replaced is spent, but the access token stays in memory: the screen reads
@@ -29,6 +31,7 @@ import { type Connection, loadConnection, saveConnection } from '../auth/connect
 import { withRefreshLock } from '../auth/refreshLock';
 import { processLedger, type TokenLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { startIfAllowed } from './otpCaptureSwitch';
 
 /** Saved in place of a background renewal's real expiry, so the screen never uses it unprompted. */
 export const SAVED_EXPIRED = 0;
@@ -112,7 +115,13 @@ async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Pro
  * That is also why no renewal starts once the caller's time is up: the caller
  * waits for a renewal to be kept before it lets the process go, but only for
  * one started while it was still keeping the process alive. The time is read
- * after the lock is taken, because waiting for it can take most of a minute.
+ * as the renewal starts, because waiting for the lock can take most of a
+ * minute.
+ *
+ * The switches are read twice. The first read spares an opted-out user even
+ * the storage read. The second is taken in turn with the switches being
+ * written, straight before the token is spent, because the user can turn
+ * capture off while the stored pair is read.
  *
  * @param ports - The injected switches, storage, portal, clock, and ledger.
  * @returns A loader resolving to a usable session, or `null` when unpaired or
@@ -133,11 +142,13 @@ export function createUnattendedSession(ports: UnattendedSessionPorts): Unattend
         if (pair.refreshToken !== stored.refreshToken) await keep(ports.save, pair);
         return toSession(pair);
       }
-      if (left !== undefined && left() <= 0) throw new Error(NO_TIME_TO_RENEW);
-
-      const renewal = renew(ports, pair);
-      hold(renewal);
-      return toSession(await answerInTime(renewal));
+      const started = await startIfAllowed(ports.allowed, async () => {
+        if (left !== undefined && left() <= 0) throw new Error(NO_TIME_TO_RENEW);
+        return renew(ports, pair);
+      });
+      if (started === null) return null;
+      hold(started.result);
+      return toSession(await answerInTime(started.result));
     });
 }
 

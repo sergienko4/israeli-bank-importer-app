@@ -15,6 +15,7 @@
 import * as SecureStore from 'expo-secure-store';
 
 import type { OtpChannel } from '../api/otp';
+import { writeSwitch } from './otpCaptureSwitch';
 
 const CHANNEL_KEY = 'otp.channel.v1';
 
@@ -42,9 +43,12 @@ export async function loadOtpChannelIsApp(): Promise<boolean> {
  *
  * Write failures propagate so the caller can re-sync the capture gate from what
  * did stick rather than trusting a cache it never wrote.
+ *
+ * Stored in turn with background capture, so no renewal or send that read the
+ * value being replaced can still start once this returns.
  * @param channel - The channel the importer is currently set to.
  * @throws When the secure store cannot be written.
  */
 export async function saveOtpChannel(channel: OtpChannel): Promise<void> {
-  await SecureStore.setItemAsync(CHANNEL_KEY, channel);
+  await writeSwitch(() => SecureStore.setItemAsync(CHANNEL_KEY, channel));
 }

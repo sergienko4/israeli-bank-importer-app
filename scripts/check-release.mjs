@@ -957,6 +957,26 @@ function checkAssetSafety(workflows, actions) {
       backupCleanup.run === 'rm -rf "$RUNNER_TEMP/release-asset-backup"',
     `${STANDARD_WORKFLOW} should always remove its private SMS backup`,
   );
+  // The backup dies with the runner, so a run that withdrew the SMS APK and
+  // failed must say so, and say how to put it back, before the cleanup step.
+  const recoveryIndex = standardSteps.findIndex(
+    (step) => step.name === 'Explain how to restore the SMS APK',
+  );
+  const recovery = standardSteps[recoveryIndex];
+  const backupCleanupIndex = standardSteps.indexOf(backupCleanup);
+  check(
+    rule,
+    recoveryIndex > standardGuardIndex &&
+      recoveryIndex < backupCleanupIndex &&
+      recovery?.if === "failure() && steps.prepare-upload.outputs.restore_sms == 'true'" &&
+      typeof recovery.run === 'string' &&
+      recovery.run.includes('::error') &&
+      recovery.run.includes('$GITHUB_STEP_SUMMARY') &&
+      recovery.run.includes('Release APK') &&
+      recovery.run.includes('Release SMS APK') &&
+      !recovery.run.includes('${{'),
+    `${STANDARD_WORKFLOW} should explain how to restore a withdrawn SMS APK when it fails`,
+  );
 
   const events = [];
   const prepared = prepareStandardApkReplacement(

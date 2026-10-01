@@ -143,6 +143,26 @@ jobs:
         with:
           release_tag: ${{ inputs.tag }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+      # The SMS backup lives only on this runner and is removed below, so a run
+      # that withdrew the SMS APK and then failed has to leave the way back.
+      - name: Explain how to restore the SMS APK
+        if: failure() && steps.prepare-upload.outputs.restore_sms == 'true'
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          echo "::error title=SMS APK may be missing::This run withdrew the SMS APK, then failed. If the release lacks it, run Release APK if needed, then Release SMS APK, for this tag; see the run summary."
+          {
+            echo "### SMS APK may be missing from \`$RELEASE_TAG\`"
+            echo
+            echo "This run withdrew \`israeli-bank-importer.sms.apk\` before replacing the"
+            echo "standard APK, then a later step failed. The backup it took is gone with the"
+            echo "runner. If the release no longer lists the SMS APK, restore it in this"
+            echo "order, because the SMS build repackages the standard APK:"
+            echo
+            echo "1. If the release has no \`israeli-bank-importer.apk\` either, run"
+            echo "   **Release APK** for \`$RELEASE_TAG\`."
+            echo "2. Run **Release SMS APK** for \`$RELEASE_TAG\`."
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove the preserved SMS APK
         if: always() && steps.guard.outputs.run == 'true'
         run: rm -rf "$RUNNER_TEMP/release-asset-backup"

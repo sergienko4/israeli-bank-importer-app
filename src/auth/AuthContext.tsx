@@ -31,7 +31,6 @@ import {
   adoptConnection,
   dropConnection,
   isExpiring,
-  type Pairing,
   refreshConnection,
   toSession,
 } from './appSession';
@@ -121,7 +120,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       });
   }, []);
 
-  const forget = useCallback(async (reason?: string, pairing?: Pairing) => {
+  const forget = useCallback(async (reason?: string, pairing?: number) => {
     // An ended renewal passes the pairing it judged, so a sign-in that landed
     // after it is not removed; Disconnect passes none and always removes. The
     // drop also forgets the messages held for the pairing it removes.

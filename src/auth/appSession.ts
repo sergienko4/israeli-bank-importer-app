@@ -38,22 +38,21 @@ export const STORAGE_UNREADABLE = 'Could not read the saved connection. Try agai
 const UNREADABLE = Symbol('unreadable');
 
 /**
- * Which sign-in a renewal judged, counted from the start of this process.
+ * What happened when the app tried to renew a connection.
  *
- * An ended renewal reaches the screen only after it returns, and a sign-in that
- * was already waiting on the refresh lock can save a new pairing in that gap.
- * Handing this back to {@link dropConnection} lets the drop tell the two apart.
+ * An ended renewal also says which sign-in it judged, counted from the start of
+ * this process. It reaches the screen only after it returns, and a sign-in that
+ * was already waiting on the refresh lock can save a new pairing in that gap;
+ * handing `pairing` back to {@link dropConnection} lets the drop tell the two
+ * apart.
  */
-export type Pairing = number;
-
-/** What happened when the app tried to renew a connection. */
 export type RefreshOutcome =
   | { status: 'refreshed'; connection: Connection }
   | { status: 'declined'; message: string }
-  | { status: 'ended'; message: string; pairing: Pairing };
+  | { status: 'ended'; message: string; pairing: number };
 
 /** Sign-ins adopted in this process; changed only under the refresh lock. */
-let signIns: Pairing = 0;
+let signIns = 0;
 
 /**
  * Narrows a stored connection to what the API client needs.
@@ -230,7 +229,7 @@ export async function adoptConnection(connection: Connection): Promise<void> {
  *   adopted since then is left alone; the user tapping Disconnect omits it.
  * @returns Whether the pairing was removed.
  */
-export async function dropConnection(pairing?: Pairing): Promise<boolean> {
+export async function dropConnection(pairing?: number): Promise<boolean> {
   return withRefreshLock(async () => {
     if (pairing !== undefined && pairing !== signIns) return false;
     await clearConnection();

@@ -236,7 +236,8 @@ appears with no message following it. That path needs Firebase credentials this
 project does not ship, so it is inert until one is configured. It is deliberately
 never trusted: the push only starts the process, which then asks the importer
 what is outstanding, because anyone holding this device's push token could forge
-one.
+one. It runs under the same limits as the message task, including the wait for a
+renewal to be saved.
 
 **What still needs you.** Auto-read has to be switched on, and a phone whose app
 was force-stopped from Android's settings receives no broadcast at all until it

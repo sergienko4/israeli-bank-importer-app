@@ -45,3 +45,16 @@ export function withRefreshLock<T>(work: (hold: HoldLock) => Promise<T>): Promis
   tail = run.catch(() => undefined).then(async () => Promise.allSettled(held));
   return run;
 }
+
+/**
+ * Waits until nothing holds the lock, including work queued while waiting.
+ *
+ * For a caller about to stop keeping the process alive: a renewal still in
+ * flight holds the only live refresh token until its reply is saved.
+ * @returns A promise resolving once the lock is free; it never rejects.
+ */
+export async function refreshSettled(): Promise<void> {
+  const seen = tail;
+  await seen;
+  if (seen !== tail) await refreshSettled();
+}

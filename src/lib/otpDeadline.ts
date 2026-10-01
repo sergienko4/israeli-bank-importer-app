@@ -26,14 +26,28 @@
 export const TASK_BUDGET_MS = 45_000;
 
 /**
+ * How long a task waits, once its budget is spent, for a token renewal to be kept.
+ *
+ * The portal retires a refresh token the moment it accepts it, so a renewal
+ * whose reply is late holds the only live token until that reply is saved.
+ * Returning stops the foreground service, and a process frozen or killed before
+ * the save leaves storage naming the spent token, which ends the pairing the
+ * next time it is presented. The renewal's request gives up at its settle limit
+ * (`SETTLE_LIMIT_MS` in `timedFetch.ts`), and this adds room for the save.
+ */
+export const RENEWAL_GRACE_MS = 65_000;
+
+/**
  * Must match `TASK_TIMEOUT_MS` in `OtpSmsAutoReadService.kt`.
  *
  * The backstop for a task that never returns at all. Everything above finishes
- * inside {@link TASK_BUDGET_MS}; the gap between the two is margin, because
- * that budget is a JavaScript timer and a JavaScript timer only fires when the
- * thread next gets round to it. The test beside this file pins the ordering.
+ * inside {@link TASK_BUDGET_MS} plus {@link RENEWAL_GRACE_MS}; the gap beyond
+ * that is margin, because both are JavaScript timers and a JavaScript timer
+ * only fires when the thread next gets round to it. It stays well inside the
+ * roughly three minutes Android gives a short foreground service. The test
+ * beside this file pins the ordering.
  */
-export const TASK_TIMEOUT_MS = 60_000;
+export const TASK_TIMEOUT_MS = 120_000;
 
 /**
  * The most a single send may take when the run has room to spare.

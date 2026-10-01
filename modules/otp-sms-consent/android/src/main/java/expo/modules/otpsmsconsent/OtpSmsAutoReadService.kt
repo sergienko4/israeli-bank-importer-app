@@ -24,11 +24,16 @@ private const val TASK_NAME = "OtpSmsAutoRead"
  * between the two is margin, because that budget is a JavaScript timer and a
  * JavaScript timer only fires when the thread next gets round to it.
  *
+ * The timeout also covers waiting, after that budget, for a token renewal to
+ * be saved, which can take just over a minute when the portal answers late. It
+ * stays well inside the roughly three minutes Android gives a short foreground
+ * service.
+ *
  * The ordinary run is one quick request against a machine on the same network
  * and finishes in well under a second. This exists only so a task that never
  * returns at all cannot hold the device awake.
  */
-private const val TASK_TIMEOUT_MS = 60_000L
+private const val TASK_TIMEOUT_MS = 120_000L
 
 /** Identifies this service's notification; any stable non-zero value works. */
 private const val NOTIFICATION_ID = 0x07B5

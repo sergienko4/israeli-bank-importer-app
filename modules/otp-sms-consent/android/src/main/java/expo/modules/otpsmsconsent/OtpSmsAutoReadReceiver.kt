@@ -13,6 +13,14 @@ import com.facebook.react.HeadlessJsTaskService
 internal const val EXTRA_MESSAGE_BODY = "body"
 
 /**
+ * Set when Android accepted a foreground start, which the service then owes it.
+ *
+ * Read and removed by the service before the task starts, so it never reaches
+ * JavaScript.
+ */
+internal const val EXTRA_FOREGROUND_START = "foregroundStart"
+
+/**
  * The longest message worth holding, matching the parser's own limit.
  *
  * A message longer than this is rejected by the parser anyway, so holding it
@@ -148,10 +156,13 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
    */
   private fun start(context: Context, service: Intent): String {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-      runCatching { context.startForegroundService(service) }.isSuccess
+      runCatching {
+        context.startForegroundService(service.putExtra(EXTRA_FOREGROUND_START, true))
+      }.isSuccess
     ) {
       return "foreground"
     }
+    service.removeExtra(EXTRA_FOREGROUND_START)
     return if (runCatching { context.startService(service) }.isSuccess) "background" else "refused"
   }
 

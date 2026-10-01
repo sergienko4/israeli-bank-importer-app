@@ -56,7 +56,18 @@ internal const val LOG_TAG = "OtpSmsAutoRead"
  */
 class OtpSmsAutoReadService : HeadlessJsTaskService() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    promote()
+    val owesForeground = intent?.getBooleanExtra(EXTRA_FOREGROUND_START, false) == true
+    intent?.removeExtra(EXTRA_FOREGROUND_START)
+    if (!promote() && owesForeground) {
+      // Android accepted a foreground start, so it ends this process once the
+      // service stops without having promoted itself, or once its deadline
+      // passes. Nothing here can avert that. Starting the task would only race
+      // it, and a task cut short between spending a refresh token and saving
+      // the next one would end the user's session. Stopping now costs only this
+      // attempt, which the user covers by typing the code.
+      stopSelf(startId)
+      return START_NOT_STICKY
+    }
     val result = super.onStartCommand(intent, flags, startId)
     if (result == START_NOT_STICKY) {
       // No task was started, so nothing would ever stop this service.
@@ -92,12 +103,16 @@ class OtpSmsAutoReadService : HeadlessJsTaskService() {
   /**
    * Makes this a foreground service for as long as the task runs.
    *
-   * A refusal leaves it an ordinary service, which still runs until Android
-   * freezes it. That is the old behaviour, not a crash.
+   * For a service the receiver could only start as an ordinary one, a refusal
+   * is expected and leaves it ordinary: it still runs until Android freezes
+   * it, as it did before. For one Android accepted as a foreground start, the
+   * caller has to act on a refusal instead.
+   *
+   * @return whether the service is now in the foreground.
    */
-  private fun promote() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-    try {
+  private fun promote(): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+    return try {
       val notification = captureNotification()
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         startForeground(
@@ -108,8 +123,10 @@ class OtpSmsAutoReadService : HeadlessJsTaskService() {
       } else {
         startForeground(NOTIFICATION_ID, notification)
       }
+      true
     } catch (error: RuntimeException) {
       Log.w(LOG_TAG, "foreground-refused:${error.javaClass.simpleName}")
+      false
     }
   }
 

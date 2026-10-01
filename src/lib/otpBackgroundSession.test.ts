@@ -74,16 +74,18 @@ function harness(initial: Connection | null) {
     });
   });
   const load = jest.fn(() => Promise.resolve(stored));
-  const loader = createUnattendedSession({
-    allowed: () => Promise.resolve(allowed),
-    load,
-    save,
-    refresh,
-    now: () => clock,
-    ledger: createTokenLedger(),
-  });
+  const start = () =>
+    createUnattendedSession({
+      allowed: () => Promise.resolve(allowed),
+      load,
+      save,
+      refresh,
+      now: () => clock,
+      ledger: createTokenLedger(),
+    });
   return {
-    loader,
+    loader: start(),
+    restart: start,
     load,
     save,
     refresh,
@@ -165,6 +167,31 @@ describe('loadUnattendedSession', () => {
     await h.loader();
     await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-2' });
     expect(h.presented).toEqual(['refresh-at-unlock', 'refresh-renewed-1']);
+  });
+
+  it('repairs storage from its renewal, so a restart never replays the spent token', async () => {
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    h.save.mockRejectedValueOnce(new Error('Keychain unavailable.'));
+    await h.loader();
+    await h.loader();
+    h.advance(FIFTEEN_MINUTES);
+    await expect(h.restart()()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-2' });
+    expect(h.presented).toEqual(['refresh-at-unlock', 'refresh-renewed-1']);
+  });
+
+  it('keeps answering from its renewal while storage still cannot be repaired', async () => {
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    h.save.mockRejectedValue(new Error('Keychain unavailable.'));
+    await h.loader();
+    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    expect(h.presented).toEqual(['refresh-at-unlock']);
+  });
+
+  it('writes nothing when storage already holds the live token', async () => {
+    const h = harness(connection());
+    await h.loader();
+    await h.loader();
+    expect(h.save).not.toHaveBeenCalled();
   });
 
   it('defers to a newer pair the screen saved after an unlock', async () => {

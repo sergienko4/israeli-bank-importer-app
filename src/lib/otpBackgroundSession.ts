@@ -53,6 +53,25 @@ export interface UnattendedSessionPorts {
 }
 
 /**
+ * Saves a pair with its access token withheld, so storage names the live
+ * refresh token.
+ *
+ * A failure is not reported: the token it replaces is already spent, so the
+ * ledger's copy is the only valid one, and the next call writes it again. Until
+ * one write succeeds, a process that dies leaves storage with the spent token.
+ *
+ * @param save - Writes the pair to storage.
+ * @param pair - The pair holding the live refresh token.
+ */
+async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Promise<void> {
+  try {
+    await save({ ...pair, accessToken: WITHHELD_ACCESS, expiresAt: SAVED_EXPIRED });
+  } catch {
+    // Retried on the next call; see above.
+  }
+}
+
+/**
  * Builds the loader every background entry point asks for a session.
  *
  * A stored token that outlasts a whole task is used as it is. Anything shorter
@@ -83,7 +102,10 @@ export function createUnattendedSession(
         return null;
       }
       const pair = ports.ledger.current(stored);
-      if (pair.expiresAt - ports.now() > TASK_TIMEOUT_MS) return toSession(pair);
+      if (pair.expiresAt - ports.now() > TASK_TIMEOUT_MS) {
+        if (pair.refreshToken !== stored.refreshToken) await keep(ports.save, pair);
+        return toSession(pair);
+      }
 
       const tokens = await ports.refresh(pair.baseUrl, pair.refreshToken);
       const next: Connection = {
@@ -93,12 +115,7 @@ export function createUnattendedSession(
         expiresAt: tokens.expiresAt,
       };
       ports.ledger.record(pair, next);
-      try {
-        await ports.save({ ...next, accessToken: WITHHELD_ACCESS, expiresAt: SAVED_EXPIRED });
-      } catch {
-        // The presented token is already spent. The ledger keeps the pair for
-        // this process, which is the only copy of a refresh token still valid.
-      }
+      await keep(ports.save, next);
       return toSession(next);
     });
 }

@@ -95,6 +95,7 @@ describe('createUnattendedSession (property)', () => {
           refresh: importer.refresh,
           now,
           ledger: createTokenLedger(),
+          pairing: () => 0,
         });
 
         const capture = async (step: Step): Promise<void> => {

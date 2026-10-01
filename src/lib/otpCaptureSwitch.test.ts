@@ -7,7 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { saveOtpAutoRead } from './otpAutoReadStore';
 import { saveOtpAutoSubmit } from './otpAutoSubmitStore';
-import { CaptureSwitchedOffError, startIfAllowed, writeSwitch } from './otpCaptureSwitch';
+import { SendRefusedError, startIfAllowed, writeSwitch } from './otpCaptureSwitch';
 import { saveOtpChannel } from './otpChannelStore';
 
 jest.mock('expo-secure-store');
@@ -63,6 +63,37 @@ describe('startIfAllowed', () => {
     const act = jest.fn(() => Promise.resolve('sent'));
 
     await expect(startIfAllowed(() => Promise.resolve(false), act)).resolves.toBeNull();
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing when what the act was prepared for no longer holds', async () => {
+    const act = jest.fn(() => Promise.resolve('sent'));
+
+    await expect(
+      startIfAllowed(
+        () => Promise.resolve(true),
+        act,
+        () => false,
+      ),
+    ).resolves.toBeNull();
+    expect(act).not.toHaveBeenCalled();
+  });
+
+  it('judges whether it still holds once the switches have been read, not before', async () => {
+    const reading = deferred<boolean>();
+    let holds = true;
+    const act = jest.fn(() => Promise.resolve('sent'));
+
+    const starting = startIfAllowed(
+      () => reading.promise,
+      act,
+      () => holds,
+    );
+    await nextTurn();
+    holds = false;
+    reading.resolve(true);
+
+    await expect(starting).resolves.toBeNull();
     expect(act).not.toHaveBeenCalled();
   });
 
@@ -181,11 +212,11 @@ describe('every capture switch', () => {
   );
 });
 
-describe('CaptureSwitchedOffError', () => {
+describe('SendRefusedError', () => {
   it('names itself, so a caller can tell a refusal from a failed request', () => {
-    const error = new CaptureSwitchedOffError();
+    const error = new SendRefusedError();
 
     expect(error).toBeInstanceOf(Error);
-    expect(error.name).toBe('CaptureSwitchedOffError');
+    expect(error.name).toBe('SendRefusedError');
   });
 });

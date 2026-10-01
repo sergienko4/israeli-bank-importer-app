@@ -32,12 +32,17 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** Why an act was refused: the switches no longer allowed it when it would have started. */
-export class CaptureSwitchedOffError extends Error {
+/**
+ * Why a background send was refused before it started.
+ *
+ * Either the switches no longer allowed it, or the pairing it was loaded for
+ * had been replaced or removed. Both mean the code never left the device.
+ */
+export class SendRefusedError extends Error {
   /** Names the refusal, so it survives being caught as a plain error. */
   constructor() {
-    super('Background capture is switched off.');
-    this.name = 'CaptureSwitchedOffError';
+    super('The send was refused before it started.');
+    this.name = 'SendRefusedError';
   }
 }
 
@@ -63,13 +68,19 @@ export interface Started<T> {
  * The answer comes back wrapped so that the turn ends as soon as the act has
  * started, rather than when it finishes.
  *
+ * `current` is checked after the switches are read, in the same step that
+ * starts the act, so nothing can change what it reads between the check and
+ * the start.
+ *
  * @param allowed - Reads the switches.
  * @param act - Starts the act. It is called at most once, in this turn.
- * @returns The started act, or null when the switches refused it.
+ * @param current - Whether what the act was prepared for still holds.
+ * @returns The started act, or null when the switches or `current` refused it.
  */
 export function startIfAllowed<T>(
   allowed: () => Promise<boolean>,
   act: () => Promise<T>,
+  current: () => boolean = () => true,
 ): Promise<Started<T> | null> {
-  return inTurn(async () => ((await allowed()) ? { result: act() } : null));
+  return inTurn(async () => ((await allowed()) && current() ? { result: act() } : null));
 }

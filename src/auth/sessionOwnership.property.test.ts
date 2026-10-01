@@ -22,6 +22,7 @@ import {
   readConnection,
   saveConnection,
 } from './connectionStore';
+import { currentPairing } from './pairingGeneration';
 import { processLedger } from './tokenLedger';
 
 jest.mock('../api/appTokens', () => ({
@@ -170,6 +171,7 @@ describe('refresh-token ownership across screen and background (property)', () =
             refresh: (_baseUrl, token) => later(() => importer.refresh('background', token)),
             now: () => NOW,
             ledger: processLedger,
+            pairing: currentPairing,
           });
 
           const run = async (op: Op): Promise<void> => {

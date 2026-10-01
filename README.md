@@ -189,7 +189,9 @@ What is held, and for how long: the message text, its sender and its arrival
 time, in app-private storage, for **ten minutes**, capped at **ten messages**
 with the oldest dropped first. Turning either switch off empties it in the same
 write that shuts the receiver, and unpairing the device or signing in again does
-the same, so a code held for one pairing is never sent for the next. A held
+the same, so a code held for one pairing is never sent for the next. A task
+already running when you do either checks again as it sends, and sends nothing
+over the pairing you left. A held
 message is spent only on a request the importer is actually waiting for, and
 only when the whole message yields exactly one code. Two held messages
 disagreeing about the code means neither is sent and you are asked — an

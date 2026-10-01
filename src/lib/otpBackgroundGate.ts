@@ -19,11 +19,13 @@
  * switches are hidden on that channel, which would otherwise leave a receiver
  * collecting bank messages with nothing on screen to turn it off.
  */
-import { type Session, submitOtpUnattended } from '../api/importerClient';
+import { submitOtpUnattended } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
+import { currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
-import { CaptureSwitchedOffError, startIfAllowed } from './otpCaptureSwitch';
+import type { PairedSession } from './otpBackgroundSubmit';
+import { SendRefusedError, startIfAllowed } from './otpCaptureSwitch';
 import { loadOtpChannelIsApp } from './otpChannelStore';
 
 /**
@@ -67,22 +69,29 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  * can turn capture off in between. So the switches are read again here, in
  * turn with any change to them, straight before the code leaves the device.
  *
- * @param session - A session renewed without a prompt.
+ * The user can also sign in to another importer or disconnect in that gap. The
+ * session would then still name the importer the user moved away from, so the
+ * send also checks that the pairing it was loaded for is still the one in
+ * force, at the moment the send starts.
+ *
+ * @param session - A session renewed without a prompt, labelled with its pairing.
  * @param id - The pending request id.
  * @param code - The code read from the message.
  * @returns What the importer said.
- * @throws CaptureSwitchedOffError when the switches refused the send, so the
- *   caller can tell a code that never left the device from one whose fate is
- *   unknown; or whatever the send itself threw.
+ * @throws SendRefusedError when the send was refused before it started, so
+ *   the caller can tell a code that never left the device from one whose fate
+ *   is unknown; or whatever the send itself threw.
  */
 export async function submitWhileAllowed(
-  session: Session,
+  session: PairedSession,
   id: string,
   code: string,
 ): Promise<SaveResult> {
-  const started = await startIfAllowed(loadBackgroundCaptureAllowed, () =>
-    submitOtpUnattended(session, id, code),
+  const started = await startIfAllowed(
+    loadBackgroundCaptureAllowed,
+    () => submitOtpUnattended(session, id, code),
+    () => currentPairing() === session.pairing,
   );
-  if (started === null) throw new CaptureSwitchedOffError();
+  if (started === null) throw new SendRefusedError();
   return started.result;
 }

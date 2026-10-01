@@ -30,6 +30,7 @@ import {
   readConnection,
   saveConnection,
 } from './connectionStore';
+import { currentPairing } from './pairingGeneration';
 import { withRefreshLock } from './refreshLock';
 import { processLedger } from './tokenLedger';
 
@@ -364,6 +365,61 @@ describe('held messages across a pairing change', () => {
     mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
     await expect(adoptConnection(CONNECTION)).rejects.toThrow('Keychain unavailable.');
     expect(mockedForgetHeld).not.toHaveBeenCalled();
+  });
+});
+
+describe('the pairing number a background send is checked against', () => {
+  /**
+   * Records the pairing number each storage write and held-message clear saw.
+   * @returns The number seen at each step, in the order the steps ran.
+   */
+  function recordNumbers(): number[] {
+    const seen: number[] = [];
+    const note = (): Promise<void> => {
+      seen.push(currentPairing());
+      return Promise.resolve();
+    };
+    mockedSave.mockImplementation(note);
+    mockedClear.mockImplementation(note);
+    mockedForgetHeld.mockImplementation(note);
+    return seen;
+  }
+
+  it.each([
+    ['a sign-in', () => adoptConnection(SIGNED_IN_ELSEWHERE)],
+    ['a Disconnect', () => dropConnection()],
+  ])('changes before %s touches storage', async (_label, act) => {
+    // A send that starts while the change is being stored must already see
+    // it, or it would go over the session the change is replacing.
+    const before = currentPairing();
+    const seen = recordNumbers();
+    await act();
+    expect(seen).toHaveLength(2);
+    expect(seen.every((number) => number !== before)).toBe(true);
+  });
+
+  it('changes even when the sign-in could not be stored', async () => {
+    // Refusing a send for a pairing that turned out to stay costs the user one
+    // typed code; sending for one that did not stay can reach the wrong importer.
+    const before = currentPairing();
+    mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
+    await expect(adoptConnection(SIGNED_IN_ELSEWHERE)).rejects.toThrow('Keychain unavailable.');
+    expect(currentPairing()).not.toBe(before);
+  });
+
+  it('stays the same when a stale drop spares a newer sign-in', async () => {
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
+    const outcome = ended(await refreshConnection());
+    await adoptConnection(SIGNED_IN_ELSEWHERE);
+    const afterSignIn = currentPairing();
+    await expect(dropConnection(outcome.pairing)).resolves.toBe(false);
+    expect(currentPairing()).toBe(afterSignIn);
+  });
+
+  it('stays the same when the screen renews the pairing it already has', async () => {
+    const before = currentPairing();
+    await expect(refreshConnection()).resolves.toMatchObject({ status: 'refreshed' });
+    expect(currentPairing()).toBe(before);
   });
 });
 

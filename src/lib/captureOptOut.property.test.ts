@@ -13,6 +13,7 @@ import * as fc from 'fast-check';
 
 import { submitOtpUnattended } from '../api/importerClient';
 import type { Connection } from '../auth/connectionStore';
+import { currentPairing } from '../auth/pairingGeneration';
 import { createTokenLedger } from '../auth/tokenLedger';
 import { saveOtpAutoRead } from './otpAutoReadStore';
 import { saveOtpAutoSubmit } from './otpAutoSubmitStore';
@@ -101,6 +102,7 @@ describe('turning capture off while it runs (property)', () => {
             },
             now: () => NOW,
             ledger: createTokenLedger(),
+            pairing: currentPairing,
           });
           const capture = (): Promise<string> =>
             autoSubmitFromMessage('Your code is 481920', {

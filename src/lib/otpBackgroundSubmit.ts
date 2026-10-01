@@ -21,9 +21,21 @@
 import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
 import type { PendingOtpRequest } from '../api/otp';
-import { CaptureSwitchedOffError } from './otpCaptureSwitch';
+import { SendRefusedError } from './otpCaptureSwitch';
 import { pickExpectation } from './otpExpectedWindow';
 import { extractOtpCode } from './otpMessage';
+
+/**
+ * A session, labelled with the pairing it was loaded for.
+ *
+ * The user can sign in to another importer or disconnect while background work
+ * is still reading the request it answers. The label lets the send refuse to go
+ * out over a session that pairing no longer stands behind.
+ */
+export interface PairedSession extends Session {
+  /** The pairing number in force when the stored pair was read. */
+  readonly pairing: number;
+}
 
 /**
  * Everything the background path needs from the outside world.
@@ -33,11 +45,11 @@ import { extractOtpCode } from './otpMessage';
  */
 export interface BackgroundSubmitPorts {
   /** The stored connection, or null when the device is not paired. */
-  readonly loadSession: () => Promise<Session | null>;
+  readonly loadSession: () => Promise<PairedSession | null>;
   /** The importer's current outstanding one-time-code requests. */
   readonly getPending: (session: Session) => Promise<PendingOtpRequest[]>;
-  /** Sends a code against one request. */
-  readonly submit: (session: Session, id: string, code: string) => Promise<SaveResult>;
+  /** Sends a code against one request, refusing if its pairing has changed. */
+  readonly submit: (session: PairedSession, id: string, code: string) => Promise<SaveResult>;
   /** The current time, injected so expiry is testable. */
   readonly now: () => number;
 }
@@ -48,8 +60,10 @@ export interface BackgroundSubmitPorts {
  * Every value except `submitted` means nothing was accepted. They are distinct
  * so the caller can tell "we chose not to" from "we tried and could not", and —
  * because this path has no screen and may be retried — "we do not know".
- * `not-allowed` means the switches refused the send itself: the code never
- * left the device.
+ * `not-allowed` means the send was refused as it would have started — the
+ * switches had been turned off, or the user had signed in elsewhere or
+ * disconnected since the session was loaded — so the code never left the
+ * device.
  */
 export type BackgroundSubmitOutcome =
   | 'no-code'
@@ -64,7 +78,7 @@ export type BackgroundSubmitOutcome =
 /** The request a code should answer, once one has been found. */
 interface Target {
   /** The session the code will be sent over. */
-  readonly session: Session;
+  readonly session: PairedSession;
   /** The importer's id for the request awaiting a code. */
   readonly requestId: string;
 }
@@ -149,7 +163,8 @@ export function neverJudged(status: number | undefined): boolean {
  * 503 says the code was not looked at, so reporting it as a refusal would strand
  * an unspent code over an outage that clears in seconds.
  *
- * A send the switches refused is the one throw that proves nothing went out.
+ * A send refused as it would have started is the one throw that proves nothing
+ * went out.
  *
  * @param ports - The injected outside world.
  * @param target - The session and request the code answers.
@@ -167,6 +182,6 @@ async function send(
     if (result.ok) return 'submitted';
     return neverJudged(result.status) ? 'failed' : 'rejected';
   } catch (error) {
-    return error instanceof CaptureSwitchedOffError ? 'not-allowed' : 'unknown';
+    return error instanceof SendRefusedError ? 'not-allowed' : 'unknown';
   }
 }

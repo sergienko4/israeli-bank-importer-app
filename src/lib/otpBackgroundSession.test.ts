@@ -9,6 +9,7 @@
 import { type AppTokens, refreshTokens } from '../api/appTokens';
 import { NO_RESPONSE } from '../api/timedFetch';
 import { type Connection, loadConnection } from '../auth/connectionStore';
+import { currentPairing } from '../auth/pairingGeneration';
 import { withRefreshLock } from '../auth/refreshLock';
 import { createTokenLedger, processLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
@@ -43,6 +44,7 @@ const mockedAllowed = loadBackgroundCaptureAllowed as jest.MockedFunction<
 const NOW = 1_700_000_000_000;
 const BASE_URL = 'https://importer.example.ts.net';
 const FIFTEEN_MINUTES = 15 * 60_000;
+const PAIRING = 7;
 
 /**
  * Lets every promise already queued run, including work behind the lock.
@@ -77,6 +79,7 @@ function harness(initial: Connection | null) {
   let issued = 0;
   let clock = NOW;
   let allowed = true;
+  let pairing = PAIRING;
   const presented: string[] = [];
   const save = jest.fn((next: Connection) => {
     stored = next;
@@ -100,6 +103,7 @@ function harness(initial: Connection | null) {
       refresh,
       now: () => clock,
       ledger: createTokenLedger(),
+      pairing: () => pairing,
     });
   return {
     loader: start(),
@@ -118,6 +122,9 @@ function harness(initial: Connection | null) {
     switchOff: () => {
       allowed = false;
     },
+    changePairing: () => {
+      pairing += 1;
+    },
   };
 }
 
@@ -130,26 +137,61 @@ describe('loadUnattendedSession', () => {
 
   it('uses a stored token that outlasts the whole task', async () => {
     const h = harness(connection());
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-at-unlock' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-at-unlock',
+      pairing: PAIRING,
+    });
     expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it('labels a session with the pairing in force when storage is read, not when it was asked for', async () => {
+    // A load can queue behind a sign-in that is still storing its pairing. The
+    // session it hands out is for whatever storage holds once its turn comes.
+    const h = harness(connection());
+    let release: () => void = () => undefined;
+    const holder = withRefreshLock(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const queued = h.loader();
+    await nextTurn();
+    h.changePairing();
+    release();
+    await holder;
+    await expect(queued).resolves.toHaveProperty('pairing', PAIRING + 1);
   });
 
   it('renews an expired token without a prompt, so a closed app still answers', async () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+      pairing: PAIRING,
+    });
     expect(h.presented).toEqual(['refresh-at-unlock']);
   });
 
   it('renews a token that would expire before an attempt could finish', async () => {
     const h = harness(connection({ expiresAt: NOW + RENEW_WITHIN_MS }));
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+      pairing: PAIRING,
+    });
   });
 
   it('spends no token just because the task may wait longer for one', async () => {
     // The task's timeout covers waiting for a renewal to be kept, not requests
     // made with the token, so a longer timeout must not mean more renewals.
     const h = harness(connection({ expiresAt: NOW + TASK_TIMEOUT_MS }));
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-at-unlock' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-at-unlock',
+      pairing: PAIRING,
+    });
     expect(h.refresh).not.toHaveBeenCalled();
   });
 
@@ -167,6 +209,7 @@ describe('loadUnattendedSession', () => {
     await expect(h.loader(() => 0)).resolves.toEqual({
       baseUrl: BASE_URL,
       token: 'access-at-unlock',
+      pairing: PAIRING,
     });
   });
 
@@ -196,6 +239,7 @@ describe('loadUnattendedSession', () => {
     await expect(h.loader(() => 1)).resolves.toEqual({
       baseUrl: BASE_URL,
       token: 'access-renewed-1',
+      pairing: PAIRING,
     });
   });
 
@@ -213,7 +257,11 @@ describe('loadUnattendedSession', () => {
   it('reuses its own renewal across retries instead of spending a token each time', async () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
     await h.loader();
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+      pairing: PAIRING,
+    });
     expect(h.refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -227,7 +275,11 @@ describe('loadUnattendedSession', () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
     h.save.mockRejectedValueOnce(new Error('Keychain unavailable.'));
     await h.loader();
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+      pairing: PAIRING,
+    });
     expect(h.presented).toEqual(['refresh-at-unlock']);
   });
 
@@ -237,7 +289,11 @@ describe('loadUnattendedSession', () => {
     await h.loader();
     h.advance(FIFTEEN_MINUTES);
     await h.loader();
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-2' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-2',
+      pairing: PAIRING,
+    });
     expect(h.presented).toEqual(['refresh-at-unlock', 'refresh-renewed-1']);
   });
 
@@ -247,7 +303,11 @@ describe('loadUnattendedSession', () => {
     await h.loader();
     await h.loader();
     h.advance(FIFTEEN_MINUTES);
-    await expect(h.restart()()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-2' });
+    await expect(h.restart()()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-2',
+      pairing: PAIRING,
+    });
     expect(h.presented).toEqual(['refresh-at-unlock', 'refresh-renewed-1']);
   });
 
@@ -255,7 +315,11 @@ describe('loadUnattendedSession', () => {
     const h = harness(connection({ expiresAt: NOW - 1 }));
     h.save.mockRejectedValue(new Error('Keychain unavailable.'));
     await h.loader();
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+      pairing: PAIRING,
+    });
     expect(h.presented).toEqual(['refresh-at-unlock']);
   });
 
@@ -272,7 +336,11 @@ describe('loadUnattendedSession', () => {
     h.replaceStored(
       connection({ accessToken: 'access-unlocked', refreshToken: 'refresh-unlocked' }),
     );
-    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-unlocked' });
+    await expect(h.loader()).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-unlocked',
+      pairing: PAIRING,
+    });
   });
 
   it('forgets its renewal once the device is unpaired', async () => {
@@ -365,7 +433,11 @@ describe('loadUnattendedSession', () => {
       await first;
       const next = h.loader();
       await jest.advanceTimersByTimeAsync(5_000);
-      await expect(next).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-late' });
+      await expect(next).resolves.toEqual({
+        baseUrl: BASE_URL,
+        token: 'access-late',
+        pairing: PAIRING,
+      });
       expect(h.presented).toEqual(['refresh-at-unlock']);
       expect(h.stored()).toHaveProperty('refreshToken', 'refresh-late');
     } finally {
@@ -397,6 +469,7 @@ describe('loadUnattendedSession as every background path receives it', () => {
     await expect(loadUnattendedSession()).resolves.toEqual({
       baseUrl: BASE_URL,
       token: 'access-renewed',
+      pairing: currentPairing(),
     });
     expect(mockedRefresh).toHaveBeenCalledWith(BASE_URL, 'refresh-at-unlock');
   });

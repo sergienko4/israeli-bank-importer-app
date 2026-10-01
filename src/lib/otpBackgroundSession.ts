@@ -24,13 +24,14 @@
  *   leaves it with nothing to send.
  */
 import { type AppTokens, refreshTokens } from '../api/appTokens';
-import type { Session } from '../api/importerClient';
 import { answerInTime } from '../api/timedFetch';
 import { toSession } from '../auth/appSession';
 import { type Connection, loadConnection, saveConnection } from '../auth/connectionStore';
+import { currentPairing } from '../auth/pairingGeneration';
 import { withRefreshLock } from '../auth/refreshLock';
 import { processLedger, type TokenLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import type { PairedSession } from './otpBackgroundSubmit';
 import { startIfAllowed } from './otpCaptureSwitch';
 
 /** Saved in place of a background renewal's real expiry, so the screen never uses it unprompted. */
@@ -57,7 +58,7 @@ export const NO_TIME_TO_RENEW = 'No time left to keep a renewed token.';
  * `left` is how long the caller keeps the process alive. Without it the load
  * renews whenever it must, as it does for a caller with no deadline of its own.
  */
-export type UnattendedSessionLoader = (left?: () => number) => Promise<Session | null>;
+export type UnattendedSessionLoader = (left?: () => number) => Promise<PairedSession | null>;
 
 /** What an unattended renewal needs, injected so it can be tested without a device. */
 export interface UnattendedSessionPorts {
@@ -73,6 +74,8 @@ export interface UnattendedSessionPorts {
   readonly now: () => number;
   /** The record of renewals this process shares with the screen. */
   readonly ledger: TokenLedger;
+  /** The number of the pairing in force, which every sign-in and Disconnect changes. */
+  readonly pairing: () => number;
 }
 
 /**
@@ -123,7 +126,13 @@ async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Pro
  * written, straight before the token is spent, because the user can turn
  * capture off while the stored pair is read.
  *
- * @param ports - The injected switches, storage, portal, clock, and ledger.
+ * The session is labelled with the pairing number read together with the
+ * stored pair, under the same lock every sign-in and Disconnect takes, so the
+ * label names the pairing the session belongs to and a send can tell when the
+ * user has moved on from it.
+ *
+ * @param ports - The injected switches, storage, portal, clock, ledger, and
+ *   pairing number.
  * @returns A loader resolving to a usable session, or `null` when unpaired or
  * when capture is switched off. It rejects with {@link NO_TIME_TO_RENEW} rather
  * than renew for a caller with no time left.
@@ -133,6 +142,7 @@ export function createUnattendedSession(ports: UnattendedSessionPorts): Unattend
     withRefreshLock(async (hold) => {
       if (!(await ports.allowed())) return null;
       const stored = await ports.load();
+      const pairing = ports.pairing();
       if (stored === null) {
         ports.ledger.forget();
         return null;
@@ -140,7 +150,7 @@ export function createUnattendedSession(ports: UnattendedSessionPorts): Unattend
       const pair = ports.ledger.current(stored);
       if (pair.expiresAt - ports.now() > RENEW_WITHIN_MS) {
         if (pair.refreshToken !== stored.refreshToken) await keep(ports.save, pair);
-        return toSession(pair);
+        return { ...toSession(pair), pairing };
       }
       const started = await startIfAllowed(ports.allowed, async () => {
         if (left !== undefined && left() <= 0) throw new Error(NO_TIME_TO_RENEW);
@@ -148,7 +158,7 @@ export function createUnattendedSession(ports: UnattendedSessionPorts): Unattend
       });
       if (started === null) return null;
       hold(started.result);
-      return toSession(await answerInTime(started.result));
+      return { ...toSession(await answerInTime(started.result)), pairing };
     });
 }
 
@@ -188,4 +198,5 @@ export const loadUnattendedSession: UnattendedSessionLoader = createUnattendedSe
   refresh: refreshTokens,
   now: Date.now,
   ledger: processLedger,
+  pairing: currentPairing,
 });

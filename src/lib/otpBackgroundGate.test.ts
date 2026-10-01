@@ -1,4 +1,5 @@
 import { submitOtpUnattended } from '../api/importerClient';
+import { changePairing, currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
 import {
@@ -6,7 +7,7 @@ import {
   loadBackgroundCaptureAllowed,
   submitWhileAllowed,
 } from './otpBackgroundGate';
-import { CaptureSwitchedOffError, writeSwitch } from './otpCaptureSwitch';
+import { SendRefusedError, writeSwitch } from './otpCaptureSwitch';
 import { loadOtpChannelIsApp } from './otpChannelStore';
 
 jest.mock('../api/importerClient', () => ({ submitOtpUnattended: jest.fn() }));
@@ -15,7 +16,14 @@ jest.mock('./otpAutoSubmitStore', () => ({ loadOtpAutoSubmit: jest.fn() }));
 jest.mock('./otpChannelStore', () => ({ loadOtpChannelIsApp: jest.fn() }));
 
 const mockSubmit = jest.mocked(submitOtpUnattended);
-const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+
+/**
+ * A session loaded for the pairing in force now.
+ * @returns The session, labelled with that pairing.
+ */
+function session() {
+  return { baseUrl: 'https://importer.local', token: 't', pairing: currentPairing() };
+}
 
 const mockAutoRead = jest.mocked(loadOtpAutoRead);
 const mockAutoSubmit = jest.mocked(loadOtpAutoSubmit);
@@ -94,14 +102,15 @@ describe('submitWhileAllowed', () => {
 
   it('sends the code while the user allows background capture', async () => {
     switches(true);
-    await expect(submitWhileAllowed(SESSION, 'req-1', '481920')).resolves.toEqual({ ok: true });
-    expect(mockSubmit).toHaveBeenCalledWith(SESSION, 'req-1', '481920');
+    const loaded = session();
+    await expect(submitWhileAllowed(loaded, 'req-1', '481920')).resolves.toEqual({ ok: true });
+    expect(mockSubmit).toHaveBeenCalledWith(loaded, 'req-1', '481920');
   });
 
   it('sends nothing, and says why, once capture is switched off', async () => {
     switches(false);
-    await expect(submitWhileAllowed(SESSION, 'req-1', '481920')).rejects.toBeInstanceOf(
-      CaptureSwitchedOffError,
+    await expect(submitWhileAllowed(session(), 'req-1', '481920')).rejects.toBeInstanceOf(
+      SendRefusedError,
     );
     expect(mockSubmit).not.toHaveBeenCalled();
   });
@@ -118,11 +127,45 @@ describe('submitWhileAllowed', () => {
       await write;
       switches(false);
     });
-    const sending = submitWhileAllowed(SESSION, 'req-1', '481920');
+    const sending = submitWhileAllowed(session(), 'req-1', '481920');
     stored();
     await storing;
 
-    await expect(sending).rejects.toBeInstanceOf(CaptureSwitchedOffError);
+    await expect(sending).rejects.toBeInstanceOf(SendRefusedError);
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing over a session loaded before the user signed in elsewhere or disconnected', async () => {
+    switches(true);
+    const loaded = session();
+    changePairing();
+
+    await expect(submitWhileAllowed(loaded, 'req-1', '481920')).rejects.toBeInstanceOf(
+      SendRefusedError,
+    );
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('decides on a pairing change made while the switches were being read', async () => {
+    let reading = false;
+    let answer: (on: boolean) => void = () => undefined;
+    mockAutoRead.mockImplementation(() => {
+      reading = true;
+      return new Promise<boolean>((resolve) => {
+        answer = resolve;
+      });
+    });
+    mockAutoSubmit.mockResolvedValue(true);
+    mockChannelIsApp.mockResolvedValue(true);
+    const sending = submitWhileAllowed(session(), 'req-1', '481920');
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(reading).toBe(true);
+    changePairing();
+    answer(true);
+
+    await expect(sending).rejects.toBeInstanceOf(SendRefusedError);
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 });

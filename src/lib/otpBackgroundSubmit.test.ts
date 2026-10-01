@@ -1,6 +1,6 @@
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
-import { CaptureSwitchedOffError } from './otpCaptureSwitch';
+import { SendRefusedError } from './otpCaptureSwitch';
 
 /**
  * The background submit path. This runs with no UI attached and possibly with
@@ -12,7 +12,7 @@ import { CaptureSwitchedOffError } from './otpCaptureSwitch';
  */
 
 const NOW = 1_700_000_000_000;
-const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+const SESSION = { baseUrl: 'https://importer.local', token: 't', pairing: 0 };
 
 /** A pending request, live at {@link NOW}. */
 const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
@@ -50,7 +50,7 @@ describe('autoSubmitFromMessage', () => {
     // The code never left the device: neither a refusal by the importer nor a
     // send whose fate is unknown, and nothing worth trying again.
     const { ports: p } = ports({
-      submit: () => Promise.reject(new CaptureSwitchedOffError()),
+      submit: () => Promise.reject(new SendRefusedError()),
     });
 
     await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('not-allowed');

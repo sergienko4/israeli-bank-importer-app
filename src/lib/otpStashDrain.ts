@@ -26,10 +26,9 @@
  *
  * Message bodies are read here and never persisted or logged by this module.
  */
-import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
-import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
-import { CaptureSwitchedOffError } from './otpCaptureSwitch';
+import { type BackgroundSubmitPorts, neverJudged, type PairedSession } from './otpBackgroundSubmit';
+import { SendRefusedError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import {
@@ -78,8 +77,10 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  * means the run ran out of its claim on the drain before it reached the send —
  * either a newer run has already taken over, or too little is left to record
  * what a send did — so whatever is worth doing is the next run's to do.
- * `not-allowed` means the switches refused the send itself, so the code never
- * left the device and nothing is recorded against it.
+ * `not-allowed` means the send was refused as it would have started — the
+ * switches had been turned off, or the user had signed in elsewhere or
+ * disconnected since the session was loaded — so the code never left the
+ * device and nothing is recorded against it.
  */
 export type StashDrainOutcome =
   | 'empty'
@@ -132,7 +133,7 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
 /** A held code chosen to answer a request, with every live copy of it. */
 interface Choice {
   /** The session the code will be sent over. */
-  readonly session: Session;
+  readonly session: PairedSession;
   /** The importer's id for the request the code answers. */
   readonly requestId: string;
   /** The code to send. */
@@ -218,13 +219,13 @@ function sendWindow(ports: StashDrainPorts): number | null {
  * nothing would otherwise leave the caller with no answer to act on at the
  * moment it most needs one.
  *
- * A send the switches refused is kept apart as well: it is the one failure that
- * proves the code never left the device.
+ * A send refused as it would have started is kept apart as well: it is the one
+ * failure that proves the code never left the device.
  *
  * @param submit - The send, already bound to its session, request and code.
  * @param ms - How long to wait, already trimmed to what the run has left.
  * @returns What the importer said, `unknown` when it never said anything, or
- *   `not-allowed` when the switches refused the send.
+ *   `not-allowed` when the send was refused before it started.
  */
 async function sent(
   submit: () => Promise<SaveResult>,
@@ -235,7 +236,7 @@ async function sent(
     try {
       answer = await submit();
     } catch (error) {
-      if (error instanceof CaptureSwitchedOffError) answer = 'not-allowed';
+      if (error instanceof SendRefusedError) answer = 'not-allowed';
     }
   })();
   await settleWithin(asking, ms);

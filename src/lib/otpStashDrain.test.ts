@@ -1,5 +1,5 @@
 import type { SaveResult } from '../api/manifest';
-import { CaptureSwitchedOffError } from './otpCaptureSwitch';
+import { SendRefusedError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, SUBMIT_DEADLINE_MS, TASK_BUDGET_MS } from './otpDeadline';
 import { STASH_SPENT, STASH_TTL_MS, type StashedMessage } from './otpStash';
 import type { StashDrainPorts } from './otpStashDrain';
@@ -16,7 +16,7 @@ import { drainStash } from './otpStashDrain';
  */
 
 const NOW = 1_700_000_000_000;
-const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+const SESSION = { baseUrl: 'https://importer.local', token: 't', pairing: 0 };
 const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
 
 /**
@@ -489,7 +489,7 @@ describe('drainStash', () => {
       consumed,
       attempts,
     } = ports({
-      submit: () => Promise.reject(new CaptureSwitchedOffError()),
+      submit: () => Promise.reject(new SendRefusedError()),
     });
 
     await expect(drainStash(p)).resolves.toBe('not-allowed');

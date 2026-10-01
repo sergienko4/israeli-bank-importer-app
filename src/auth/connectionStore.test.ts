@@ -64,8 +64,11 @@ describe('connectionStore', () => {
     await expect(loadConnection()).resolves.toBeNull();
   });
 
-  it('returns null on a corrupt entry', async () => {
-    store[V2_KEY] = 'not-json';
+  it.each([
+    ['a corrupt entry', 'not-json'],
+    ['an empty entry', ''],
+  ])('returns null on %s', async (_label, raw) => {
+    store[V2_KEY] = raw;
     await expect(loadConnection()).resolves.toBeNull();
   });
 
@@ -128,6 +131,7 @@ describe('readConnection', () => {
   });
 
   it.each([
+    ['an empty string', ''],
     ['text that is not JSON', 'not-json'],
     ['JSON null', 'null'],
     ['a bare number', '5'],

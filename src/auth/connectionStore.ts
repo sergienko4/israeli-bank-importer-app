@@ -71,12 +71,14 @@ function parseEntry(raw: string): Connection | null {
  *
  * An entry that is there but unusable is not the same as no entry: one means
  * the device was unpaired, the other that what it saved cannot be used, and a
- * renewal tells the user which. A store that cannot be read at all throws.
+ * renewal tells the user which. The store answers null only for a missing key,
+ * so an entry holding an empty string is damaged, not absent. A store that
+ * cannot be read at all throws.
  * @returns The pairing, or which of the two ways it is missing.
  */
 export async function readConnection(): Promise<StoredConnection> {
   const raw = await SecureStore.getItemAsync(CONNECTION_KEY);
-  if (!raw) {
+  if (raw === null) {
     return { state: 'empty' };
   }
   const connection = parseEntry(raw);

@@ -11,6 +11,7 @@
 import { refreshTokens, SESSION_ENDED, SessionEndedError } from '../api/appTokens';
 import { NO_RESPONSE } from '../api/timedFetch';
 import { authenticateBiometric } from '../lib/biometrics';
+import { forgetHeldMessages } from '../lib/otpStashGate';
 import {
   adoptConnection,
   dropConnection,
@@ -36,6 +37,7 @@ jest.mock('../api/appTokens', () => ({
   refreshTokens: jest.fn(),
 }));
 jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
+jest.mock('../lib/otpStashGate', () => ({ forgetHeldMessages: jest.fn() }));
 jest.mock('./connectionStore', () => ({
   clearConnection: jest.fn(),
   loadConnection: jest.fn(),
@@ -47,6 +49,7 @@ const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authent
 const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 const mockedClear = clearConnection as jest.MockedFunction<typeof clearConnection>;
+const mockedForgetHeld = forgetHeldMessages as jest.MockedFunction<typeof forgetHeldMessages>;
 
 const CONNECTION: Connection = {
   baseUrl: 'https://importer.example.ts.net',
@@ -62,6 +65,8 @@ const ROTATED: Connection = {
   expiresAt: 2_000_000_900_000,
 };
 
+const SIGNED_IN_ELSEWHERE: Connection = { ...CONNECTION, refreshToken: 'refresh-elsewhere' };
+
 beforeEach(() => {
   jest.clearAllMocks();
   processLedger.forget();
@@ -69,6 +74,7 @@ beforeEach(() => {
   mockedLoad.mockResolvedValue(CONNECTION);
   mockedSave.mockResolvedValue();
   mockedClear.mockResolvedValue();
+  mockedForgetHeld.mockResolvedValue();
   mockedRefresh.mockResolvedValue({
     accessToken: 'access-2',
     refreshToken: 'refresh-2',
@@ -274,6 +280,70 @@ describe('dropConnection after a renewal ended', () => {
     await adoptConnection(SIGNED_IN);
     await expect(dropConnection()).resolves.toBe(true);
     expect(mockedClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('held messages across a pairing change', () => {
+  /**
+   * Records storage writes, held-message clears, and work queued on the lock.
+   * @returns The order the steps ran in.
+   */
+  function recordOrder(): string[] {
+    const order: string[] = [];
+    mockedSave.mockImplementation(() => {
+      order.push('storage');
+      return Promise.resolve();
+    });
+    mockedClear.mockImplementation(() => {
+      order.push('storage');
+      return Promise.resolve();
+    });
+    mockedForgetHeld.mockImplementation(() => {
+      order.push('held:forgotten');
+      return Promise.resolve();
+    });
+    return order;
+  }
+
+  it.each([
+    ['a sign-in is stored', () => adoptConnection(CONNECTION)],
+    ['the user disconnects', () => dropConnection()],
+  ])('forgets them once %s, before the lock is free', async (_label, act) => {
+    // A message held before the change was captured for the pairing it ended.
+    // Clearing after the lock frees would let a drain that queued behind the
+    // change spend such a code against the new pairing.
+    const order = recordOrder();
+    const change = act();
+    const next = withRefreshLock(() => {
+      order.push('next-on-lock');
+      return Promise.resolve();
+    });
+    await Promise.all([change, next]);
+    expect(order).toEqual(['storage', 'held:forgotten', 'next-on-lock']);
+  });
+
+  it('forgets them when an ended renewal drops its own pairing', async () => {
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
+    const outcome = ended(await refreshConnection());
+    await dropConnection(outcome.pairing);
+    expect(mockedForgetHeld).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves them to the newer sign-in when a stale drop spares it', async () => {
+    // The sign-in already cleared what the old pairing held; anything held
+    // since then was captured for the pairing the drop is sparing.
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
+    const outcome = ended(await refreshConnection());
+    await adoptConnection(SIGNED_IN_ELSEWHERE);
+    mockedForgetHeld.mockClear();
+    await expect(dropConnection(outcome.pairing)).resolves.toBe(false);
+    expect(mockedForgetHeld).not.toHaveBeenCalled();
+  });
+
+  it('keeps them when the sign-in could not be stored', async () => {
+    mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
+    await expect(adoptConnection(CONNECTION)).rejects.toThrow('Keychain unavailable.');
+    expect(mockedForgetHeld).not.toHaveBeenCalled();
   });
 });
 

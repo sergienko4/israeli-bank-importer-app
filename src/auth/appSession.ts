@@ -10,6 +10,7 @@ import { refreshTokens, SessionEndedError } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
 import { answerInTime } from '../api/timedFetch';
 import { authenticateBiometric } from '../lib/biometrics';
+import { forgetHeldMessages } from '../lib/otpStashGate';
 import {
   clearConnection,
   type Connection,
@@ -200,6 +201,11 @@ async function renewFrom(current: Connection): Promise<Connection> {
  *
  * Runs under the refresh lock, so a background renewal of the old pairing that
  * is still in flight cannot save over the new one when it finishes.
+ *
+ * Held messages are forgotten once the new pair is stored, still under the
+ * lock: they were captured for the pairing this replaces, and work that queued
+ * on the lock behind the sign-in would otherwise spend them against the new
+ * one. Clearing before the save would let a code held in between survive.
  * @param connection - The address and tokens the sign-in produced.
  */
 export async function adoptConnection(connection: Connection): Promise<void> {
@@ -207,14 +213,19 @@ export async function adoptConnection(connection: Connection): Promise<void> {
     await saveConnection(connection);
     processLedger.forget();
     signIns += 1;
+    await forgetHeldMessages();
   });
 }
 
 /**
- * Removes the stored pairing.
+ * Removes the stored pairing, and the messages held for it.
  *
  * Runs under the refresh lock, so a renewal that is still in flight cannot save
- * the pairing back after the user removed it.
+ * the pairing back after the user removed it, and nothing queued behind the
+ * drop can spend a code held for the pairing it removed.
+ *
+ * A drop that spares a newer sign-in leaves held messages alone: that sign-in
+ * already forgot the old pairing's, so what is held now is its own.
  * @param pairing - The sign-in an ended renewal judged. When given, a pairing
  *   adopted since then is left alone; the user tapping Disconnect omits it.
  * @returns Whether the pairing was removed.
@@ -224,6 +235,7 @@ export async function dropConnection(pairing?: Pairing): Promise<boolean> {
     if (pairing !== undefined && pairing !== signIns) return false;
     await clearConnection();
     processLedger.forget();
+    await forgetHeldMessages();
     return true;
   });
 }

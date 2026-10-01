@@ -8,6 +8,7 @@
  */
 import { refreshTokens, SessionEndedError } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
+import { answerInTime } from '../api/timedFetch';
 import { authenticateBiometric } from '../lib/biometrics';
 import {
   clearConnection,
@@ -15,7 +16,7 @@ import {
   loadConnection,
   saveConnection,
 } from './connectionStore';
-import { withRefreshLock } from './refreshLock';
+import { type HoldLock, withRefreshLock } from './refreshLock';
 import { processLedger } from './tokenLedger';
 
 /**
@@ -87,7 +88,7 @@ export async function refreshConnection(connection: Connection): Promise<Refresh
   if (unlock.status !== 'success') {
     return { status: 'declined', message: 'Unlock to reconnect to your importer.' };
   }
-  return withRefreshLock(async () => renewLatest(connection));
+  return withRefreshLock(async (hold) => renewLatest(connection, hold));
 }
 
 /**
@@ -113,28 +114,42 @@ async function latestStored(connection: Connection): Promise<Connection | null> 
  *
  * Storage can lag behind when a save failed after the portal had rotated, so
  * the process ledger decides which of this process's pairs is still live.
+ *
+ * The caller is answered on the usual deadline, but a reply that arrives later
+ * is still recorded and saved under the lock: the portal retired the presented
+ * token on accepting it, so that reply holds the only live one.
  * @param connection - The screen's copy of the connection.
+ * @param hold - Keeps the lock until a late reply has been kept.
  * @returns What happened, including the renewed connection on success.
  */
-async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
+async function renewLatest(connection: Connection, hold: HoldLock): Promise<RefreshOutcome> {
   const stored = await latestStored(connection);
   if (stored === null) {
     return { status: 'ended', message: NO_LONGER_PAIRED };
   }
-  const current = processLedger.current(stored);
-  let next: Connection;
+  const renewal = renewFrom(processLedger.current(stored));
+  hold(renewal);
   try {
-    const tokens = await refreshTokens(current.baseUrl, current.refreshToken);
-    next = {
-      baseUrl: current.baseUrl,
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      expiresAt: tokens.expiresAt,
-    };
+    return { status: 'refreshed', connection: await answerInTime(renewal) };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not reconnect. Try again.';
     return { status: endedBy(error), message };
   }
+}
+
+/**
+ * Presents a refresh token, then records and saves the pair it buys.
+ * @param current - The pair whose refresh token is live.
+ * @returns The renewed pair.
+ */
+async function renewFrom(current: Connection): Promise<Connection> {
+  const tokens = await refreshTokens(current.baseUrl, current.refreshToken);
+  const next: Connection = {
+    baseUrl: current.baseUrl,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
+  };
   processLedger.record(current, next);
   try {
     await saveConnection(next);
@@ -143,7 +158,7 @@ async function renewLatest(connection: Connection): Promise<RefreshOutcome> {
     // reported as a refusal: the caller keeps the rotated pair for this run
     // rather than replaying a token the portal has retired.
   }
-  return { status: 'refreshed', connection: next };
+  return next;
 }
 
 /**

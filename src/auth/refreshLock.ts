@@ -14,17 +14,34 @@
 let tail: Promise<unknown> = Promise.resolve();
 
 /**
+ * Keeps the lock held until `pending` settles, even after the work returned.
+ *
+ * For a refresh whose caller stopped waiting: its reply may still arrive with
+ * the only live token, and the next renewal has to start from it.
+ */
+export type HoldLock = (pending: Promise<unknown>) => void;
+
+/**
  * Runs work that reads, spends, and replaces the stored refresh token.
  *
  * Work queues behind whatever is already running, and a failure is handed to
  * its own caller without blocking the queue for the next one. Nothing that
  * waits on a person belongs inside — a biometric prompt goes before this, not
  * within it — because every renewal in the process waits behind the holder.
+ *
+ * The work may answer its caller before everything it started has settled, by
+ * handing the rest to `hold` before it returns; the next work then waits for
+ * that too.
  * @param work - The read-refresh-save sequence to run alone.
  * @returns Whatever the work returns.
  */
-export function withRefreshLock<T>(work: () => Promise<T>): Promise<T> {
-  const run = tail.then(work);
-  tail = run.catch(() => undefined);
+export function withRefreshLock<T>(work: (hold: HoldLock) => Promise<T>): Promise<T> {
+  const held: Promise<unknown>[] = [];
+  const run = tail.then(async () =>
+    work((pending) => {
+      held.push(pending);
+    }),
+  );
+  tail = run.catch(() => undefined).then(async () => Promise.allSettled(held));
   return run;
 }

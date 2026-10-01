@@ -20,6 +20,7 @@ import { processLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
 import { createUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
+import { SendRefusedError } from './otpCaptureSwitch';
 import type { StashedMessage } from './otpStash';
 import { drainStash } from './otpStashDrain';
 import { forgetHeldMessages } from './otpStashGate';
@@ -41,6 +42,9 @@ const CONNECTION_KEY = 'importer.connection.v2';
 const IMPORTER_A = 'https://a.example.ts.net';
 const IMPORTER_B = 'https://b.example.ts.net';
 const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
+// Long enough to outlast a drain that renews an expired token, which takes the
+// most scheduler steps of any capture before it sends.
+const MAX_DELAY_TURNS = 24;
 
 type Change = 'sign-in' | 'disconnect';
 type Path = 'from-message' | 'from-held';
@@ -77,11 +81,23 @@ function pairFor(baseUrl: string, expiresAt: number): Connection {
 }
 
 describe('changing the pairing while capture runs (property)', () => {
-  let sentToA = 0;
+  const reached: Record<Path, { sentToA: number; refused: number }> = {
+    'from-message': { sentToA: 0, refused: 0 },
+    'from-held': { sentToA: 0, refused: 0 },
+  };
 
   afterAll(() => {
-    // Guards against a property that holds only because no code ever went out.
-    expect(sentToA).toBeGreaterThan(0);
+    // Guards against a property that holds only because the race never ran:
+    // on each path some run sent to A, and some run loaded A's session and
+    // then had its send refused because the change landed before it started.
+    // The switches stay on throughout, so only the pairing check refuses.
+    for (const [path, counts] of Object.entries(reached)) {
+      expect({ path, sentToA: counts.sentToA > 0, refused: counts.refused > 0 }).toEqual({
+        path,
+        sentToA: true,
+        refused: true,
+      });
+    }
   });
 
   it('sends no code to the importer the user moved away from', async () => {
@@ -93,8 +109,10 @@ describe('changing the pairing while capture runs (property)', () => {
           captures: fc.integer({ min: 1, max: 2 }),
           change: fc.constantFrom<Change>('sign-in', 'disconnect'),
           path: fc.constantFrom<Path>('from-message', 'from-held'),
+          changeAfter: fc.nat({ max: MAX_DELAY_TURNS }),
+          arrivalAfter: fc.nat({ max: MAX_DELAY_TURNS }),
         }),
-        async (s, { expired, captures, change, path }) => {
+        async (s, { expired, captures, change, path, changeAfter, arrivalAfter }) => {
           processLedger.forget();
           const storage = new Map<string, string>([
             ['otp.autoRead.v1', 'true'],
@@ -109,6 +127,14 @@ describe('changing the pairing while capture runs (property)', () => {
           const events: string[] = [];
           const later = <T>(effect: () => T): Promise<T> =>
             s.schedule(Promise.resolve()).then(effect);
+          // Waits a number of scheduler turns before running the effect. A start
+          // made on the first turn is picked among a handful of pending steps and
+          // nearly always lands early; waiting lets it land after a capture has
+          // already loaded its session, re-read the held messages, or sent.
+          const after = <T>(turns: number, effect: () => T): Promise<T> =>
+            turns === 0
+              ? later(effect)
+              : later(() => undefined).then(() => after(turns - 1, effect));
 
           // A read samples storage when it is asked, so it can answer for the
           // moment before a write that lands while it is still on its way.
@@ -155,7 +181,14 @@ describe('changing the pairing while capture runs (property)', () => {
           const ports = {
             loadSession: () => loader(),
             getPending: () => later(() => [LIVE]),
-            submit: submitWhileAllowed,
+            submit: async (...args: Parameters<typeof submitWhileAllowed>) => {
+              try {
+                return await submitWhileAllowed(...args);
+              } catch (error: unknown) {
+                if (error instanceof SendRefusedError) events.push('refused');
+                throw error;
+              }
+            },
             now: () => NOW,
           };
           const capture = (): Promise<unknown> =>
@@ -181,13 +214,14 @@ describe('changing the pairing while capture runs (property)', () => {
                     remainingMs: () => 60_000,
                   }),
             ).catch(() => 'threw');
-          const arrival = later(() => {
+          const arrival = after(arrivalAfter, () => {
             held = [...held, message('new', '735102')];
           });
-          // Every capture and the change start at a moment the scheduler picks,
-          // so the change can land before a session is loaded, between the load
-          // and the send, or after the send.
-          const userChange = later(() =>
+          // Each capture starts at a moment the scheduler picks, and the change
+          // and the new message after a generated number of turns, so the change
+          // can land before a session is loaded, between the load and the send,
+          // or after the send.
+          const userChange = after(changeAfter, () =>
             change === 'sign-in'
               ? adoptConnection(pairFor(IMPORTER_B, NOW + TOKEN_TTL))
               : dropConnection(),
@@ -200,7 +234,8 @@ describe('changing the pairing while capture runs (property)', () => {
           const changed = events.findIndex(
             (event) => event === 'B stored' || event === 'A cleared',
           );
-          if (events.includes(`sent to ${IMPORTER_A}`)) sentToA += 1;
+          if (events.includes(`sent to ${IMPORTER_A}`)) reached[path].sentToA += 1;
+          if (events.includes('refused')) reached[path].refused += 1;
           expect(changed).toBeGreaterThanOrEqual(0);
           expect(events.slice(changed + 1)).not.toContain(`sent to ${IMPORTER_A}`);
         },

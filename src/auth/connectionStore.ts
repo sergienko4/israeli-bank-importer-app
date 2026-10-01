@@ -48,6 +48,41 @@ function isComplete(parsed: Partial<Connection>): parsed is Connection {
   );
 }
 
+/** What the secure store holds where the pairing is kept. */
+export type StoredConnection =
+  { state: 'paired'; connection: Connection } | { state: 'empty' } | { state: 'damaged' };
+
+/**
+ * Parses a stored entry.
+ * @param raw - The entry as stored.
+ * @returns The connection, or null when the entry is corrupt or partial.
+ */
+function parseEntry(raw: string): Connection | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<Connection>;
+    return isComplete(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reads the stored pairing, keeping an empty store apart from a damaged entry.
+ *
+ * An entry that is there but unusable is not the same as no entry: one means
+ * the device was unpaired, the other that what it saved cannot be used, and a
+ * renewal tells the user which. A store that cannot be read at all throws.
+ * @returns The pairing, or which of the two ways it is missing.
+ */
+export async function readConnection(): Promise<StoredConnection> {
+  const raw = await SecureStore.getItemAsync(CONNECTION_KEY);
+  if (!raw) {
+    return { state: 'empty' };
+  }
+  const connection = parseEntry(raw);
+  return connection ? { state: 'paired', connection } : { state: 'damaged' };
+}
+
 /**
  * Loads the stored connection.
  *
@@ -56,19 +91,8 @@ function isComplete(parsed: Partial<Connection>): parsed is Connection {
  * @returns The saved connection, or null when none is usable.
  */
 export async function loadConnection(): Promise<Connection | null> {
-  const raw = await SecureStore.getItemAsync(CONNECTION_KEY);
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<Connection>;
-    if (isComplete(parsed)) {
-      return parsed;
-    }
-  } catch {
-    // A corrupt entry is treated as "no connection" rather than crashing launch.
-  }
-  return null;
+  const stored = await readConnection();
+  return stored.state === 'paired' ? stored.connection : null;
 }
 
 /** Clears the stored connection, including anything an older version left. */

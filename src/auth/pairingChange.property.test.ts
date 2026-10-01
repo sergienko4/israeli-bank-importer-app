@@ -17,7 +17,7 @@ import { adoptConnection, dropConnection, refreshConnection } from './appSession
 import {
   clearConnection,
   type Connection,
-  loadConnection,
+  readConnection,
   saveConnection,
 } from './connectionStore';
 import { processLedger } from './tokenLedger';
@@ -30,14 +30,14 @@ jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
 jest.mock('../lib/otpStashGate', () => ({ forgetHeldMessages: jest.fn() }));
 jest.mock('./connectionStore', () => ({
   clearConnection: jest.fn(),
-  loadConnection: jest.fn(),
+  readConnection: jest.fn(),
   saveConnection: jest.fn(),
 }));
 
 const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
 const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authenticateBiometric>;
 const mockedForgetHeld = forgetHeldMessages as jest.MockedFunction<typeof forgetHeldMessages>;
-const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
+const mockedRead = readConnection as jest.MockedFunction<typeof readConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 const mockedClear = clearConnection as jest.MockedFunction<typeof clearConnection>;
 
@@ -133,10 +133,12 @@ describe('pairing changes on the screen (property)', () => {
           const later = <T>(effect: () => T): Promise<T> =>
             s.schedule(Promise.resolve()).then(effect);
 
-          mockedLoad.mockImplementation(() =>
+          mockedRead.mockImplementation(() =>
             later(() => {
               if (unreadable.shift() === true) throw new Error('Keystore unavailable.');
-              return stored;
+              return stored === null
+                ? { state: 'empty' as const }
+                : { state: 'paired' as const, connection: stored };
             }),
           );
           mockedSave.mockImplementation((next) =>

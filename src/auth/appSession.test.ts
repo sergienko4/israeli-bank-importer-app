@@ -20,13 +20,14 @@ import {
   REFRESH_MARGIN_MS,
   refreshConnection,
   type RefreshOutcome,
+  STORAGE_DAMAGED,
   STORAGE_UNREADABLE,
   toSession,
 } from './appSession';
 import {
   clearConnection,
   type Connection,
-  loadConnection,
+  readConnection,
   saveConnection,
 } from './connectionStore';
 import { withRefreshLock } from './refreshLock';
@@ -40,13 +41,13 @@ jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
 jest.mock('../lib/otpStashGate', () => ({ forgetHeldMessages: jest.fn() }));
 jest.mock('./connectionStore', () => ({
   clearConnection: jest.fn(),
-  loadConnection: jest.fn(),
+  readConnection: jest.fn(),
   saveConnection: jest.fn(),
 }));
 
 const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
 const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authenticateBiometric>;
-const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
+const mockedRead = readConnection as jest.MockedFunction<typeof readConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 const mockedClear = clearConnection as jest.MockedFunction<typeof clearConnection>;
 const mockedForgetHeld = forgetHeldMessages as jest.MockedFunction<typeof forgetHeldMessages>;
@@ -71,7 +72,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   processLedger.forget();
   mockedUnlock.mockResolvedValue({ status: 'success' });
-  mockedLoad.mockResolvedValue(CONNECTION);
+  mockedRead.mockResolvedValue({ state: 'paired', connection: CONNECTION });
   mockedSave.mockResolvedValue();
   mockedClear.mockResolvedValue();
   mockedForgetHeld.mockResolvedValue();
@@ -128,7 +129,10 @@ describe('refreshConnection when the user unlocks', () => {
     // The background capture renewed while the screen held its copy, retiring
     // that copy's refresh token. Presenting it again would read as a stolen copy
     // and end the whole session.
-    mockedLoad.mockResolvedValue({ ...CONNECTION, refreshToken: 'refresh-background' });
+    mockedRead.mockResolvedValue({
+      state: 'paired',
+      connection: { ...CONNECTION, refreshToken: 'refresh-background' },
+    });
     await refreshConnection();
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
     expect(mockedRefresh).not.toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
@@ -137,7 +141,7 @@ describe('refreshConnection when the user unlocks', () => {
   it('declines without spending a token when storage cannot be read', async () => {
     // The screen's copy may belong to a pairing a newer sign-in replaced while
     // this renewal waited, and renewing it would save that pairing back.
-    mockedLoad.mockRejectedValue(new Error('Keychain unavailable.'));
+    mockedRead.mockRejectedValue(new Error('Keychain unavailable.'));
     const outcome = await refreshConnection();
     expect(outcome).toEqual({ status: 'declined', message: STORAGE_UNREADABLE });
     expect(mockedRefresh).not.toHaveBeenCalled();
@@ -147,11 +151,26 @@ describe('refreshConnection when the user unlocks', () => {
   it('does not pair the device again once storage holds nothing', async () => {
     // Disconnect ran while this renewal waited its turn; spending the screen's
     // copy now would quietly restore the pairing the user just removed.
-    mockedLoad.mockResolvedValue(null);
+    mockedRead.mockResolvedValue({ state: 'empty' });
     const outcome = await refreshConnection();
     expect(outcome).toEqual({
       status: 'ended',
       message: NO_LONGER_PAIRED,
+      pairing: expect.any(Number) as number,
+    });
+    expect(mockedRefresh).not.toHaveBeenCalled();
+    expect(mockedSave).not.toHaveBeenCalled();
+  });
+
+  it('ends a damaged pairing with its own reason, without spending a token', async () => {
+    // Launch already reads a damaged entry as "not connected", and no retry can
+    // repair it, so the renewal ends it; saying the device was disconnected
+    // would send the user looking for a Disconnect nobody pressed.
+    mockedRead.mockResolvedValue({ state: 'damaged' });
+    const outcome = await refreshConnection();
+    expect(outcome).toEqual({
+      status: 'ended',
+      message: STORAGE_DAMAGED,
       pairing: expect.any(Number) as number,
     });
     expect(mockedRefresh).not.toHaveBeenCalled();
@@ -262,7 +281,8 @@ describe('dropConnection after a renewal ended', () => {
 
   it.each([
     ['the portal retired it', () => mockedRefresh.mockRejectedValue(new SessionEndedError())],
-    ['the device was unpaired', () => mockedLoad.mockResolvedValue(null)],
+    ['the device was unpaired', () => mockedRead.mockResolvedValue({ state: 'empty' })],
+    ['the saved pairing is damaged', () => mockedRead.mockResolvedValue({ state: 'damaged' })],
     [
       'the device has no screen lock',
       () => mockedUnlock.mockResolvedValue({ status: 'unsupported' }),

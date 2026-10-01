@@ -13,6 +13,7 @@ import {
   type Connection,
   loadConnection,
   migrateLegacySecrets,
+  readConnection,
   saveConnection,
 } from './connectionStore';
 
@@ -100,6 +101,46 @@ describe('connectionStore', () => {
     store[PASSWORD_KEY] = 'secret';
     await clearConnection();
     expect(Object.keys(store)).toHaveLength(0);
+  });
+});
+
+describe('readConnection', () => {
+  // A renewal tells the user why it ended, and "this device was disconnected"
+  // is only true of an empty store; a damaged entry needs its own answer.
+  let store: Record<string, string>;
+
+  beforeEach(() => {
+    store = wireSecureStore();
+  });
+
+  it('reports the saved pairing', async () => {
+    await saveConnection(CONNECTION);
+    await expect(readConnection()).resolves.toEqual({ state: 'paired', connection: CONNECTION });
+  });
+
+  it('reports an empty store as empty', async () => {
+    await expect(readConnection()).resolves.toEqual({ state: 'empty' });
+  });
+
+  it('reports an empty store as empty when only the previous version wrote', async () => {
+    store[V1_KEY] = JSON.stringify({ baseUrl: 'https://h', token: 't' });
+    await expect(readConnection()).resolves.toEqual({ state: 'empty' });
+  });
+
+  it.each([
+    ['text that is not JSON', 'not-json'],
+    ['JSON null', 'null'],
+    ['a bare number', '5'],
+    ['an entry with no refresh token', JSON.stringify({ baseUrl: 'https://h', accessToken: 'a' })],
+    ['the old v1 shape', JSON.stringify({ baseUrl: 'https://h', token: 't' })],
+  ])('reports %s as damaged', async (_label, raw) => {
+    store[V2_KEY] = raw;
+    await expect(readConnection()).resolves.toEqual({ state: 'damaged' });
+  });
+
+  it('lets a store that cannot be read fail rather than reading as empty', async () => {
+    mocked.getItemAsync.mockRejectedValueOnce(new Error('Keystore unavailable.'));
+    await expect(readConnection()).rejects.toThrow('Keystore unavailable.');
   });
 });
 

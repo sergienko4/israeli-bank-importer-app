@@ -14,8 +14,9 @@ import { forgetHeldMessages } from '../lib/otpStashGate';
 import {
   clearConnection,
   type Connection,
-  loadConnection,
+  readConnection,
   saveConnection,
+  type StoredConnection,
 } from './connectionStore';
 import { type HoldLock, withRefreshLock } from './refreshLock';
 import { processLedger } from './tokenLedger';
@@ -33,6 +34,9 @@ export const NO_LONGER_PAIRED = 'This device was disconnected. Connect again to 
 
 /** Why a renewal stopped when the saved pairing could not be read. */
 export const STORAGE_UNREADABLE = 'Could not read the saved connection. Try again.';
+
+/** Why a renewal ended the connection when the saved pairing was damaged. */
+export const STORAGE_DAMAGED = 'The saved connection is damaged. Connect again to continue.';
 
 /** Stands for a store that could not be read, apart from one that holds nothing. */
 const UNREADABLE = Symbol('unreadable');
@@ -124,12 +128,11 @@ export async function refreshConnection(): Promise<RefreshOutcome> {
  *
  * A store that cannot be read is reported as such rather than answered with the
  * screen's copy, which may belong to a pairing that was since replaced.
- * @returns The stored pair, `null` when the device is no longer paired, or
- *   {@link UNREADABLE} when storage could not be read.
+ * @returns What storage holds, or {@link UNREADABLE} when it could not be read.
  */
-async function latestStored(): Promise<Connection | null | typeof UNREADABLE> {
+async function latestStored(): Promise<StoredConnection | typeof UNREADABLE> {
   try {
-    return await loadConnection();
+    return await readConnection();
   } catch {
     return UNREADABLE;
   }
@@ -146,7 +149,9 @@ async function latestStored(): Promise<Connection | null | typeof UNREADABLE> {
  * token on accepting it, so that reply holds the only live one.
  *
  * Unreadable storage declines without spending anything: the user can retry,
- * whereas a token spent from the wrong pairing cannot be taken back.
+ * whereas a token spent from the wrong pairing cannot be taken back. A damaged
+ * entry ends the pairing instead, as launch already treats it: retrying reads
+ * the same entry again, so only connecting again can repair it.
  * @param hold - Keeps the lock until a late reply has been kept.
  * @returns What happened, including the renewed connection on success.
  */
@@ -156,10 +161,11 @@ async function renewLatest(hold: HoldLock): Promise<RefreshOutcome> {
   if (stored === UNREADABLE) {
     return { status: 'declined', message: STORAGE_UNREADABLE };
   }
-  if (stored === null) {
-    return { status: 'ended', message: NO_LONGER_PAIRED, pairing };
+  if (stored.state !== 'paired') {
+    const message = stored.state === 'empty' ? NO_LONGER_PAIRED : STORAGE_DAMAGED;
+    return { status: 'ended', message, pairing };
   }
-  const renewal = renewFrom(processLedger.current(stored));
+  const renewal = renewFrom(processLedger.current(stored.connection));
   hold(renewal);
   try {
     return { status: 'refreshed', connection: await answerInTime(renewal) };

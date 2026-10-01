@@ -2,7 +2,20 @@
  * Proves renewals run one at a time, which is what keeps a single-use refresh
  * token from being presented twice.
  */
-import { withRefreshLock } from './refreshLock';
+import { refreshSettled, withRefreshLock } from './refreshLock';
+
+/**
+ * Lets every promise already queued run, including work behind the lock.
+ *
+ * @returns A promise resolving on the event loop's next turn.
+ */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(() => {
+      resolve();
+    });
+  });
+}
 
 describe('withRefreshLock', () => {
   it('runs overlapping work one after another, in call order', async () => {
@@ -69,5 +82,57 @@ describe('withRefreshLock', () => {
     });
     await first;
     await expect(withRefreshLock(() => Promise.resolve('next'))).resolves.toBe('next');
+  });
+});
+
+describe('refreshSettled', () => {
+  /**
+   * Starts lock work that holds the lock until the returned trigger is called.
+   *
+   * @returns Calls through to release the held work.
+   */
+  function heldRenewal(): () => void {
+    let settle: () => void = () => undefined;
+    void withRefreshLock((hold) => {
+      hold(
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      );
+      return Promise.resolve();
+    });
+    return () => {
+      settle();
+    };
+  }
+
+  it('answers at once when nothing holds the lock', async () => {
+    await expect(refreshSettled()).resolves.toBeUndefined();
+  });
+
+  it('waits for a renewal its caller stopped waiting on', async () => {
+    // A process that stops here would lose the only live refresh token.
+    const settle = heldRenewal();
+    const done = jest.fn();
+    const waiting = refreshSettled().then(done);
+    await nextTurn();
+    expect(done).not.toHaveBeenCalled();
+    settle();
+    await waiting;
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  it('also waits for work queued while it was waiting', async () => {
+    const first = heldRenewal();
+    const done = jest.fn();
+    const waiting = refreshSettled().then(done);
+    const second = heldRenewal();
+    await nextTurn();
+    first();
+    await nextTurn();
+    expect(done).not.toHaveBeenCalled();
+    second();
+    await waiting;
+    expect(done).toHaveBeenCalledTimes(1);
   });
 });

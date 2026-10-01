@@ -32,6 +32,7 @@ import {
   adoptConnection,
   dropConnection,
   isExpiring,
+  type Pairing,
   refreshConnection,
   toSession,
 } from './appSession';
@@ -121,8 +122,10 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       });
   }, []);
 
-  const forget = useCallback(async (reason?: string) => {
-    await dropConnection();
+  const forget = useCallback(async (reason?: string, pairing?: Pairing) => {
+    // An ended renewal passes the pairing it judged, so a sign-in that landed
+    // after it is not removed; Disconnect passes none and always removes.
+    if (!(await dropConnection(pairing))) return;
     // Held messages were captured for an importer this app can no longer
     // reach, so nothing will ever be able to spend them.
     await forgetHeldMessages();
@@ -159,7 +162,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       return toSession(outcome.connection);
     }
     if (outcome.status === 'ended') {
-      await forget(outcome.message);
+      await forget(outcome.message, outcome.pairing);
       return null;
     }
     setSessionExpired(true);

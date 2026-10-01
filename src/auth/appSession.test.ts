@@ -18,6 +18,7 @@ import {
   NO_LONGER_PAIRED,
   REFRESH_MARGIN_MS,
   refreshConnection,
+  type RefreshOutcome,
   toSession,
 } from './appSession';
 import {
@@ -137,7 +138,11 @@ describe('refreshConnection when the user unlocks', () => {
     // copy now would quietly restore the pairing the user just removed.
     mockedLoad.mockResolvedValue(null);
     const outcome = await refreshConnection(CONNECTION);
-    expect(outcome).toEqual({ status: 'ended', message: NO_LONGER_PAIRED });
+    expect(outcome).toEqual({
+      status: 'ended',
+      message: NO_LONGER_PAIRED,
+      pairing: expect.any(Number) as number,
+    });
     expect(mockedRefresh).not.toHaveBeenCalled();
     expect(mockedSave).not.toHaveBeenCalled();
   });
@@ -207,6 +212,66 @@ describe('adoptConnection and dropConnection', () => {
   });
 });
 
+/**
+ * Narrows an outcome to an ended one, failing the test otherwise.
+ * @param outcome - What the renewal reported.
+ * @returns The ended outcome, carrying the pairing it judged.
+ */
+function ended(outcome: RefreshOutcome): Extract<RefreshOutcome, { status: 'ended' }> {
+  if (outcome.status !== 'ended') throw new Error(`Expected ended, got ${outcome.status}.`);
+  return outcome;
+}
+
+describe('dropConnection after a renewal ended', () => {
+  const SIGNED_IN: Connection = { ...CONNECTION, refreshToken: 'refresh-signed-in' };
+
+  it('spares a sign-in that queued behind the renewal before its drop ran', async () => {
+    // The screen learns the old pairing ended only once the renewal returns,
+    // and a sign-in already waiting on the lock saves its pairing first. A drop
+    // that cleared storage then would remove the pairing the user just made.
+    let refuse: (error: Error) => void = () => undefined;
+    mockedRefresh.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    const renewal = refreshConnection(CONNECTION);
+    await new Promise<void>((resolve) => {
+      setImmediate(() => {
+        resolve();
+      });
+    });
+    const signIn = adoptConnection(SIGNED_IN);
+    refuse(new SessionEndedError());
+    const outcome = ended(await renewal);
+    await signIn;
+    await expect(dropConnection(outcome.pairing)).resolves.toBe(false);
+    expect(mockedClear).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the portal retired it', () => mockedRefresh.mockRejectedValue(new SessionEndedError())],
+    ['the device was unpaired', () => mockedLoad.mockResolvedValue(null)],
+    [
+      'the device has no screen lock',
+      () => mockedUnlock.mockResolvedValue({ status: 'unsupported' }),
+    ],
+  ])('removes the pairing when %s and nothing replaced it', async (_label, arrange) => {
+    arrange();
+    const outcome = ended(await refreshConnection(CONNECTION));
+    await expect(dropConnection(outcome.pairing)).resolves.toBe(true);
+    expect(mockedClear).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes whatever is paired when the user disconnects', async () => {
+    mockedRefresh.mockRejectedValue(new SessionEndedError());
+    await refreshConnection(CONNECTION);
+    await adoptConnection(SIGNED_IN);
+    await expect(dropConnection()).resolves.toBe(true);
+    expect(mockedClear).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('refreshConnection when the reply is late', () => {
   beforeEach(() => {
     jest.useFakeTimers();
@@ -271,6 +336,7 @@ describe('the message on a terminal outcome', () => {
     expect(outcome).toEqual({
       status: 'ended',
       message: 'Set up a screen lock to stay signed in.',
+      pairing: expect.any(Number) as number,
     });
   });
 

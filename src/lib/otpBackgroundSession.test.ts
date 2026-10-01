@@ -7,6 +7,7 @@
  * portal reads a second presentation as a stolen copy and ends the session.
  */
 import { type AppTokens, refreshTokens } from '../api/appTokens';
+import { NO_RESPONSE } from '../api/timedFetch';
 import { type Connection, loadConnection } from '../auth/connectionStore';
 import { createTokenLedger, processLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
@@ -230,6 +231,39 @@ describe('loadUnattendedSession', () => {
     h.refresh.mockRejectedValueOnce(new Error('The importer did not respond in time.'));
     await expect(h.loader()).rejects.toThrow('did not respond');
     expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('answers in time, then keeps the late pair and hands it out next', async () => {
+    // The portal retired the presented token on accepting the request, so the
+    // late reply holds the only live one; the next capture must not replay.
+    jest.useFakeTimers({ doNotFake: ['Date'] });
+    try {
+      const h = harness(connection({ expiresAt: NOW - 1 }));
+      h.refresh.mockImplementationOnce(
+        (_baseUrl, refreshToken) =>
+          new Promise((resolve) => {
+            h.presented.push(refreshToken);
+            setTimeout(() => {
+              resolve({
+                accessToken: 'access-late',
+                refreshToken: 'refresh-late',
+                expiresAt: NOW + FIFTEEN_MINUTES,
+              });
+            }, 20_000);
+          }),
+      );
+      const first = expect(h.loader()).rejects.toThrow(NO_RESPONSE);
+      await jest.advanceTimersByTimeAsync(15_000);
+      await first;
+      const next = h.loader();
+      await jest.advanceTimersByTimeAsync(5_000);
+      await expect(next).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-late' });
+      expect(h.presented).toEqual(['refresh-at-unlock']);
+      expect(h.stored()).toHaveProperty('refreshToken', 'refresh-late');
+    } finally {
+      await jest.runOnlyPendingTimersAsync();
+      jest.useRealTimers();
+    }
   });
 });
 

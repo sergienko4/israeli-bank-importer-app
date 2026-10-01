@@ -17,7 +17,7 @@ import { authenticateBiometric } from '../lib/biometrics';
 import { loadBackgroundCaptureAllowed } from '../lib/otpBackgroundGate';
 import { loadUnattendedSession } from '../lib/otpBackgroundSession';
 import { refreshConnection } from './appSession';
-import { type Connection, loadConnection, saveConnection } from './connectionStore';
+import { type Connection, loadConnection, readConnection, saveConnection } from './connectionStore';
 import { processLedger } from './tokenLedger';
 
 jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
@@ -25,6 +25,7 @@ jest.mock('../lib/otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jes
 jest.mock('./connectionStore', () => ({
   clearConnection: jest.fn(),
   loadConnection: jest.fn(),
+  readConnection: jest.fn(),
   saveConnection: jest.fn(),
 }));
 
@@ -33,6 +34,7 @@ const mockedAllowed = loadBackgroundCaptureAllowed as jest.MockedFunction<
   typeof loadBackgroundCaptureAllowed
 >;
 const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
+const mockedRead = readConnection as jest.MockedFunction<typeof readConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 
 const realFetch = globalThis.fetch;
@@ -161,6 +163,12 @@ describe('a refresh answered after its caller stopped waiting (property)', () =>
         };
         let stored: Connection | null = paired;
         mockedLoad.mockImplementation(() => Promise.resolve(stored));
+        // The screen reads through readConnection; both must see one store.
+        mockedRead.mockImplementation(() =>
+          Promise.resolve(
+            stored === null ? { state: 'empty' } : { state: 'paired', connection: stored },
+          ),
+        );
         mockedSave.mockImplementation((next) => {
           stored = next;
           return Promise.resolve();

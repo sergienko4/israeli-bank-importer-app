@@ -19,6 +19,7 @@ import {
   clearConnection,
   type Connection,
   loadConnection,
+  readConnection,
   saveConnection,
 } from './connectionStore';
 import { processLedger } from './tokenLedger';
@@ -31,12 +32,14 @@ jest.mock('../lib/biometrics', () => ({ authenticateBiometric: jest.fn() }));
 jest.mock('./connectionStore', () => ({
   clearConnection: jest.fn(),
   loadConnection: jest.fn(),
+  readConnection: jest.fn(),
   saveConnection: jest.fn(),
 }));
 
 const mockedRefresh = refreshTokens as jest.MockedFunction<typeof refreshTokens>;
 const mockedUnlock = authenticateBiometric as jest.MockedFunction<typeof authenticateBiometric>;
 const mockedLoad = loadConnection as jest.MockedFunction<typeof loadConnection>;
+const mockedRead = readConnection as jest.MockedFunction<typeof readConnection>;
 const mockedSave = saveConnection as jest.MockedFunction<typeof saveConnection>;
 const mockedClear = clearConnection as jest.MockedFunction<typeof clearConnection>;
 
@@ -142,6 +145,11 @@ describe('refresh-token ownership across screen and background (property)', () =
             });
 
           mockedLoad.mockImplementation(load);
+          // The screen reads through readConnection; both must see one store.
+          mockedRead.mockImplementation(async () => {
+            const connection = await load();
+            return connection === null ? { state: 'empty' } : { state: 'paired', connection };
+          });
           mockedSave.mockImplementation(save);
           mockedClear.mockImplementation(() =>
             later(() => {

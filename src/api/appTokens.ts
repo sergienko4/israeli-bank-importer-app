@@ -9,7 +9,7 @@
  */
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import { normalizeBaseUrl } from './importerClient';
-import { timedFetch } from './timedFetch';
+import { patientFetch } from './timedFetch';
 
 /**
  * What the portal says when a refresh token is revoked, replayed, or expired.
@@ -90,6 +90,11 @@ export function toAppTokens(body: unknown): AppTokens {
 
 /**
  * Exchanges a refresh token for a new token pair.
+ *
+ * Waits past the usual deadline, up to `SETTLE_LIMIT_MS`: the portal
+ * retires the presented token as soon as it accepts the request, so a late
+ * reply is the only copy of the live one. Callers answer their user on time
+ * with `answerInTime` and keep the refresh lock held until this settles.
  * @param baseUrl - The importer address.
  * @param refreshToken - The refresh token last issued to this device.
  * @returns The rotated token pair.
@@ -102,7 +107,7 @@ export async function refreshTokens(baseUrl: string, refreshToken: string): Prom
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ refreshToken }),
   };
-  return timedFetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, init, async (res) => {
+  return patientFetch(`${normalizeBaseUrl(baseUrl)}/auth/app/refresh`, init, async (res) => {
     if (res.status === 400) {
       throw new SessionEndedError();
     }

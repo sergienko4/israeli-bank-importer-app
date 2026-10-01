@@ -9,6 +9,7 @@
  * defeats the point of revoking a device.
  */
 import { refreshTokens, SESSION_ENDED, SessionEndedError } from '../api/appTokens';
+import { NO_RESPONSE } from '../api/timedFetch';
 import { authenticateBiometric } from '../lib/biometrics';
 import {
   adoptConnection,
@@ -203,6 +204,44 @@ describe('adoptConnection and dropConnection', () => {
     finish();
     await Promise.all([renewal, replaced]);
     expect(order).toEqual(['renewal:start', 'renewal:saved', 'storage']);
+  });
+});
+
+describe('refreshConnection when the reply is late', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    // A renewal still waiting on a fake timer would hold the shared lock and
+    // stall every later test.
+    await jest.runOnlyPendingTimersAsync();
+    jest.useRealTimers();
+  });
+
+  it('answers in time, then saves the late pair and renews from it', async () => {
+    // The portal retired refresh-1 when it accepted the request, so the late
+    // reply holds the only live token; renewing from refresh-1 again would end
+    // the whole session.
+    mockedRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            accessToken: 'access-2',
+            refreshToken: 'refresh-2',
+            expiresAt: 2_000_000_900_000,
+          });
+        }, 20_000);
+      }),
+    );
+    const first = refreshConnection(CONNECTION);
+    await jest.advanceTimersByTimeAsync(15_000);
+    await expect(first).resolves.toEqual({ status: 'declined', message: NO_RESPONSE });
+    expect(mockedSave).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(5_000);
+    expect(mockedSave).toHaveBeenCalledWith(ROTATED);
+    await refreshConnection(CONNECTION);
+    expect(mockedRefresh.mock.calls.map(([, token]) => token)).toEqual(['refresh-1', 'refresh-2']);
   });
 });
 

@@ -23,6 +23,7 @@
  */
 import { type AppTokens, refreshTokens } from '../api/appTokens';
 import type { Session } from '../api/importerClient';
+import { answerInTime } from '../api/timedFetch';
 import { toSession } from '../auth/appSession';
 import { type Connection, loadConnection, saveConnection } from '../auth/connectionStore';
 import { withRefreshLock } from '../auth/refreshLock';
@@ -84,7 +85,10 @@ async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Pro
  * naming a token the portal has already retired.
  *
  * Runs under the refresh lock, because the screen spends the same single-use
- * refresh token and a second presentation ends the whole session.
+ * refresh token and a second presentation ends the whole session. A renewal
+ * whose reply misses the usual deadline is answered as a failure but keeps the
+ * lock until the reply is kept, since the portal retired the presented token on
+ * accepting it and the reply holds the only live one.
  *
  * @param ports - The injected switches, storage, portal, clock, and ledger.
  * @returns A loader resolving to a usable session, or `null` when unpaired or
@@ -94,7 +98,7 @@ export function createUnattendedSession(
   ports: UnattendedSessionPorts,
 ): () => Promise<Session | null> {
   return () =>
-    withRefreshLock(async () => {
+    withRefreshLock(async (hold) => {
       if (!(await ports.allowed())) return null;
       const stored = await ports.load();
       if (stored === null) {
@@ -107,17 +111,30 @@ export function createUnattendedSession(
         return toSession(pair);
       }
 
-      const tokens = await ports.refresh(pair.baseUrl, pair.refreshToken);
-      const next: Connection = {
-        baseUrl: pair.baseUrl,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-      };
-      ports.ledger.record(pair, next);
-      await keep(ports.save, next);
-      return toSession(next);
+      const renewal = renew(ports, pair);
+      hold(renewal);
+      return toSession(await answerInTime(renewal));
     });
+}
+
+/**
+ * Presents a refresh token, then records and keeps the pair it buys.
+ *
+ * @param ports - The portal, storage, and ledger to renew through.
+ * @param pair - The pair whose refresh token is live.
+ * @returns The renewed pair.
+ */
+async function renew(ports: UnattendedSessionPorts, pair: Connection): Promise<Connection> {
+  const tokens = await ports.refresh(pair.baseUrl, pair.refreshToken);
+  const next: Connection = {
+    baseUrl: pair.baseUrl,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+    expiresAt: tokens.expiresAt,
+  };
+  ports.ledger.record(pair, next);
+  await keep(ports.save, next);
+  return next;
 }
 
 /**

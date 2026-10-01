@@ -159,7 +159,7 @@ export const drainHeldMessages: (budget: RemainingBudget) => Promise<StashRunOut
       isAllowed: loadBackgroundCaptureAllowed,
       drain: () =>
         drainStash({
-          loadSession: loadUnattendedSession,
+          loadSession: () => loadUnattendedSession(lease.remainingMs),
           getPending: getPendingOtpUnattended,
           submit: submitOtpUnattended,
           now: Date.now,

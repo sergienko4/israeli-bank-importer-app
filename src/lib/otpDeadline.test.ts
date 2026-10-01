@@ -6,14 +6,31 @@
  * run — so the two properties that matter are that waiting always stops and
  * that nothing is ever thrown back at them.
  */
+import { SETTLE_LIMIT_MS } from '../api/timedFetch';
 import {
   ACK_MARGIN_MS,
   MIN_SEND_MS,
+  RENEWAL_GRACE_MS,
   settleWithin,
   SUBMIT_DEADLINE_MS,
   TASK_BUDGET_MS,
   TASK_TIMEOUT_MS,
 } from './otpDeadline';
+
+/** Android's limit on a `shortService` foreground service: about three minutes. */
+const SHORT_SERVICE_LIMIT_MS = 180_000;
+
+/**
+ * The native service whose task timeout must match {@link TASK_TIMEOUT_MS},
+ * relative to the repository root that Jest runs from.
+ */
+const NATIVE_SERVICE =
+  'modules/otp-sms-consent/android/src/main/java/expo/modules/otpsmsconsent/OtpSmsAutoReadService.kt';
+
+/** The one call needed from Node's `fs`, typed here because the app has no Node types. */
+interface FileReader {
+  readonly readFileSync: (path: string, encoding: 'utf8') => string;
+}
 
 describe('settleWithin', () => {
   it('returns as soon as the work does', async () => {
@@ -57,6 +74,30 @@ describe('settleWithin', () => {
 
   it('gives the task room to return before Android stops waiting for it', () => {
     expect(TASK_BUDGET_MS).toBeLessThan(TASK_TIMEOUT_MS);
+  });
+
+  it('waits long enough for a renewal to be answered and kept', () => {
+    // The renewal's own request gives up at SETTLE_LIMIT_MS, and keeping the
+    // pair it bought is a write after that. Returning sooner can let the
+    // process die holding the only live refresh token in memory.
+    expect(RENEWAL_GRACE_MS).toBeGreaterThan(SETTLE_LIMIT_MS);
+  });
+
+  it('keeps the renewal wait inside what Android allows the task', () => {
+    // A renewal may start just before the budget ends, so the task can run for
+    // the budget and the whole grace before Android tears it down.
+    expect(TASK_BUDGET_MS + RENEWAL_GRACE_MS).toBeLessThan(TASK_TIMEOUT_MS);
+  });
+
+  it('ends the task before Android times out its short foreground service', () => {
+    // A shortService runs for about three minutes; running past that is an ANR.
+    expect(TASK_TIMEOUT_MS).toBeLessThan(SHORT_SERVICE_LIMIT_MS);
+  });
+
+  it('matches the timeout the native service gives the task', () => {
+    const source = jest.requireActual<FileReader>('fs').readFileSync(NATIVE_SERVICE, 'utf8');
+    const declared = /TASK_TIMEOUT_MS = ([\d_]+)L/.exec(source)?.[1];
+    expect(Number(declared?.replaceAll('_', ''))).toBe(TASK_TIMEOUT_MS);
   });
 
   it('gives an abandoned send room to mark its code spent before the lock frees', () => {

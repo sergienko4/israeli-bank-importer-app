@@ -5,14 +5,21 @@
  * them, so the switches have to be re-read at the moment of use rather than
  * trusted from whenever the capture happened.
  */
+import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { loadUnattendedSession } from './otpBackgroundSession';
 import { TASK_BUDGET_MS } from './otpDeadline';
-import type { StashDrainOutcome } from './otpStashDrain';
+import { drainStash, type StashDrainOutcome } from './otpStashDrain';
 import {
   createSerialDrain,
+  drainHeldMessages,
   type DrainLease,
   runStashDrain,
   type StashRunOutcome,
 } from './otpStashRunner';
+
+jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+jest.mock('./otpBackgroundSession', () => ({ loadUnattendedSession: jest.fn() }));
+jest.mock('./otpStashDrain', () => ({ drainStash: jest.fn() }));
 
 function ports(
   allowed: boolean,
@@ -254,5 +261,25 @@ describe('createSerialDrain', () => {
     await createSerialDrain(run)(() => -1_000);
 
     expect(leases[0]?.remainingMs()).toBeLessThanOrEqual(0);
+  });
+});
+
+describe('drainHeldMessages', () => {
+  it('gives every session it loads what is left of its lease', async () => {
+    // A renewal started after the lease ran out can outlive whoever is keeping
+    // the process alive, and a process stopped mid-rotation leaves storage
+    // naming a spent token.
+    jest.mocked(loadBackgroundCaptureAllowed).mockResolvedValue(true);
+    jest.mocked(drainStash).mockImplementation(async (drainPorts) => {
+      await drainPorts.loadSession();
+      return 'submitted';
+    });
+    await drainHeldMessages(() => 10_000);
+
+    const load = jest.mocked(loadUnattendedSession);
+    expect(load).toHaveBeenCalledTimes(1);
+    const [left] = load.mock.calls[0] as unknown as [() => number];
+    expect(left()).toBeLessThanOrEqual(10_000);
+    expect(left()).toBeGreaterThan(0);
   });
 });

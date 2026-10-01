@@ -9,11 +9,14 @@
 import { type AppTokens, refreshTokens } from '../api/appTokens';
 import { NO_RESPONSE } from '../api/timedFetch';
 import { type Connection, loadConnection } from '../auth/connectionStore';
+import { withRefreshLock } from '../auth/refreshLock';
 import { createTokenLedger, processLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
 import {
   createUnattendedSession,
   loadUnattendedSession,
+  NO_TIME_TO_RENEW,
+  RENEW_WITHIN_MS,
   SAVED_EXPIRED,
   WITHHELD_ACCESS,
 } from './otpBackgroundSession';
@@ -39,6 +42,19 @@ const mockedAllowed = loadBackgroundCaptureAllowed as jest.MockedFunction<
 const NOW = 1_700_000_000_000;
 const BASE_URL = 'https://importer.example.ts.net';
 const FIFTEEN_MINUTES = 15 * 60_000;
+
+/**
+ * Lets every promise already queued run, including work behind the lock.
+ *
+ * @returns A promise resolving on the event loop's next turn.
+ */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(() => {
+      resolve();
+    });
+  });
+}
 
 function connection(overrides: Partial<Connection> = {}): Connection {
   return {
@@ -123,9 +139,63 @@ describe('loadUnattendedSession', () => {
     expect(h.presented).toEqual(['refresh-at-unlock']);
   });
 
-  it('renews a token that would expire before the task could finish', async () => {
-    const h = harness(connection({ expiresAt: NOW + TASK_TIMEOUT_MS }));
+  it('renews a token that would expire before an attempt could finish', async () => {
+    const h = harness(connection({ expiresAt: NOW + RENEW_WITHIN_MS }));
     await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-renewed-1' });
+  });
+
+  it('spends no token just because the task may wait longer for one', async () => {
+    // The task's timeout covers waiting for a renewal to be kept, not requests
+    // made with the token, so a longer timeout must not mean more renewals.
+    const h = harness(connection({ expiresAt: NOW + TASK_TIMEOUT_MS }));
+    await expect(h.loader()).resolves.toEqual({ baseUrl: BASE_URL, token: 'access-at-unlock' });
+    expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it('starts no renewal once its caller has no time left to see it kept', async () => {
+    // A renewal outliving the task can be cut off between the portal retiring
+    // the presented token and the new one being saved, which ends the pairing.
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    await expect(h.loader(() => 0)).rejects.toThrow(NO_TIME_TO_RENEW);
+    expect(h.refresh).not.toHaveBeenCalled();
+    expect(h.save).not.toHaveBeenCalled();
+  });
+
+  it('still hands out a live token once its caller has no time left', async () => {
+    const h = harness(connection());
+    await expect(h.loader(() => 0)).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-at-unlock',
+    });
+  });
+
+  it("judges its caller's time once it holds the lock, not before", async () => {
+    // A load can wait behind a held renewal for most of a minute, and a
+    // budget that was ample when it queued may be gone when its turn comes.
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    let release: () => void = () => undefined;
+    const holder = withRefreshLock(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    let remaining = 1_000;
+    const queued = h.loader(() => remaining);
+    await nextTurn();
+    remaining = 0;
+    release();
+    await holder;
+    await expect(queued).rejects.toThrow(NO_TIME_TO_RENEW);
+    expect(h.refresh).not.toHaveBeenCalled();
+  });
+
+  it('renews while its caller still has time left', async () => {
+    const h = harness(connection({ expiresAt: NOW - 1 }));
+    await expect(h.loader(() => 1)).resolves.toEqual({
+      baseUrl: BASE_URL,
+      token: 'access-renewed-1',
+    });
   });
 
   it('saves the rotated pair withheld, so a cancelled unlock has nothing to send', async () => {

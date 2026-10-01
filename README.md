@@ -212,7 +212,9 @@ only the refresh token, marked expired, so the next time you open the app it
 still asks for your fingerprint before it shows anything — and cancelling that
 prompt leaves it nothing to send. The renewal spends the device's refresh token,
 so once that has lapsed or the device is unpaired, codes go back to Telegram
-until you sign in again.
+until you sign in again. If the portal is slow to answer a renewal, the task
+stays up until the new refresh token is saved, for two minutes at most, because
+the old token is already spent and losing the new one would end the pairing.
 
 Because banks usually send the code *before* the importer has finished asking
 for it, that task does not give up on its first look. It keeps checking for about

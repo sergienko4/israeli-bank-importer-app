@@ -29,13 +29,32 @@ import { type Connection, loadConnection, saveConnection } from '../auth/connect
 import { withRefreshLock } from '../auth/refreshLock';
 import { processLedger, type TokenLedger } from '../auth/tokenLedger';
 import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
-import { TASK_TIMEOUT_MS } from './otpDeadline';
 
 /** Saved in place of a background renewal's real expiry, so the screen never uses it unprompted. */
 export const SAVED_EXPIRED = 0;
 
 /** Saved in place of a background renewal's access token, so a cancelled unlock sends nothing. */
 export const WITHHELD_ACCESS = '';
+
+/**
+ * How close to expiry a token may get before a background load renews it.
+ *
+ * Enough for one attempt's requests to finish on the token it was handed. It is
+ * deliberately not the task's timeout: that also covers waiting for a renewal
+ * to be kept, which makes no request with the token.
+ */
+export const RENEW_WITHIN_MS = 60_000;
+
+/** Why a load refused to renew: its caller could not keep the process alive long enough. */
+export const NO_TIME_TO_RENEW = 'No time left to keep a renewed token.';
+
+/**
+ * Loads a session for background work.
+ *
+ * `left` is how long the caller keeps the process alive. Without it the load
+ * renews whenever it must, as it does for a caller with no deadline of its own.
+ */
+export type UnattendedSessionLoader = (left?: () => number) => Promise<Session | null>;
 
 /** What an unattended renewal needs, injected so it can be tested without a device. */
 export interface UnattendedSessionPorts {
@@ -75,9 +94,9 @@ async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Pro
 /**
  * Builds the loader every background entry point asks for a session.
  *
- * A stored token that outlasts a whole task is used as it is. Anything shorter
- * is renewed, since a token that expired mid-task would turn a code the importer
- * is waiting for into a 401.
+ * A stored token with more than {@link RENEW_WITHIN_MS} left is used as it is.
+ * Anything shorter is renewed, since a token that expired mid-attempt would
+ * turn a code the importer is waiting for into a 401.
  *
  * The pair renewed here is kept in the process ledger, which the screen shares.
  * The saved copy is withheld, so without the ledger every retry of one capture
@@ -90,14 +109,18 @@ async function keep(save: UnattendedSessionPorts['save'], pair: Connection): Pro
  * lock until the reply is kept, since the portal retired the presented token on
  * accepting it and the reply holds the only live one.
  *
+ * That is also why no renewal starts once the caller's time is up: the caller
+ * waits for a renewal to be kept before it lets the process go, but only for
+ * one started while it was still keeping the process alive. The time is read
+ * after the lock is taken, because waiting for it can take most of a minute.
+ *
  * @param ports - The injected switches, storage, portal, clock, and ledger.
  * @returns A loader resolving to a usable session, or `null` when unpaired or
- * when capture is switched off.
+ * when capture is switched off. It rejects with {@link NO_TIME_TO_RENEW} rather
+ * than renew for a caller with no time left.
  */
-export function createUnattendedSession(
-  ports: UnattendedSessionPorts,
-): () => Promise<Session | null> {
-  return () =>
+export function createUnattendedSession(ports: UnattendedSessionPorts): UnattendedSessionLoader {
+  return (left) =>
     withRefreshLock(async (hold) => {
       if (!(await ports.allowed())) return null;
       const stored = await ports.load();
@@ -106,10 +129,11 @@ export function createUnattendedSession(
         return null;
       }
       const pair = ports.ledger.current(stored);
-      if (pair.expiresAt - ports.now() > TASK_TIMEOUT_MS) {
+      if (pair.expiresAt - ports.now() > RENEW_WITHIN_MS) {
         if (pair.refreshToken !== stored.refreshToken) await keep(ports.save, pair);
         return toSession(pair);
       }
+      if (left !== undefined && left() <= 0) throw new Error(NO_TIME_TO_RENEW);
 
       const renewal = renew(ports, pair);
       hold(renewal);
@@ -142,10 +166,11 @@ async function renew(ports: UnattendedSessionPorts, pair: Connection): Promise<C
  *
  * @returns A usable session, or `null` when the device is not paired or the
  *   user's switches do not allow background capture.
- * @throws Error when the portal refused or could not be reached; every caller
- *   treats that as a failed attempt worth retrying.
+ * @throws Error when the portal refused or could not be reached, or when the
+ *   caller had no time left to renew; every caller treats that as a failed
+ *   attempt.
  */
-export const loadUnattendedSession: () => Promise<Session | null> = createUnattendedSession({
+export const loadUnattendedSession: UnattendedSessionLoader = createUnattendedSession({
   allowed: loadBackgroundCaptureAllowed,
   load: loadConnection,
   save: saveConnection,

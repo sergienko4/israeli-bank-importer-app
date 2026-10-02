@@ -172,6 +172,20 @@ describe('submitWhileAllowed', () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
+  it('treats a switch read that failed as switched off', async () => {
+    // Any other error would read as a send whose fate is unknown, and spend a
+    // code that never left the device.
+    switches(true);
+    mockAutoRead.mockRejectedValue(new Error('keystore locked'));
+    const claim = jest.fn(() => true);
+
+    await expect(submitWhileAllowed(send(session(), claim))).rejects.toBeInstanceOf(
+      SendRefusedError,
+    );
+    expect(claim).not.toHaveBeenCalled();
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
   it('decides on a switch-off that was being stored when the send came due', async () => {
     // The capture read the switches before it fetched the request it answers,
     // and the user may have said no in between.

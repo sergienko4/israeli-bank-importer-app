@@ -78,6 +78,9 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  * its start from the caller last, in the same step. A caller that has already
  * given up then gets no request that it would have to answer for.
  *
+ * A switch read that fails counts as off. Letting its error through would read
+ * as a send whose fate is unknown, and spend a code that never left the device.
+ *
  * @param send - The code, the request it answers, the session it goes over,
  *   and the caller's claim on its start.
  * @returns What the importer said.
@@ -88,7 +91,7 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
 export async function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
   const { session, requestId, code, claim } = send;
   const started = await startIfAllowed(
-    loadBackgroundCaptureAllowed,
+    () => loadBackgroundCaptureAllowed().catch(() => false),
     () => submitOtpUnattended(session, requestId, code),
     () => currentPairing() === session.pairing && claim(),
   );

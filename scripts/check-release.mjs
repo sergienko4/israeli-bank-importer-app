@@ -1055,14 +1055,33 @@ function checkAssetSafety(workflows, actions) {
     recoveryIndex > standardGuardIndex &&
       recoveryIndex < backupCleanupIndex &&
       recovery?.if ===
-        "(failure() || cancelled()) && steps.prepare-upload.outputs.sms_withdrawal == 'attempted'" &&
-      typeof recovery.run === 'string' &&
-      recovery.run.includes('::error') &&
-      recovery.run.includes('$GITHUB_STEP_SUMMARY') &&
-      !recovery.run.includes('${{'),
+        "(failure() || cancelled()) && steps.prepare-upload.outputs.sms_withdrawal == 'attempted'",
     `${STANDARD_WORKFLOW} should explain how to restore a withdrawn SMS APK when it fails`,
   );
+  // A text search cannot tell whether the error and summary reach the run: a
+  // redirect, an `exec` or an early `exit` silences them and keeps every word.
+  // So the body is pinned whole, like the secret-writing steps.
+  const expectedRecoveryRun = [
+    'echo "::error title=SMS APK may be missing::This run started withdrawing the SMS APK, then failed or was cancelled. If the release lacks it, run Release APK if needed, then Release SMS APK, for this tag; see the run summary."',
+    '{',
+    'echo "### SMS APK may be missing from \\`$RELEASE_TAG\\`"',
+    'echo',
+    'echo "This run started withdrawing \\`israeli-bank-importer.sms.apk\\` before"',
+    'echo "replacing the standard APK, then failed or was cancelled. The backup it"',
+    'echo "took is gone with the runner. If the release no longer lists the SMS APK,"',
+    'echo "restore it in this order, because the SMS build repackages the standard APK:"',
+    'echo',
+    'echo "1. If the release has no \\`israeli-bank-importer.apk\\` either, run"',
+    'echo " **Release APK** for \\`$RELEASE_TAG\\`."',
+    'echo "2. Run **Release SMS APK** for \\`$RELEASE_TAG\\`."',
+    '} >> "$GITHUB_STEP_SUMMARY"',
+  ];
   const recoveryLines = typeof recovery?.run === 'string' ? logicalShellLines(recovery.run) : [];
+  check(
+    rule,
+    JSON.stringify(recoveryLines) === JSON.stringify(expectedRecoveryRun),
+    `${STANDARD_WORKFLOW} should run only the pinned recovery shell, so its error and summary reach the run`,
+  );
   const recoveryAnnotation = recoveryLines.filter((line) => line.includes('::error')).join('\n');
   const recoverySummary = recoveryLines.filter((line) => !line.includes('::error')).join('\n');
   check(

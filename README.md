@@ -147,11 +147,16 @@ About the SMS APK:
   permissions before you have agreed to anything. Declaring is not holding: it is
   a runtime permission, nothing is granted until you turn the switch on and
   approve Android's dialog, and until then the receiver is inert.
+- It also declares `FOREGROUND_SERVICE`, which Android grants without a dialog.
+  It lets the capture task finish before Android freezes the app; nothing else
+  runs in the foreground.
 - Turning either switch back off stops the app acting on messages, and erases
-  everything being held in the same write. The Android grant itself outlives the
-  switch — the app cannot hand a permission back, so it stays listed as granted
-  until you remove it in Android's app settings. What changes is that the
-  receiver goes inert again and keeps nothing.
+  everything being held in the same write. A task already running reads the
+  switches again just before it renews a token or sends a code, so it stops
+  too; only a request already on its way finishes. The Android grant itself
+  outlives the switch — the app cannot hand a permission back, so it stays
+  listed as granted until you remove it in Android's app settings. What changes
+  is that the receiver goes inert again and keeps nothing.
 - The receiver ignores every message unless you have opted in. One it does act
   on is submitted only when the importer is actually waiting for a code and the
   message yields exactly one; one that yields none, or two that disagree, is
@@ -183,7 +188,10 @@ and switched on.
 What is held, and for how long: the message text, its sender and its arrival
 time, in app-private storage, for **ten minutes**, capped at **ten messages**
 with the oldest dropped first. Turning either switch off empties it in the same
-write that shuts the receiver, and unpairing the device does the same. A held
+write that shuts the receiver, and unpairing the device or signing in again does
+the same, so a code held for one pairing is never sent for the next. A task
+already running when you do either checks again as it sends, and sends nothing
+over the pairing you left. A held
 message is spent only on a request the importer is actually waiting for, and
 only when the whole message yields exactly one code. Two held messages
 disagreeing about the code means neither is sent and you are asked — an
@@ -194,6 +202,24 @@ arriving message wakes it. `SMS_RECEIVED` is one of the few broadcasts Android
 still delivers to an app that is not running, so the receiver runs with the app
 closed, keeps the message, and starts a short background task that asks the
 importer what is outstanding — never trusting the message to say so.
+
+That task runs as a short foreground service. Android freezes a background app
+within seconds of the broadcast, network and all, and on a real phone that
+stopped the code short of the importer. On Android 12 and later a task that ends
+within ten seconds — the usual case — shows nothing; a slower one shows a quiet
+"Checking for a bank code" notification until it ends.
+
+**Opening the app once is enough.** The importer's access token lasts minutes,
+so by the time a code arrives it has usually expired. On screen, renewing it
+asks for your fingerprint, but a closed app cannot show that prompt, so the task
+renews it without one. The task keeps the new access token to itself and stores
+only the refresh token, marked expired, so the next time you open the app it
+still asks for your fingerprint before it shows anything — and cancelling that
+prompt leaves it nothing to send. The renewal spends the device's refresh token,
+so once that has lapsed or the device is unpaired, codes go back to Telegram
+until you sign in again. If the portal is slow to answer a renewal, the task
+stays up until the new refresh token is saved, for two minutes at most, because
+the old token is already spent and losing the new one would end the pairing.
 
 Because banks usually send the code *before* the importer has finished asking
 for it, that task does not give up on its first look. It keeps checking for about
@@ -212,7 +238,8 @@ appears with no message following it. That path needs Firebase credentials this
 project does not ship, so it is inert until one is configured. It is deliberately
 never trusted: the push only starts the process, which then asks the importer
 what is outstanding, because anyone holding this device's push token could forge
-one.
+one. It runs under the same limits as the message task, including the wait for a
+renewal to be saved.
 
 **What still needs you.** Auto-read has to be switched on, and a phone whose app
 was force-stopped from Android's settings receives no broadcast at all until it

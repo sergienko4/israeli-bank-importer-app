@@ -19,8 +19,13 @@
  * switches are hidden on that channel, which would otherwise leave a receiver
  * collecting bank messages with nothing on screen to turn it off.
  */
+import { submitOtpUnattended } from '../api/importerClient';
+import type { SaveResult } from '../api/manifest';
+import { currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
+import type { CodeSend } from './otpBackgroundSubmit';
+import { SendRefusedError, startIfAllowed } from './otpCaptureSwitch';
 import { loadOtpChannelIsApp } from './otpChannelStore';
 
 /**
@@ -54,4 +59,42 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
     loadOtpChannelIsApp(),
   ]);
   return backgroundCaptureAllowed(autoRead, autoSubmit, channelIsApp);
+}
+
+/**
+ * Sends a captured code from background work, if the switches still allow it.
+ *
+ * Every background path reads the switches when it wakes, but then fetches a
+ * session and the request it answers before it sends anything, and the user
+ * can turn capture off in between. So the switches are read again here, in
+ * turn with any change to them, straight before the code leaves the device.
+ *
+ * The user can also sign in to another importer or disconnect in that gap. The
+ * session would then still name the importer the user moved away from, so the
+ * send also checks that the pairing it was loaded for is still the one in
+ * force, at the moment the send starts.
+ *
+ * The caller can stop waiting while the send waits its turn, so the send claims
+ * its start from the caller last, in the same step. A caller that has already
+ * given up then gets no request that it would have to answer for.
+ *
+ * A switch read that fails counts as off. Letting its error through would read
+ * as a send whose fate is unknown, and spend a code that never left the device.
+ *
+ * @param send - The code, the request it answers, the session it goes over,
+ *   and the caller's claim on its start.
+ * @returns What the importer said.
+ * @throws SendRefusedError when the send was refused before it started, so
+ *   the caller can tell a code that never left the device from one whose fate
+ *   is unknown; or whatever the send itself threw.
+ */
+export async function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
+  const { session, requestId, code, claim } = send;
+  const started = await startIfAllowed(
+    () => loadBackgroundCaptureAllowed().catch(() => false),
+    () => submitOtpUnattended(session, requestId, code),
+    () => currentPairing() === session.pairing && claim(),
+  );
+  if (started === null) throw new SendRefusedError();
+  return started.result;
 }

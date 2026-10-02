@@ -18,6 +18,7 @@ import {
   saveConnection,
   type StoredConnection,
 } from './connectionStore';
+import { changePairing } from './pairingGeneration';
 import { type HoldLock, withRefreshLock } from './refreshLock';
 import { processLedger } from './tokenLedger';
 
@@ -211,10 +212,15 @@ async function renewFrom(current: Connection): Promise<Connection> {
  * lock: they were captured for the pairing this replaces, and work that queued
  * on the lock behind the sign-in would otherwise spend them against the new
  * one. Clearing before the save would let a code held in between survive.
+ *
+ * The pairing number changes first, before anything is written, so a
+ * background send already past every other check refuses to go out over the
+ * session this replaces. A save that then fails costs at most a refused send.
  * @param connection - The address and tokens the sign-in produced.
  */
 export async function adoptConnection(connection: Connection): Promise<void> {
   await withRefreshLock(async () => {
+    changePairing();
     await saveConnection(connection);
     processLedger.forget();
     signIns += 1;
@@ -230,7 +236,8 @@ export async function adoptConnection(connection: Connection): Promise<void> {
  * drop can spend a code held for the pairing it removed.
  *
  * A drop that spares a newer sign-in leaves held messages alone: that sign-in
- * already forgot the old pairing's, so what is held now is its own.
+ * already forgot the old pairing's, so what is held now is its own. It leaves
+ * the pairing number alone too, for the same reason.
  * @param pairing - The sign-in an ended renewal judged. When given, a pairing
  *   adopted since then is left alone; the user tapping Disconnect omits it.
  * @returns Whether the pairing was removed.
@@ -238,6 +245,7 @@ export async function adoptConnection(connection: Connection): Promise<void> {
 export async function dropConnection(pairing?: number): Promise<boolean> {
   return withRefreshLock(async () => {
     if (pairing !== undefined && pairing !== signIns) return false;
+    changePairing();
     await clearConnection();
     processLedger.forget();
     await forgetHeldMessages();

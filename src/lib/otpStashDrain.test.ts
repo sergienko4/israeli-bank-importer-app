@@ -1,4 +1,5 @@
 import type { SaveResult } from '../api/manifest';
+import { SendRefusedError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, SUBMIT_DEADLINE_MS, TASK_BUDGET_MS } from './otpDeadline';
 import { STASH_SPENT, STASH_TTL_MS, type StashedMessage } from './otpStash';
 import type { StashDrainPorts } from './otpStashDrain';
@@ -15,7 +16,7 @@ import { drainStash } from './otpStashDrain';
  */
 
 const NOW = 1_700_000_000_000;
-const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+const SESSION = { baseUrl: 'https://importer.local', token: 't', pairing: 0 };
 const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
 
 /**
@@ -57,8 +58,9 @@ function ports(overrides: Partial<StashDrainPorts> = {}) {
     },
     loadSession: () => Promise.resolve(SESSION),
     getPending: () => Promise.resolve([LIVE]),
-    submit: (_session, id, code) => {
-      submitted.push({ id, code });
+    submit: ({ requestId, code, claim }) => {
+      if (!claim()) return Promise.reject(new SendRefusedError());
+      submitted.push({ id: requestId, code });
       return Promise.resolve({ ok: true });
     },
     now: () => NOW,
@@ -167,8 +169,9 @@ describe('drainStash', () => {
     try {
       const sent: { id: string; code: string }[] = [];
       const { ports: p, consumed } = ports({
-        submit: (_session, id, code) => {
-          sent.push({ id, code });
+        submit: ({ requestId, code, claim }) => {
+          claim();
+          sent.push({ id: requestId, code });
           return new Promise<SaveResult>(() => undefined);
         },
       });
@@ -183,6 +186,99 @@ describe('drainStash', () => {
       jest.useRealTimers();
     }
   });
+
+  it('keeps the code held when its send had not started by the end of the wait', async () => {
+    // A send waits its turn behind any change to the switches. One still
+    // waiting when the run stops never left the device, so spending its code
+    // would lose it — and it must not go out once the run can no longer record
+    // what it did.
+    jest.useFakeTimers();
+    try {
+      let lateClaim: () => boolean = () => true;
+      const {
+        ports: p,
+        consumed,
+        attempts,
+      } = ports({
+        submit: ({ claim }) => {
+          lateClaim = claim;
+          return new Promise<SaveResult>(() => undefined);
+        },
+      });
+      const running = drainStash(p);
+
+      await jest.advanceTimersByTimeAsync(SUBMIT_DEADLINE_MS);
+
+      await expect(running).resolves.toBe('superseded');
+      expect(consumed).toEqual([]);
+      expect(attempts).toEqual([]);
+      expect(lateClaim()).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('refuses the start of a send once a newer run has taken over', async () => {
+    let owned = true;
+    const {
+      ports: p,
+      submitted,
+      consumed,
+      attempts,
+    } = ports({
+      stillOwned: () => owned,
+      submit: ({ claim }) => {
+        owned = false;
+        return claim() ? Promise.resolve({ ok: true }) : Promise.reject(new SendRefusedError());
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('superseded');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+    expect(attempts).toEqual([]);
+  });
+
+  it('keeps a started send started, even if it claims again', async () => {
+    // Once a claim has answered true the code may have left the device. Undoing
+    // that on a second claim would leave a sent code on offer to send again.
+    let owned = true;
+    const { ports: p, consumed } = ports({
+      stillOwned: () => owned,
+      submit: ({ claim }) => {
+        claim();
+        owned = false;
+        claim();
+        return Promise.resolve({ ok: true });
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(consumed).toEqual(['msg-1']);
+  });
+
+  it.each([
+    { verb: 'refuses', room: MIN_SEND_MS - 1, outcome: 'superseded', dropped: [] },
+    { verb: 'allows', room: MIN_SEND_MS, outcome: 'submitted', dropped: ['msg-1'] },
+  ])(
+    '$verb the start of a send left with $room ms of its allowance',
+    async ({ room, outcome, dropped }) => {
+      // The run gives this send SUBMIT_DEADLINE_MS out of TASK_BUDGET_MS, so its
+      // wait ends with that difference still on the lease.
+      let remaining = TASK_BUDGET_MS;
+      const ends = TASK_BUDGET_MS - SUBMIT_DEADLINE_MS;
+      const { ports: p, consumed } = ports({
+        remainingMs: () => remaining,
+        submit: ({ claim }) => {
+          remaining = ends + room;
+          return claim() ? Promise.resolve({ ok: true }) : Promise.reject(new SendRefusedError());
+        },
+      });
+
+      await expect(drainStash(p)).resolves.toBe(outcome);
+      expect(consumed).toEqual(dropped);
+    },
+  );
 
   it('sends nothing once a newer run has taken over', async () => {
     // This run read the held messages before the run that replaced it existed,
@@ -232,7 +328,10 @@ describe('drainStash', () => {
       const room = MIN_SEND_MS + 1_000;
       const { ports: p, consumed } = ports({
         remainingMs: () => ACK_MARGIN_MS + room,
-        submit: () => new Promise<SaveResult>(() => undefined),
+        submit: ({ claim }) => {
+          claim();
+          return new Promise<SaveResult>(() => undefined);
+        },
       });
       const running = drainStash(p);
 
@@ -434,7 +533,7 @@ describe('drainStash', () => {
     expect(consumed).toEqual(['msg-1']);
   });
 
-  it('reads the stash once and submits at most one code per run', async () => {
+  it('submits at most one code per run', async () => {
     let reads = 0;
     const { ports: p, submitted } = ports({
       list: () => {
@@ -444,7 +543,56 @@ describe('drainStash', () => {
     });
 
     await expect(drainStash(p)).resolves.toBe('submitted');
-    expect(reads).toBe(1);
+    expect(reads).toBe(2);
     expect(submitted).toHaveLength(1);
+  });
+
+  it('spends only what is still held once the session is loaded', async () => {
+    // Loading the session can wait behind a sign-in, which forgets every code
+    // held for the pairing it replaced. Sending one from the list read before
+    // that would hand it to the new pairing's importer.
+    let reads = 0;
+    const { ports: p, submitted } = ports({
+      list: () => {
+        reads += 1;
+        return Promise.resolve(reads === 1 ? [held()] : []);
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('empty');
+    expect(submitted).toEqual([]);
+  });
+
+  it('answers from a message held while the session was loading', async () => {
+    let reads = 0;
+    const { ports: p, submitted } = ports({
+      list: () => {
+        reads += 1;
+        return Promise.resolve(
+          reads === 1 ? [held()] : [held({ id: 'msg-2', body: 'Your code is 135790' })],
+        );
+      },
+    });
+
+    await expect(drainStash(p)).resolves.toBe('submitted');
+    expect(submitted).toEqual([{ id: 'req-1', code: '135790' }]);
+  });
+
+  it('records nothing when capture was switched off before the send', async () => {
+    // The code never left the device, so it is neither spent nor judged. The
+    // switch-off that refused it also empties the stash.
+    const {
+      ports: p,
+      submitted,
+      consumed,
+      attempts,
+    } = ports({
+      submit: () => Promise.reject(new SendRefusedError()),
+    });
+
+    await expect(drainStash(p)).resolves.toBe('not-allowed');
+    expect(submitted).toEqual([]);
+    expect(consumed).toEqual([]);
+    expect(attempts).toEqual([]);
   });
 });

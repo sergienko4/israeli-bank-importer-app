@@ -1,5 +1,7 @@
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
+import { SendRefusedError } from './otpCaptureSwitch';
+import { MIN_SEND_MS, TASK_BUDGET_MS } from './otpDeadline';
 
 /**
  * The background submit path. This runs with no UI attached and possibly with
@@ -11,7 +13,7 @@ import { autoSubmitFromMessage } from './otpBackgroundSubmit';
  */
 
 const NOW = 1_700_000_000_000;
-const SESSION = { baseUrl: 'https://importer.local', token: 't' };
+const SESSION = { baseUrl: 'https://importer.local', token: 't', pairing: 0 };
 
 /** A pending request, live at {@link NOW}. */
 const LIVE = { id: 'req-1', bankId: 'onezero', createdAt: NOW, deadline: NOW + 60_000 };
@@ -27,15 +29,47 @@ function ports(overrides: Partial<BackgroundSubmitPorts> = {}) {
   const base: BackgroundSubmitPorts = {
     loadSession: () => Promise.resolve(SESSION),
     getPending: () => Promise.resolve([LIVE]),
-    submit: (_session, id, code) => {
-      submitted.push({ id, code });
+    submit: ({ requestId, code, claim }) => {
+      if (!claim()) return Promise.reject(new SendRefusedError());
+      submitted.push({ id: requestId, code });
       return Promise.resolve({ ok: true });
     },
     now: () => NOW,
+    remainingMs: () => TASK_BUDGET_MS,
     ...overrides,
   };
   return { ports: base, submitted };
 }
+
+describe('the claim on a send start', () => {
+  it.each([
+    { left: TASK_BUDGET_MS, outcome: 'submitted', sends: 1 },
+    { left: MIN_SEND_MS, outcome: 'submitted', sends: 1 },
+    { left: MIN_SEND_MS - 1, outcome: 'not-allowed', sends: 0 },
+    { left: 0, outcome: 'not-allowed', sends: 0 },
+  ])('with $left ms left, ends $outcome', async ({ left, outcome, sends }) => {
+    // Once the task returns nothing keeps the process running, so a send with
+    // too little time to finish inside the task must not start at all.
+    const { ports: p, submitted } = ports({ remainingMs: () => left });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe(outcome);
+    expect(submitted).toHaveLength(sends);
+  });
+
+  it('reads the time left as the send starts, not as the message arrives', async () => {
+    let left = TASK_BUDGET_MS;
+    const { ports: p, submitted } = ports({
+      remainingMs: () => left,
+      getPending: () => {
+        left = MIN_SEND_MS - 1;
+        return Promise.resolve([LIVE]);
+      },
+    });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('not-allowed');
+    expect(submitted).toEqual([]);
+  });
+});
 
 describe('autoSubmitFromMessage', () => {
   it('submits the code against the pending request', async () => {
@@ -43,6 +77,16 @@ describe('autoSubmitFromMessage', () => {
 
     await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('submitted');
     expect(submitted).toEqual([{ id: 'req-1', code: '481920' }]);
+  });
+
+  it('stops without a verdict when capture was switched off before the send', async () => {
+    // The code never left the device: neither a refusal by the importer nor a
+    // send whose fate is unknown, and nothing worth trying again.
+    const { ports: p } = ports({
+      submit: () => Promise.reject(new SendRefusedError()),
+    });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('not-allowed');
   });
 
   it('reaches nothing over the network for a message with no code', async () => {

@@ -8,13 +8,13 @@
  */
 import { AppRegistry, Platform } from 'react-native';
 
-import { getPendingOtp, submitOtp } from '../api/importerClient';
-import { loadConnection } from '../auth/connectionStore';
+import { getPendingOtpUnattended } from '../api/importerClient';
+import { refreshSettled } from '../auth/refreshLock';
 import { isAutoReadBuild } from './otpAutoReadPermission';
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
-import { backgroundSession } from './otpBackgroundSession';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
+import { loadUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage, type BackgroundSubmitOutcome } from './otpBackgroundSubmit';
-import { settleWithin, TASK_BUDGET_MS } from './otpDeadline';
+import { RENEWAL_GRACE_MS, settleWithin, TASK_BUDGET_MS } from './otpDeadline';
 import { retryUntilAnswered } from './otpRetry';
 import { drainHeldMessages, type RemainingBudget } from './otpStashRunner';
 
@@ -40,12 +40,19 @@ export const OTP_SMS_TASK_NAME = 'OtpSmsAutoRead';
  * body once and dropping it would lose exactly the code this exists to catch,
  * and on that path nothing is holding a copy to try again from.
  *
- * The whole thing is bounded, because the calls underneath have no deadline of
- * their own and this runs with nobody watching. Returning is the only way this
+ * The whole thing is bounded as well as each request, because retries add up
+ * and this runs with nobody watching. Returning is the only way this
  * task ends tidily: React Native releases the wake lock when the task settles,
  * and Android tears the service down without that courtesy once its own timeout
  * passes. Abandoning a request that was never going to answer is the lesser of
  * the two.
+ *
+ * A token renewal is the one thing not abandoned. The portal retires a refresh
+ * token on accepting it, so a renewal whose reply is still on its way holds the
+ * only live token, and returning would let the process be stopped before that
+ * reply is saved. The task waits for it, for a bounded time; no load starts a
+ * renewal once the budget is spent, so anything still to wait for began before
+ * then.
  *
  * @param data - The service payload, carrying the message body if there is one.
  */
@@ -55,6 +62,7 @@ export async function runOtpSmsTask(data: { readonly body?: string }): Promise<v
     capture(data.body, () => deadline - Date.now()),
     TASK_BUDGET_MS,
   );
+  await settleWithin(refreshSettled(), RENEWAL_GRACE_MS);
 }
 
 /**
@@ -68,7 +76,7 @@ async function capture(body: string | undefined, left: RemainingBudget): Promise
     return;
   }
   if (typeof body === 'string' && body !== '') {
-    await retryUntilAnswered({ attempt: () => submitBody(body), wait: sleep, now: Date.now });
+    await retryUntilAnswered({ attempt: () => submitBody(body, left), wait: sleep, now: Date.now });
     // An earlier held message may be the one that answers the next request, and
     // nothing else will look at it if the process stops here.
     await drainHeldMessages(left);
@@ -81,14 +89,16 @@ async function capture(body: string | undefined, left: RemainingBudget): Promise
  * Submits the code in one message, if the importer is waiting for one.
  *
  * @param body - The raw message text, never stored by this path.
+ * @param left - How long this task has before it must return.
  * @returns Why it stopped, so the caller can decide whether to look again.
  */
-function submitBody(body: string): Promise<BackgroundSubmitOutcome> {
+function submitBody(body: string, left: RemainingBudget): Promise<BackgroundSubmitOutcome> {
   return autoSubmitFromMessage(body, {
-    loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
-    getPending: getPendingOtp,
-    submit: submitOtp,
+    loadSession: () => loadUnattendedSession(left),
+    getPending: getPendingOtpUnattended,
+    submit: submitWhileAllowed,
     now: Date.now,
+    remainingMs: left,
   });
 }
 

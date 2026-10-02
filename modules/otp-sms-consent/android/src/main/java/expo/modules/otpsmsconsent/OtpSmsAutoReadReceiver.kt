@@ -3,12 +3,22 @@ package expo.modules.otpsmsconsent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsMessage
+import android.util.Log
 import com.facebook.react.HeadlessJsTaskService
 
 /** The key the message body travels under. The JavaScript task reads the same one. */
 internal const val EXTRA_MESSAGE_BODY = "body"
+
+/**
+ * Set when Android accepted a foreground start, which the service then owes it.
+ *
+ * Read and removed by the service before the task starts, so it never reaches
+ * JavaScript.
+ */
+internal const val EXTRA_FOREGROUND_START = "foregroundStart"
 
 /**
  * The longest message worth holding, matching the parser's own limit.
@@ -79,6 +89,8 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
     // the user next opened the app.
     if (hold(context, intent)) {
       deliver(context, HELD_RATHER_THAN_PASSED)
+    } else {
+      Log.i(LOG_TAG, "not-held")
     }
   }
 
@@ -113,8 +125,11 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
    * Starts the headless task, and keeps the device awake long enough to run it.
    *
    * Receiving a message puts the app on Android's temporary allowlist, which
-   * permits an ordinary background service. That is why this needs no
-   * foreground service and shows no notification: the capture is silent.
+   * lets it start a foreground service from the background. It has to be one:
+   * Android freezes a cached process within seconds of this broadcast, and an
+   * ordinary service does not stop that. If the start is refused anyway, an
+   * ordinary service is still worth trying, since it can finish before a
+   * freeze.
    *
    * @param context used to start the service.
    * @param body the message to submit, or [HELD_RATHER_THAN_PASSED] to send the
@@ -126,11 +141,29 @@ class OtpSmsAutoReadReceiver : BroadcastReceiver() {
     // A refusal here costs the user nothing beyond typing the code themselves,
     // which is exactly what happens in a build without this feature. Crashing
     // their phone over it would be a far worse trade.
-    val started = runCatching { context.startService(service) }.isSuccess
-    if (started) {
+    val outcome = start(context, service)
+    Log.i(LOG_TAG, if (body == HELD_RATHER_THAN_PASSED) "held:$outcome" else "passed:$outcome")
+    if (outcome != "refused") {
       // Without this the device can go back to sleep before JavaScript runs.
       HeadlessJsTaskService.acquireWakeLockNow(context)
     }
+  }
+
+  /**
+   * Starts the service in the foreground, or as an ordinary service if not.
+   *
+   * @return `foreground`, `background`, or `refused`: an outcome, never content.
+   */
+  private fun start(context: Context, service: Intent): String {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      runCatching {
+        context.startForegroundService(service.putExtra(EXTRA_FOREGROUND_START, true))
+      }.isSuccess
+    ) {
+      return "foreground"
+    }
+    service.removeExtra(EXTRA_FOREGROUND_START)
+    return if (runCatching { context.startService(service) }.isSuccess) "background" else "refused"
   }
 
   /** Joins the parts of a possibly multipart message into a single body. */

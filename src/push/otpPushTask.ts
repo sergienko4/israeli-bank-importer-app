@@ -16,17 +16,37 @@ import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
-import { getPendingOtp } from '../api/importerClient';
-import { loadConnection } from '../auth/connectionStore';
+import { getPendingOtpUnattended } from '../api/importerClient';
+import { refreshSettled } from '../auth/refreshLock';
 import { isAutoReadBuild } from '../lib/otpAutoReadPermission';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
-import { backgroundSession } from '../lib/otpBackgroundSession';
-import { TASK_BUDGET_MS } from '../lib/otpDeadline';
+import { loadUnattendedSession } from '../lib/otpBackgroundSession';
+import { RENEWAL_GRACE_MS, settleWithin, TASK_BUDGET_MS } from '../lib/otpDeadline';
 import { wakeAutoReadWindow } from '../lib/otpPushWake';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
 /** Identifies the task to both `expo-task-manager` and the OS. */
 export const OTP_PUSH_TASK_NAME = 'OtpPushWake';
+
+/**
+ * Brings the window up to date, then waits for any renewal it started.
+ *
+ * Bounded like the SMS task: an importer that stops answering must not hold the
+ * task open. A push that started the app from cold has its JavaScript runtime
+ * torn down shortly after this returns, taking any renewal still in flight
+ * with it, so a renewal whose reply is late has to be saved first — otherwise
+ * storage names a refresh token the portal has already spent.
+ *
+ * @returns Nothing; the outcome matters to tests, not to the OS on Android.
+ */
+async function handlePush(): Promise<void> {
+  const deadline = Date.now() + TASK_BUDGET_MS;
+  await settleWithin(
+    wakeAndDrain(() => deadline - Date.now()),
+    TASK_BUDGET_MS,
+  );
+  await settleWithin(refreshSettled(), RENEWAL_GRACE_MS);
+}
 
 /**
  * Brings the window up to date using the importer as the only authority.
@@ -35,20 +55,16 @@ export const OTP_PUSH_TASK_NAME = 'OtpPushWake';
  * natively, and this wake may be the first moment anything can act on it, so
  * an opened window is immediately followed by a drain.
  *
- * @returns Nothing; the outcome matters to tests, not to the OS on Android.
+ * @param left - How long this task has before it must return.
  */
-async function handlePush(): Promise<void> {
+async function wakeAndDrain(left: () => number): Promise<void> {
   const outcome = await wakeAutoReadWindow({
-    loadSession: async () => backgroundSession(await loadConnection(), Date.now()),
-    getPending: getPendingOtp,
+    loadSession: () => loadUnattendedSession(left),
+    getPending: getPendingOtpUnattended,
     syncWindow: syncAutoReadWindow,
     now: Date.now,
   });
-  if (outcome === 'window-open') {
-    // The push wake has no deadline of its own beyond the one the OS enforces,
-    // so the drain's own cap is the limit.
-    await drainHeldMessages(() => TASK_BUDGET_MS);
-  }
+  if (outcome === 'window-open') await drainHeldMessages(left);
 }
 
 /**

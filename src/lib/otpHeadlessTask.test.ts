@@ -2,20 +2,49 @@
  * Covers the rules the headless capture runs under, where nobody is watching:
  * which messages it acts on, and which it ignores.
  */
-import { loadBackgroundCaptureAllowed } from './otpBackgroundGate';
+import { withRefreshLock } from '../auth/refreshLock';
+import { loadBackgroundCaptureAllowed, submitWhileAllowed } from './otpBackgroundGate';
+import { loadUnattendedSession } from './otpBackgroundSession';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
-import { TASK_BUDGET_MS } from './otpDeadline';
+import { RENEWAL_GRACE_MS, TASK_BUDGET_MS } from './otpDeadline';
 import { OTP_SMS_TASK_NAME, runOtpSmsTask } from './otpHeadlessTask';
 import { RETRY_INTERVAL_MS, RETRY_WINDOW_MS } from './otpRetry';
 import { drainHeldMessages } from './otpStashRunner';
 
-jest.mock('./otpBackgroundGate', () => ({ loadBackgroundCaptureAllowed: jest.fn() }));
+jest.mock('./otpBackgroundGate', () => ({
+  loadBackgroundCaptureAllowed: jest.fn(),
+  submitWhileAllowed: jest.fn(),
+}));
+jest.mock('./otpBackgroundSession', () => ({ loadUnattendedSession: jest.fn() }));
 jest.mock('./otpBackgroundSubmit', () => ({ autoSubmitFromMessage: jest.fn() }));
 jest.mock('./otpStashRunner', () => ({ drainHeldMessages: jest.fn() }));
 
 const mockAllowed = jest.mocked(loadBackgroundCaptureAllowed);
 const mockSubmit = jest.mocked(autoSubmitFromMessage);
 const mockDrain = jest.mocked(drainHeldMessages);
+const mockLoadSession = jest.mocked(loadUnattendedSession);
+
+/**
+ * Holds the refresh lock the way a renewal whose reply is late does.
+ *
+ * @returns Settles the held renewal; safe to call more than once.
+ */
+async function lateRenewal(): Promise<() => void> {
+  let settle: () => void = () => undefined;
+  void withRefreshLock((hold) => {
+    hold(
+      new Promise<void>((resolve) => {
+        settle = resolve;
+      }),
+    );
+    return Promise.resolve();
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  return () => {
+    settle();
+  };
+}
 
 describe('runOtpSmsTask', () => {
   beforeEach(() => {
@@ -49,6 +78,16 @@ describe('runOtpSmsTask', () => {
   it('submits when the user has enabled both switches', async () => {
     await runOtpSmsTask({ body: 'Your code is 123456' });
     expect(mockSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the code only through the submit that re-reads the switches', async () => {
+    // The switches were read when the task woke, and the user can turn
+    // capture off while the request it answers is being fetched.
+    await runOtpSmsTask({ body: 'Your code is 123456' });
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ submit: submitWhileAllowed }),
+    );
   });
 
   it('reads no message once the user has turned a switch off', async () => {
@@ -132,6 +171,55 @@ describe('runOtpSmsTask', () => {
       expect(left()).toBeLessThanOrEqual(TASK_BUDGET_MS - RETRY_WINDOW_MS);
       expect(left()).toBeGreaterThan(0);
     } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('gives every session it loads what is left of its own budget', async () => {
+    // A renewal started with no time left to keep it can outlive the task, and
+    // a process stopped mid-rotation leaves storage naming a spent token.
+    mockSubmit.mockImplementation(async (_body, ports) => {
+      await ports.loadSession();
+      return 'submitted';
+    });
+    await runOtpSmsTask({ body: 'Your code is 123456' });
+
+    expect(mockLoadSession).toHaveBeenCalledTimes(1);
+    const [left] = mockLoadSession.mock.calls[0] as unknown as [() => number];
+    expect(left()).toBeLessThanOrEqual(TASK_BUDGET_MS);
+    expect(left()).toBeGreaterThan(0);
+  });
+
+  it('does not return while a renewal is still being kept', async () => {
+    // Returning stops the foreground service, and a process frozen or killed
+    // before the late reply is saved loses the only live refresh token.
+    jest.useFakeTimers();
+    let settle: () => void = () => undefined;
+    try {
+      settle = await lateRenewal();
+      const done = jest.fn();
+      const running = runOtpSmsTask({}).then(done);
+      await jest.advanceTimersByTimeAsync(TASK_BUDGET_MS);
+      expect(done).not.toHaveBeenCalled();
+      settle();
+      await running;
+      expect(done).toHaveBeenCalledTimes(1);
+    } finally {
+      settle();
+      jest.useRealTimers();
+    }
+  });
+
+  it('stops waiting for a renewal once its grace runs out', async () => {
+    jest.useFakeTimers();
+    let settle: () => void = () => undefined;
+    try {
+      settle = await lateRenewal();
+      const running = runOtpSmsTask({});
+      await jest.advanceTimersByTimeAsync(RENEWAL_GRACE_MS);
+      await expect(running).resolves.toBeUndefined();
+    } finally {
+      settle();
       jest.useRealTimers();
     }
   });

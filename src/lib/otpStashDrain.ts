@@ -27,7 +27,8 @@
  * Message bodies are read here and never persisted or logged by this module.
  */
 import type { SaveResult } from '../api/manifest';
-import { type BackgroundSubmitPorts, neverJudged } from './otpBackgroundSubmit';
+import { type BackgroundSubmitPorts, neverJudged, type PairedSession } from './otpBackgroundSubmit';
+import { SendRefusedError } from './otpCaptureSwitch';
 import { ACK_MARGIN_MS, MIN_SEND_MS, settleWithin, SUBMIT_DEADLINE_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import {
@@ -73,9 +74,15 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  * codes. They are all the same answer to the user — type it yourself — and none
  * of them is worth retrying. `unknown` means a code went out and no answer came
  * back, which is also not worth retrying, for the opposite reason. `superseded`
- * means the run ran out of its claim on the drain before it reached the send —
- * either a newer run has already taken over, or too little is left to record
- * what a send did — so whatever is worth doing is the next run's to do.
+ * means the run ran out of its claim on the drain before its send started —
+ * either a newer run has already taken over, too little is left to record
+ * what a send did, or the send was still waiting its turn when the run stopped
+ * waiting for it — so the code never left the device, and whatever is worth
+ * doing is the next run's to do.
+ * `not-allowed` means the send was refused as it would have started — the
+ * switches had been turned off, or the user had signed in elsewhere or
+ * disconnected since the session was loaded — so the code never left the
+ * device and nothing is recorded against it.
  */
 export type StashDrainOutcome =
   | 'empty'
@@ -86,7 +93,8 @@ export type StashDrainOutcome =
   | 'rejected'
   | 'failed'
   | 'unknown'
-  | 'superseded';
+  | 'superseded'
+  | 'not-allowed';
 
 /**
  * Spends at most one held message against the importer's pending request.
@@ -96,11 +104,16 @@ export type StashDrainOutcome =
  */
 export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutcome> {
   try {
-    const live = liveStashEntries(await ports.list(), ports.now());
-    if (live.length === 0) return 'empty';
+    if (liveStashEntries(await ports.list(), ports.now()).length === 0) return 'empty';
 
     const session = await ports.loadSession();
     if (session === null) return 'no-session';
+
+    // Read again, because loading the session can wait behind a sign-in that
+    // forgot every code held for the pairing it replaced. A code from the first
+    // read would go to the new pairing's importer.
+    const live = liveStashEntries(await ports.list(), ports.now());
+    if (live.length === 0) return 'empty';
 
     const expectation = pickExpectation(await ports.getPending(session), ports.now());
     if (expectation === null) return 'no-pending';
@@ -108,41 +121,72 @@ export async function drainStash(ports: StashDrainPorts): Promise<StashDrainOutc
     const found = selectStashedCode(live, expectation.requestId, ports.now());
     if (found === null) return 'ambiguous';
 
-    const copies = stashedCopiesOf(live, found.code, ports.now());
-    const drop = (id: string): Promise<void> => ports.consume(id);
-    const record = (id: string): Promise<void> => ports.markAttempt(id, expectation.requestId);
-    const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
-    const allowance = sendWindow(ports);
-    if (allowance === null) return 'superseded';
-    const result = await sent(
-      () => ports.submit(session, expectation.requestId, found.code),
-      allowance,
-    );
-    if (result === 'unknown') {
-      // Marked spent rather than merely attempted, because the scope of the
-      // doubt is the code itself and not this request. Recording it against
-      // this request alone would leave it selectable by the next one, where a
-      // code the bank may already have seen would spend a second attempt — and
-      // would sit alongside the fresh message answering that request, whose
-      // different code makes the pair ambiguous and stops either being sent.
-      await acknowledgeEach(copies, orElse(drop, spend));
-      return 'unknown';
-    }
-    if (result.ok) {
-      // If both of these writes fail the entry stays spendable and a later drain
-      // can resubmit. Nothing here can close that: both go through the same
-      // native module, so a context that refuses one refuses any record we could
-      // keep instead. It has to be closed by the importer making a submit for a
-      // request id idempotent. Until then the entry expires within the TTL.
-      await acknowledgeEach(copies, orElse(drop, spend));
-      return 'submitted';
-    }
-    if (neverJudged(result.status)) return 'failed';
-    await acknowledgeEach(copies, orElse(record, drop));
-    return 'rejected';
+    return await spendChoice(ports, {
+      session,
+      requestId: expectation.requestId,
+      code: found.code,
+      copies: stashedCopiesOf(live, found.code, ports.now()),
+    });
   } catch {
     return 'failed';
   }
+}
+
+/** A held code chosen to answer a request, with every live copy of it. */
+interface Choice {
+  /** The session the code will be sent over. */
+  readonly session: PairedSession;
+  /** The importer's id for the request the code answers. */
+  readonly requestId: string;
+  /** The code to send. */
+  readonly code: string;
+  /** Every live held message carrying that code, settled together. */
+  readonly copies: readonly StashedMessage[];
+}
+
+/**
+ * Sends the chosen code and records what became of every copy of it.
+ *
+ * @param ports - The injected outside world.
+ * @param choice - The code, the request it answers, and its copies.
+ * @returns What became of the code.
+ */
+async function spendChoice(ports: StashDrainPorts, choice: Choice): Promise<StashDrainOutcome> {
+  const { session, requestId, code, copies } = choice;
+  const drop = (id: string): Promise<void> => ports.consume(id);
+  const record = (id: string): Promise<void> => ports.markAttempt(id, requestId);
+  const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
+  const allowance = sendWindow(ports);
+  if (allowance === null) return 'superseded';
+  const result = await sent(
+    (claim) => ports.submit({ session, requestId, code, claim }),
+    ports,
+    allowance,
+  );
+  if (result === 'abandoned') return 'superseded';
+  if (result === 'not-allowed') return 'not-allowed';
+  if (result === 'unknown') {
+    // Marked spent rather than merely attempted, because the scope of the
+    // doubt is the code itself and not this request. Recording it against
+    // this request alone would leave it selectable by the next one, where a
+    // code the bank may already have seen would spend a second attempt — and
+    // would sit alongside the fresh message answering that request, whose
+    // different code makes the pair ambiguous and stops either being sent.
+    await acknowledgeEach(copies, orElse(drop, spend));
+    return 'unknown';
+  }
+  if (result.ok) {
+    // If both of these writes fail the entry stays spendable and a later drain
+    // can resubmit. Nothing here can close that: both go through the same
+    // native module, so a context that refuses one refuses any record we could
+    // keep instead. It has to be closed by the importer making a submit for a
+    // request id idempotent. Until then the entry expires within the TTL.
+    await acknowledgeEach(copies, orElse(drop, spend));
+    return 'submitted';
+  }
+  if (neverJudged(result.status)) return 'failed';
+  await acknowledgeEach(copies, orElse(record, drop));
+  return 'rejected';
 }
 
 /**
@@ -182,20 +226,85 @@ function sendWindow(ports: StashDrainPorts): number | null {
  * nothing would otherwise leave the caller with no answer to act on at the
  * moment it most needs one.
  *
- * @param submit - The send, already bound to its session, request and code.
+ * A send refused as it would have started is kept apart as well: it is the one
+ * failure that proves the code never left the device.
+ *
+ * So is a send that had not started when the wait ran out. A send waits its turn
+ * behind any change to the switches before it starts, and that wait counts
+ * against the same deadline. Reporting a send that never started as `unknown`
+ * would spend a code the importer never saw, and the send would then go out
+ * late, after this run could record anything. So the send claims its start from
+ * here, and once the wait is over the claim is refused, along with the send.
+ *
+ * @param submit - The send, already bound to its session, request and code,
+ *   given the claim it must make as it starts.
+ * @param ports - The injected outside world, carrying this run's lease.
  * @param ms - How long to wait, already trimmed to what the run has left.
- * @returns What the importer said, or `unknown` when it never said anything.
+ * @returns What the importer said, `unknown` when it never said anything,
+ *   `not-allowed` when the send was refused before it started, or `abandoned`
+ *   when it was still waiting to start, or had too little time left to start.
  */
 async function sent(
-  submit: () => Promise<SaveResult>,
+  submit: (claim: () => boolean) => Promise<SaveResult>,
+  ports: StashDrainPorts,
   ms: number,
-): Promise<SaveResult | 'unknown'> {
-  let answer: SaveResult | 'unknown' = 'unknown';
+): Promise<SaveResult | 'unknown' | 'not-allowed' | 'abandoned'> {
+  const start = startClaim(ports, ms);
+  let answer: SaveResult | 'unknown' | 'not-allowed' | undefined;
   const asking = (async () => {
-    answer = await submit();
+    try {
+      answer = await submit(start.claim);
+    } catch (error) {
+      answer = error instanceof SendRefusedError ? 'not-allowed' : 'unknown';
+    }
   })();
   await settleWithin(asking, ms);
-  return answer;
+  return start.stop(answer !== undefined) ? 'abandoned' : (answer ?? 'unknown');
+}
+
+/** The drain's half of a send's claim on its own start. */
+interface StartClaim {
+  /** Asked once by the send as it would start. True means it has started. */
+  readonly claim: () => boolean;
+  /**
+   * Stops waiting for the send. A send that neither settled nor started by now
+   * is abandoned, and a claim it makes later is refused.
+   *
+   * @param settled - Whether the send had settled by the time the wait ended.
+   * @returns True when the send was abandoned, or was refused its start.
+   */
+  readonly stop: (settled: boolean) => boolean;
+}
+
+/**
+ * Lets a send start only while this run is still waiting for it.
+ *
+ * Whichever comes first — the send claiming its start, or the run stopping its
+ * wait — settles the matter, because both happen on the one JavaScript thread.
+ * A claim also needs this run to still hold its lease, with at least the
+ * minimum send time left of its allowance, for the reason {@link sendWindow}
+ * refuses a send with less: one squeezed into a sliver is near-certain to be
+ * cut off unanswered, spending the code for nothing.
+ *
+ * @param ports - The injected outside world, carrying this run's lease.
+ * @param ms - How long the run waits for the send.
+ * @returns The claim to give the send, and the way to stop waiting.
+ */
+function startClaim(ports: StashDrainPorts, ms: number): StartClaim {
+  const endsWithRemaining = ports.remainingMs() - ms;
+  let state: 'waiting' | 'started' | 'abandoned' = 'waiting';
+  return {
+    claim: () => {
+      if (state !== 'waiting') return false;
+      const room = ports.remainingMs() - endsWithRemaining;
+      state = ports.stillOwned() && room >= MIN_SEND_MS ? 'started' : 'abandoned';
+      return state === 'started';
+    },
+    stop: (settled) => {
+      if (!settled && state === 'waiting') state = 'abandoned';
+      return state === 'abandoned';
+    },
+  };
 }
 
 /**

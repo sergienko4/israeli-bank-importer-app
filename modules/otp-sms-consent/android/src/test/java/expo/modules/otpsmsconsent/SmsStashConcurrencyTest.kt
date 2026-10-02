@@ -89,7 +89,9 @@ private class FreezablePrefs : SharedPreferences {
       val touchesEntries = ENTRIES_KEY in puts || ENTRIES_KEY in removals
       if (touchesEntries && freezeNext.compareAndSet(true, false)) {
         frozen.countDown()
-        thaw.await(WAIT_SECONDS, TimeUnit.SECONDS)
+        // A thaw that timed out would let this write land before the competing call
+        // starts, and the test would pass without the race it exists to run.
+        assertTrue("the frozen write was never thawed", thaw.await(WAIT_SECONDS, TimeUnit.SECONDS))
       }
       synchronized(values) {
         removals.forEach { values.remove(it) }

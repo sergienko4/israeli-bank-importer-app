@@ -145,7 +145,9 @@ describe('changing the pairing while capture runs (property)', () => {
           mockedSet.mockImplementation((key, value) =>
             later(() => {
               storage.set(key, value);
-              if (key === CONNECTION_KEY && value.includes(IMPORTER_B)) events.push('B stored');
+              if (key !== CONNECTION_KEY) return;
+              const { baseUrl } = JSON.parse(value) as { baseUrl: string };
+              if (baseUrl === IMPORTER_B) events.push('B stored');
             }),
           );
           mockedDelete.mockImplementation((key) =>

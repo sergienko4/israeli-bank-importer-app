@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.14](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.13...israeli-bank-importer-app-v0.2.14) (2026-10-02)
+
+
+### Bug Fixes
+
+* **auth:** make refresh-token renewal safe for background work ([#138](https://github.com/sergienko4/israeli-bank-importer-app/issues/138)) ([25c5ed0](https://github.com/sergienko4/israeli-bank-importer-app/commit/25c5ed026475f9e62137d5bec5019382f77506ea))
+* **otp:** capture SMS codes with the app closed ([#139](https://github.com/sergienko4/israeli-bank-importer-app/issues/139)) ([c2a63cc](https://github.com/sergienko4/israeli-bank-importer-app/commit/c2a63cc999c6a3872d849f772bf11f3d48c77eff))
+* **otp:** serialize writes to held SMS messages ([#141](https://github.com/sergienko4/israeli-bank-importer-app/issues/141)) ([9341266](https://github.com/sergienko4/israeli-bank-importer-app/commit/9341266fc7170de06cef5066ce0b0d035b05cb09))
+* **release:** guide restoring a withdrawn SMS APK ([#142](https://github.com/sergienko4/israeli-bank-importer-app/issues/142)) ([0f52cd0](https://github.com/sergienko4/israeli-bank-importer-app/commit/0f52cd0a9c30c21366ef50904a397116742c4d12))
+
 ## [0.2.13](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.12...israeli-bank-importer-app-v0.2.13) (2026-09-30)
 
 

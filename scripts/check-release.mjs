@@ -774,18 +774,23 @@ function stringsIn(value) {
  *
  * Only expression text is read: each `${{ }}`, plus `ifText`, which GitHub
  * evaluates whole. Both `steps.<id>` and `steps['<id>']` count, and `steps`
- * must be the root, not a property such as `inputs.steps`.
+ * must be the root, not a property such as `inputs.steps`. Quoted literals are
+ * skipped whole, as GitHub's template reader does: their text is never a read,
+ * and a `}}` inside one does not end the expression.
  *
  * @param {unknown} value - A parsed YAML node.
  * @param {unknown} [ifText] - The node's `if`, when it has one.
  * @returns {string[]} The ids read.
  */
 function stepIdsReadIn(value, ifText) {
-  const expressions = captures(stringsIn(value), /\$\{\{([\s\S]*?)\}\}/gu);
+  const expressions = captures(stringsIn(value), /\$\{\{((?:'[^']*'|[^'}]|\}(?!\}))*)\}\}/gu);
   const bare = typeof ifText === 'string' ? [ifText] : [];
-  return [
-    ...new Set(captures([...bare, ...expressions], /(?<![\w.-])steps(?:\.|\[\s*')([\w-]+)/gu)),
-  ];
+  const reads = [...bare, ...expressions].flatMap((text) =>
+    [...text.matchAll(/'[^']*'|(?<![\w.-])steps(?:\.([\w-]+)|\[\s*'([\w-]+)'\s*\])/gu)].flatMap(
+      (match) => match[1] ?? match[2] ?? [],
+    ),
+  );
+  return [...new Set(reads)];
 }
 
 /**

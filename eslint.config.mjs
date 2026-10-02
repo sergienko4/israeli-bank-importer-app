@@ -102,6 +102,9 @@ export default tseslint.config(
       // Internal notes and local proof harnesses; git-ignored, never shipped.
       'tasks/**',
       'android/**',
+      // Gradle output of the local native modules, git-ignored like the above.
+      // Running their JVM tests leaves an HTML report with its own scripts.
+      'modules/*/android/build/**',
       'ios/**',
       'babel.config.js',
       'metro.config.js',

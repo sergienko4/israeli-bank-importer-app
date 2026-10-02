@@ -30,4 +30,10 @@ dependencies {
   // screen. Unversioned, matching every expo module: the React Native gradle
   // plugin resolves it to the version the app is built against.
   implementation "com.facebook.react:react-android"
+
+  // Plain JVM tests for the stash, with no device and no Robolectric. Unit tests
+  // compile against a stubbed android.jar whose org.json throws, so the real
+  // library is put ahead of it. Both match the versions expo-modules-core tests on.
+  testImplementation "junit:junit:4.13.2"
+  testImplementation "org.json:json:20250517"
 }

@@ -968,7 +968,8 @@ function checkAssetSafety(workflows, actions) {
     rule,
     recoveryIndex > standardGuardIndex &&
       recoveryIndex < backupCleanupIndex &&
-      recovery?.if === "failure() && steps.prepare-upload.outputs.restore_sms == 'true'" &&
+      recovery?.if ===
+        "(failure() || cancelled()) && steps.prepare-upload.outputs.restore_sms == 'true'" &&
       typeof recovery.run === 'string' &&
       recovery.run.includes('::error') &&
       recovery.run.includes('$GITHUB_STEP_SUMMARY') &&

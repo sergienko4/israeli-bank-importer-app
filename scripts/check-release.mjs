@@ -769,27 +769,68 @@ function stringsIn(value) {
   return typeof value === 'object' && value !== null ? Object.values(value).flatMap(stringsIn) : [];
 }
 
+/** Stands for a `steps[...]` index no step id can be read from. */
+const COMPUTED_STEP_READ = '<computed index>';
+
+/**
+ * Splits expression text into tokens the way GitHub's lexer does.
+ *
+ * As in actions/runner's `LexicalAnalyzer`, whitespace between tokens is
+ * skipped, a quoted literal with its `''` escapes is one token, and a keyword
+ * runs to the next whitespace, bracket, comma, dot or operator.
+ *
+ * @param {string} text - Expression text.
+ * @returns {string[]} The tokens, literals still quoted.
+ */
+function expressionTokens(text) {
+  return captures([text], /('(?:[^']|'')*'|[()*,.[\]]|[!&<=>|]+|[^\s!&'(),.<=>[\]|]+)/gu);
+}
+
+/**
+ * The step id that a `steps` token at `index` reads, if any.
+ *
+ * GitHub resolves the context and its keys ignoring case, so the id comes back
+ * lower-cased. A wildcard or the whole context names no one step; an index that
+ * is not a single literal cannot be checked, so it is returned as such.
+ *
+ * @param {string[]} tokens - One expression's tokens.
+ * @param {number} index - Where a `steps` named value starts.
+ * @returns {string[]} The id read, or none.
+ */
+function stepReadAt(tokens, index) {
+  const [next, key = '', close] = tokens.slice(index + 1, index + 4);
+  if (next === '.') {
+    return /^[a-z_][\w-]*$/iu.test(key) ? [key.toLowerCase()] : [];
+  }
+  if (next !== '[' || key === '*') {
+    return [];
+  }
+  const literal = key.startsWith("'") && close === ']';
+  return [literal ? key.slice(1, -1).replaceAll("''", "'").toLowerCase() : COMPUTED_STEP_READ];
+}
+
 /**
  * The step ids that a value's expressions read through the `steps` context.
  *
  * Only expression text is read: each `${{ }}`, plus `ifText`, which GitHub
- * evaluates whole. Both `steps.<id>` and `steps['<id>']` count, and `steps`
- * must be the root, not a property such as `inputs.steps`. Quoted literals are
- * skipped whole, as GitHub's template reader does: their text is never a read,
- * and a `}}` inside one does not end the expression.
+ * evaluates whole. `steps` counts in any case and spacing, but only as the
+ * root, not as a property such as `inputs.steps`. Quoted literals are skipped
+ * whole, as GitHub's template reader does: their text is never a read, and a
+ * `}}` inside one does not end the expression.
  *
  * @param {unknown} value - A parsed YAML node.
  * @param {unknown} [ifText] - The node's `if`, when it has one.
- * @returns {string[]} The ids read.
+ * @returns {string[]} The ids read, lower-cased.
  */
 function stepIdsReadIn(value, ifText) {
   const expressions = captures(stringsIn(value), /\$\{\{((?:'[^']*'|[^'}]|\}(?!\}))*)\}\}/gu);
   const bare = typeof ifText === 'string' ? [ifText] : [];
-  const reads = [...bare, ...expressions].flatMap((text) =>
-    [...text.matchAll(/'[^']*'|(?<![\w.-])steps(?:\.([\w-]+)|\[\s*'([\w-]+)'\s*\])/gu)].flatMap(
-      (match) => match[1] ?? match[2] ?? [],
-    ),
-  );
+  const reads = [...bare, ...expressions].flatMap((text) => {
+    const tokens = expressionTokens(text);
+    return tokens.flatMap((token, index) =>
+      token.toLowerCase() === 'steps' && tokens[index - 1] !== '.' ? stepReadAt(tokens, index) : [],
+    );
+  });
   return [...new Set(reads)];
 }
 
@@ -798,7 +839,9 @@ function stepIdsReadIn(value, ifText) {
  *
  * GitHub resolves a read of an undeclared step to null rather than failing, so
  * a condition keyed on a renamed or dropped id is silently false. A step sees
- * the steps before it; a job output sees every step of its job.
+ * the steps before it; a job output sees every step of its job. Ids match
+ * ignoring case, as GitHub's lookup does, and an index no id can be read from
+ * is reported too, since nothing here can say which step it names.
  *
  * @param {any} doc - The parsed workflow.
  * @returns {string[]} Each dangling read as `job/step -> id`.
@@ -806,7 +849,10 @@ function stepIdsReadIn(value, ifText) {
 function danglingStepReads(doc) {
   return jobsOf(doc).flatMap(([jobId, job]) => {
     const steps = job.steps ?? [];
-    const declared = (id, count) => steps.slice(0, count).some((step) => step.id === id);
+    const declared = (id, count) =>
+      steps
+        .slice(0, count)
+        .some((step) => typeof step.id === 'string' && step.id.toLowerCase() === id);
     const stepReads = steps.flatMap((step, index) =>
       stepIdsReadIn(step, step.if)
         .filter((id) => !declared(id, index))

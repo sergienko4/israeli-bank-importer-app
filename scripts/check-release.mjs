@@ -159,6 +159,23 @@ function logicalShellLines(run) {
 }
 
 /**
+ * Whether a step's shell sets `umask 077` before it first names a private path.
+ *
+ * The file is created by that first line, so a mask set later, or reset in
+ * between, leaves it readable by other users.
+ *
+ * @param {string} run - A workflow step's shell body.
+ * @param {string} privatePath - The file the step must create as owner-only.
+ * @returns {boolean} The last `umask` before the first mention is `umask 077`.
+ */
+function writesPrivately(run, privatePath) {
+  const lines = logicalShellLines(run);
+  const write = lines.findIndex((line) => line.includes(privatePath));
+  const masks = lines.slice(0, Math.max(write, 0)).filter((line) => /^umask\b/u.test(line));
+  return write !== -1 && masks.at(-1) === 'umask 077';
+}
+
+/**
  * Accepts only the narrow shell forms used by credentialed EAS steps.
  *
  * @param {string} run - A workflow step's shell body.
@@ -1618,6 +1635,7 @@ function checkSecretBoundary(workflows) {
     (step) => step.name === 'Check the matching update serves production-sms',
   );
   const pull = steps[pullIndex];
+  const key = steps[keyIndex];
   const build = steps[buildIndex];
   const cleanup = steps[cleanupIndex];
   const lookup = steps[lookupIndex];
@@ -1643,11 +1661,18 @@ function checkSecretBoundary(workflows) {
   check(
     rule,
     typeof pull?.run === 'string' &&
-      pull.run.includes('umask 077') &&
       pull.run.includes('eas env:pull --environment production') &&
       pull.run.includes('--path "$RUNNER_TEMP/eas-production.env"') &&
       JSON.stringify(pull.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }),
     `${SMS_WORKFLOW} should pull production variables into a private file with only EXPO_TOKEN`,
+  );
+  check(
+    rule,
+    typeof pull?.run === 'string' &&
+      writesPrivately(pull.run, '$RUNNER_TEMP/eas-production.env') &&
+      typeof key?.run === 'string' &&
+      writesPrivately(key.run, '$RUNNER_TEMP/upload.keystore'),
+    `${SMS_WORKFLOW} should set umask 077 before writing the pulled environment or the upload keystore`,
   );
   check(
     rule,

@@ -757,6 +757,130 @@ function checkIsolation(workflows) {
 }
 
 /**
+ * Every string anywhere inside a parsed YAML value.
+ *
+ * @param {unknown} value - A parsed YAML node.
+ * @returns {string[]} Its strings, depth first.
+ */
+function stringsIn(value) {
+  if (typeof value === 'string') {
+    return [value];
+  }
+  return typeof value === 'object' && value !== null ? Object.values(value).flatMap(stringsIn) : [];
+}
+
+/** Stands for a `steps[...]` index no step id can be read from. */
+const COMPUTED_STEP_READ = '<computed index>';
+
+/**
+ * Splits expression text into tokens the way GitHub's lexer does.
+ *
+ * As in actions/runner's `LexicalAnalyzer`, whitespace between tokens is
+ * skipped, a quoted literal with its `''` escapes is one token, and a keyword
+ * runs to the next whitespace, bracket, comma, dot or operator.
+ *
+ * @param {string} text - Expression text.
+ * @returns {string[]} The tokens, literals still quoted.
+ */
+function expressionTokens(text) {
+  return captures([text], /('(?:[^']|'')*'|[()*,.[\]]|[!&<=>|]+|[^\s!&'(),.<=>[\]|]+)/gu);
+}
+
+/**
+ * The step id that a `steps` token at `index` reads, if any.
+ *
+ * GitHub resolves the context and its keys ignoring case, so the id comes back
+ * lower-cased. A wildcard or the whole context names no one step; an index that
+ * is not a single literal cannot be checked, so it is returned as such.
+ *
+ * @param {string[]} tokens - One expression's tokens.
+ * @param {number} index - Where a `steps` named value starts.
+ * @returns {string[]} The id read, or none.
+ */
+function stepReadAt(tokens, index) {
+  const [next, key = '', close] = tokens.slice(index + 1, index + 4);
+  if (next === '.') {
+    return /^[a-z_][\w-]*$/iu.test(key) ? [key.toLowerCase()] : [];
+  }
+  if (next !== '[' || key === '*') {
+    return [];
+  }
+  const literal = key.startsWith("'") && close === ']';
+  return [literal ? key.slice(1, -1).replaceAll("''", "'").toLowerCase() : COMPUTED_STEP_READ];
+}
+
+/**
+ * The step ids that a value's expressions read through the `steps` context.
+ *
+ * Only expression text is read: each `${{ }}`, plus `ifText`, which GitHub
+ * evaluates whole. `steps` counts in any case and spacing, but only as the
+ * root, not as a property such as `inputs.steps`. Quoted literals are skipped
+ * whole, as GitHub's template reader does: their text is never a read, and a
+ * `}}` inside one does not end the expression.
+ *
+ * @param {unknown} value - A parsed YAML node.
+ * @param {unknown} [ifText] - The node's `if`, when it has one.
+ * @returns {string[]} The ids read, lower-cased.
+ */
+function stepIdsReadIn(value, ifText) {
+  const expressions = captures(stringsIn(value), /\$\{\{((?:'[^']*'|[^'}]|\}(?!\}))*)\}\}/gu);
+  const bare = typeof ifText === 'string' ? [ifText] : [];
+  const reads = [...bare, ...expressions].flatMap((text) => {
+    const tokens = expressionTokens(text);
+    return tokens.flatMap((token, index) =>
+      token.toLowerCase() === 'steps' && tokens[index - 1] !== '.' ? stepReadAt(tokens, index) : [],
+    );
+  });
+  return [...new Set(reads)];
+}
+
+/**
+ * The `steps` reads in a workflow that name no step they can see.
+ *
+ * GitHub resolves a read of an undeclared step to null rather than failing, so
+ * a condition keyed on a renamed or dropped id is silently false. A step sees
+ * the steps before it; a job output sees every step of its job. Ids match
+ * ignoring case, as GitHub's lookup does, and an index no id can be read from
+ * is reported too, since nothing here can say which step it names.
+ *
+ * @param {any} doc - The parsed workflow.
+ * @returns {string[]} Each dangling read as `job/step -> id`.
+ */
+function danglingStepReads(doc) {
+  return jobsOf(doc).flatMap(([jobId, job]) => {
+    const steps = job.steps ?? [];
+    const declared = (id, count) =>
+      steps
+        .slice(0, count)
+        .some((step) => typeof step.id === 'string' && step.id.toLowerCase() === id);
+    const stepReads = steps.flatMap((step, index) =>
+      stepIdsReadIn(step, step.if)
+        .filter((id) => !declared(id, index))
+        .map((id) => `${jobId}/${String(step.name ?? step.uses ?? index)} -> ${id}`),
+    );
+    const outputReads = stepIdsReadIn(job.outputs)
+      .filter((id) => !declared(id, steps.length))
+      .map((id) => `${jobId}/outputs -> ${id}`);
+    return [...stepReads, ...outputReads];
+  });
+}
+
+/**
+ * Whether recovery text names Release APK only before Release SMS APK.
+ *
+ * The SMS build repackages the standard APK from the release, so an
+ * instruction that lists them the other way round cannot be followed.
+ *
+ * @param {string} text - One recovery message.
+ * @returns {boolean} Both are named, every standard mention first.
+ */
+function namesStandardRebuildFirst(text) {
+  const lastStandard = text.lastIndexOf('Release APK');
+  const firstSms = text.indexOf('Release SMS APK');
+  return lastStandard !== -1 && firstSms !== -1 && lastStandard < firstSms;
+}
+
+/**
  * Asserts rule 6: release-please calls the SMS build after its two inputs.
  *
  * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
@@ -899,6 +1023,14 @@ function checkAssetSafety(workflows, actions) {
     [SMS_WORKFLOW, sms],
   ]) {
     const steps = stepsOf(doc);
+    // The pinned conditions below read step ids; one that names no step is
+    // silently false, which skips a restore or a guard instead of failing.
+    const dangling = danglingStepReads(doc);
+    check(
+      rule,
+      dangling.length === 0,
+      `${name} should read only steps declared earlier in the same job, not ${JSON.stringify(dangling)}`,
+    );
     const uploadIndex = steps.findIndex(
       (step) => typeof step.run === 'string' && /\bgh release upload\b/u.test(step.run),
     );
@@ -957,6 +1089,58 @@ function checkAssetSafety(workflows, actions) {
       backupCleanup.run === 'rm -rf "$RUNNER_TEMP/release-asset-backup"',
     `${STANDARD_WORKFLOW} should always remove its private SMS backup`,
   );
+  // The backup dies with the runner, so a run that withdrew the SMS APK and
+  // failed must say so, and say how to put it back, before the cleanup step.
+  const recoveryIndex = standardSteps.findIndex(
+    (step) => step.name === 'Explain how to restore the SMS APK',
+  );
+  const recovery = standardSteps[recoveryIndex];
+  const backupCleanupIndex = standardSteps.indexOf(backupCleanup);
+  check(
+    rule,
+    recoveryIndex > standardGuardIndex &&
+      recoveryIndex < backupCleanupIndex &&
+      recovery?.if ===
+        "(failure() || cancelled()) && steps.prepare-upload.outputs.sms_withdrawal == 'attempted'",
+    `${STANDARD_WORKFLOW} should explain how to restore a withdrawn SMS APK when it fails`,
+  );
+  // A text search cannot tell whether the error and summary reach the run: a
+  // redirect, an `exec` or an early `exit` silences them and keeps every word.
+  // So the body is pinned whole, like the secret-writing steps.
+  const expectedRecoveryRun = [
+    'echo "::error title=SMS APK may be missing::This run started withdrawing the SMS APK, then failed or was cancelled. If the release lacks it, run Release APK if needed, then Release SMS APK, for this tag; see the run summary."',
+    '{',
+    'echo "### SMS APK may be missing from \\`$RELEASE_TAG\\`"',
+    'echo',
+    'echo "This run started withdrawing \\`israeli-bank-importer.sms.apk\\` before"',
+    'echo "replacing the standard APK, then failed or was cancelled. The backup it"',
+    'echo "took is gone with the runner. If the release no longer lists the SMS APK,"',
+    'echo "restore it in this order, because the SMS build repackages the standard APK:"',
+    'echo',
+    'echo "1. If the release has no \\`israeli-bank-importer.apk\\` either, run"',
+    'echo " **Release APK** for \\`$RELEASE_TAG\\`."',
+    'echo "2. Run **Release SMS APK** for \\`$RELEASE_TAG\\`."',
+    '} >> "$GITHUB_STEP_SUMMARY"',
+  ];
+  const recoveryLines = typeof recovery?.run === 'string' ? logicalShellLines(recovery.run) : [];
+  check(
+    rule,
+    JSON.stringify(recoveryLines) === JSON.stringify(expectedRecoveryRun),
+    `${STANDARD_WORKFLOW} should run only the pinned recovery shell, so its error and summary reach the run`,
+  );
+  const recoveryAnnotation = recoveryLines.filter((line) => line.includes('::error')).join('\n');
+  const recoverySummary = recoveryLines.filter((line) => !line.includes('::error')).join('\n');
+  check(
+    rule,
+    namesStandardRebuildFirst(recoveryAnnotation) && namesStandardRebuildFirst(recoverySummary),
+    `${STANDARD_WORKFLOW} should say to restore the standard APK before the SMS APK, in its error and its summary`,
+  );
+  check(
+    rule,
+    JSON.stringify(recovery?.env) === JSON.stringify({ RELEASE_TAG: '${{ inputs.tag }}' }) &&
+      recoverySummary.includes('$RELEASE_TAG'),
+    `${STANDARD_WORKFLOW} should name the release tag from inputs.tag, and need nothing else, to explain a restore`,
+  );
 
   const events = [];
   const prepared = prepareStandardApkReplacement(
@@ -977,13 +1161,48 @@ function checkAssetSafety(workflows, actions) {
         events.push('measure');
         return 4;
       },
+      markWithdrawal: () => events.push('mark'),
       deleteAsset: () => events.push('delete'),
     },
   );
   check(
     rule,
-    prepared && JSON.stringify(events) === JSON.stringify(['download', 'measure', 'delete']),
-    `${STANDARD_REPLACEMENT} should download and measure SMS before withdrawing it`,
+    prepared &&
+      JSON.stringify(events) === JSON.stringify(['download', 'measure', 'mark', 'delete']),
+    `${STANDARD_REPLACEMENT} should download, measure and mark SMS before withdrawing it`,
+  );
+  // A DELETE can land on GitHub and still fail here, so the mark that keys the
+  // recovery note must already be written when it throws.
+  let markedBeforeFailedDelete = false;
+  let failedDeleteRejected = false;
+  try {
+    prepareStandardApkReplacement(
+      { assets: [{ id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 }] },
+      {
+        downloadToBackup: () => undefined,
+        readBackupSize: () => 4,
+        markWithdrawal: () => {
+          markedBeforeFailedDelete = true;
+        },
+        deleteAsset: () => {
+          throw new Error('HTTP 502');
+        },
+      },
+    );
+  } catch {
+    failedDeleteRejected = true;
+  }
+  check(
+    rule,
+    markedBeforeFailedDelete && failedDeleteRejected,
+    `${STANDARD_REPLACEMENT} should leave its withdrawal mark when the DELETE fails`,
+  );
+  check(
+    rule,
+    readText(STANDARD_REPLACEMENT)?.includes(
+      "markWithdrawal: () => writeOutput(output, 'sms_withdrawal', 'attempted')",
+    ) === true,
+    `${STANDARD_REPLACEMENT} should write its withdrawal mark as a step output`,
   );
   let deletedAfterBadDownload = false;
   try {
@@ -1000,6 +1219,9 @@ function checkAssetSafety(workflows, actions) {
       {
         downloadToBackup: () => undefined,
         readBackupSize: () => 3,
+        markWithdrawal: () => {
+          deletedAfterBadDownload = true;
+        },
         deleteAsset: () => {
           deletedAfterBadDownload = true;
         },
@@ -1011,7 +1233,7 @@ function checkAssetSafety(workflows, actions) {
   check(
     rule,
     !deletedAfterBadDownload,
-    `${STANDARD_REPLACEMENT} should never delete SMS after an incomplete download`,
+    `${STANDARD_REPLACEMENT} should never mark or delete SMS after an incomplete download`,
   );
 
   const malformedReleases = [
@@ -1155,6 +1377,9 @@ function checkAssetSafety(workflows, actions) {
           touchedRemoteState = true;
           return 4;
         },
+        markWithdrawal: () => {
+          touchedRemoteState = true;
+        },
         deleteAsset: () => {
           touchedRemoteState = true;
         },
@@ -1176,6 +1401,9 @@ function checkAssetSafety(workflows, actions) {
       },
       readBackupSize: () => {
         throw new Error('A valid unrelated asset must not be measured.');
+      },
+      markWithdrawal: () => {
+        throw new Error('A valid unrelated asset must not be marked.');
       },
       deleteAsset: () => {
         throw new Error('A valid unrelated asset must not be deleted.');
@@ -1485,6 +1713,7 @@ function checkSecretBoundary(workflows) {
     (step) => step.name === 'Check the matching update serves production-sms',
   );
   const pull = steps[pullIndex];
+  const key = steps[keyIndex];
   const build = steps[buildIndex];
   const cleanup = steps[cleanupIndex];
   const lookup = steps[lookupIndex];
@@ -1492,6 +1721,21 @@ function checkSecretBoundary(workflows) {
     'node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs ' +
     '--reference "$RUNNER_TEMP/reference/israeli-bank-importer.apk" ' +
     '--out israeli-bank-importer.sms.apk';
+  // Each private file is created by the line right after `umask 077`. Shell
+  // can reset the mask in too many ways (`builtin umask`, a reset on the write's
+  // own line) to look for them, so both bodies are pinned whole.
+  const expectedPullRun = [
+    'umask 077',
+    'eas env:pull --environment production --path "$RUNNER_TEMP/eas-production.env" --non-interactive',
+  ];
+  const expectedKeyRun = [
+    'if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then',
+    'echo "::error::The release-signing environment is missing ANDROID_KEYSTORE_BASE64."',
+    'exit 1',
+    'fi',
+    'umask 077',
+    `printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"`,
+  ];
   check(
     rule,
     JSON.stringify(guard?.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }) &&
@@ -1510,11 +1754,18 @@ function checkSecretBoundary(workflows) {
   check(
     rule,
     typeof pull?.run === 'string' &&
-      pull.run.includes('umask 077') &&
       pull.run.includes('eas env:pull --environment production') &&
       pull.run.includes('--path "$RUNNER_TEMP/eas-production.env"') &&
       JSON.stringify(pull.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }),
     `${SMS_WORKFLOW} should pull production variables into a private file with only EXPO_TOKEN`,
+  );
+  check(
+    rule,
+    typeof pull?.run === 'string' &&
+      JSON.stringify(logicalShellLines(pull.run)) === JSON.stringify(expectedPullRun) &&
+      typeof key?.run === 'string' &&
+      JSON.stringify(logicalShellLines(key.run)) === JSON.stringify(expectedKeyRun),
+    `${SMS_WORKFLOW} should run only the pinned env pull and keystore shell, each write right after umask 077`,
   );
   check(
     rule,

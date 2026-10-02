@@ -770,10 +770,30 @@ function stringsIn(value) {
 }
 
 /**
- * The `steps.<id>` reads in a workflow that name no earlier step of their job.
+ * The step ids that a value's expressions read through the `steps` context.
+ *
+ * Only expression text is read: each `${{ }}`, plus `ifText`, which GitHub
+ * evaluates whole. Both `steps.<id>` and `steps['<id>']` count, and `steps`
+ * must be the root, not a property such as `inputs.steps`.
+ *
+ * @param {unknown} value - A parsed YAML node.
+ * @param {unknown} [ifText] - The node's `if`, when it has one.
+ * @returns {string[]} The ids read.
+ */
+function stepIdsReadIn(value, ifText) {
+  const expressions = captures(stringsIn(value), /\$\{\{([\s\S]*?)\}\}/gu);
+  const bare = typeof ifText === 'string' ? [ifText] : [];
+  return [
+    ...new Set(captures([...bare, ...expressions], /(?<![\w.-])steps(?:\.|\[\s*')([\w-]+)/gu)),
+  ];
+}
+
+/**
+ * The `steps` reads in a workflow that name no step they can see.
  *
  * GitHub resolves a read of an undeclared step to null rather than failing, so
- * a condition keyed on a renamed or dropped id is silently false.
+ * a condition keyed on a renamed or dropped id is silently false. A step sees
+ * the steps before it; a job output sees every step of its job.
  *
  * @param {any} doc - The parsed workflow.
  * @returns {string[]} Each dangling read as `job/step -> id`.
@@ -781,11 +801,16 @@ function stringsIn(value) {
 function danglingStepReads(doc) {
   return jobsOf(doc).flatMap(([jobId, job]) => {
     const steps = job.steps ?? [];
-    return steps.flatMap((step, index) =>
-      captures(stringsIn(step), /\bsteps\.([\w-]+)\./gu)
-        .filter((id) => !steps.slice(0, index).some((earlier) => earlier.id === id))
+    const declared = (id, count) => steps.slice(0, count).some((step) => step.id === id);
+    const stepReads = steps.flatMap((step, index) =>
+      stepIdsReadIn(step, step.if)
+        .filter((id) => !declared(id, index))
         .map((id) => `${jobId}/${String(step.name ?? step.uses ?? index)} -> ${id}`),
     );
+    const outputReads = stepIdsReadIn(job.outputs)
+      .filter((id) => !declared(id, steps.length))
+      .map((id) => `${jobId}/outputs -> ${id}`);
+    return [...stepReads, ...outputReads];
   });
 }
 

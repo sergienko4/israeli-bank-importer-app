@@ -1,6 +1,7 @@
 import type { BackgroundSubmitPorts } from './otpBackgroundSubmit';
 import { autoSubmitFromMessage } from './otpBackgroundSubmit';
 import { SendRefusedError } from './otpCaptureSwitch';
+import { MIN_SEND_MS, TASK_BUDGET_MS } from './otpDeadline';
 
 /**
  * The background submit path. This runs with no UI attached and possibly with
@@ -34,10 +35,41 @@ function ports(overrides: Partial<BackgroundSubmitPorts> = {}) {
       return Promise.resolve({ ok: true });
     },
     now: () => NOW,
+    remainingMs: () => TASK_BUDGET_MS,
     ...overrides,
   };
   return { ports: base, submitted };
 }
+
+describe('the claim on a send start', () => {
+  it.each([
+    { left: TASK_BUDGET_MS, outcome: 'submitted', sends: 1 },
+    { left: MIN_SEND_MS, outcome: 'submitted', sends: 1 },
+    { left: MIN_SEND_MS - 1, outcome: 'not-allowed', sends: 0 },
+    { left: 0, outcome: 'not-allowed', sends: 0 },
+  ])('with $left ms left, ends $outcome', async ({ left, outcome, sends }) => {
+    // Once the task returns nothing keeps the process running, so a send with
+    // too little time to finish inside the task must not start at all.
+    const { ports: p, submitted } = ports({ remainingMs: () => left });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe(outcome);
+    expect(submitted).toHaveLength(sends);
+  });
+
+  it('reads the time left as the send starts, not as the message arrives', async () => {
+    let left = TASK_BUDGET_MS;
+    const { ports: p, submitted } = ports({
+      remainingMs: () => left,
+      getPending: () => {
+        left = MIN_SEND_MS - 1;
+        return Promise.resolve([LIVE]);
+      },
+    });
+
+    await expect(autoSubmitFromMessage('Your code is 481920', p)).resolves.toBe('not-allowed');
+    expect(submitted).toEqual([]);
+  });
+});
 
 describe('autoSubmitFromMessage', () => {
   it('submits the code against the pending request', async () => {

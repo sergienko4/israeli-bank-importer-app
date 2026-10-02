@@ -98,6 +98,7 @@ function submitBody(body: string, left: RemainingBudget): Promise<BackgroundSubm
     getPending: getPendingOtpUnattended,
     submit: submitWhileAllowed,
     now: Date.now,
+    remainingMs: left,
   });
 }
 

@@ -110,6 +110,7 @@ describe('turning capture off while it runs (property)', () => {
               getPending: () => later(() => [LIVE]),
               submit: submitWhileAllowed,
               now: () => NOW,
+              remainingMs: () => 60_000,
             }).catch(() => 'threw');
 
           await s.waitFor(

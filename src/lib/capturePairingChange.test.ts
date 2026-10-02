@@ -168,6 +168,7 @@ describe('a capture from the waking message that loaded the session first', () =
         },
         submit: submitWhileAllowed,
         now: () => NOW,
+        remainingMs: () => 60_000,
       });
 
       expect(outcome).toBe('not-allowed');

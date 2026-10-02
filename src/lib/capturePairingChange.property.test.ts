@@ -192,6 +192,7 @@ describe('changing the pairing while capture runs (property)', () => {
               }
             },
             now: () => NOW,
+            remainingMs: () => 60_000,
           };
           const capture = (): Promise<unknown> =>
             later(() =>
@@ -213,7 +214,6 @@ describe('changing the pairing while capture runs (property)', () => {
                         );
                       }),
                     stillOwned: () => true,
-                    remainingMs: () => 60_000,
                   }),
             ).catch(() => 'threw');
           const arrival = after(arrivalAfter, () => {

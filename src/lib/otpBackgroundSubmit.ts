@@ -22,6 +22,7 @@ import type { Session } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
 import type { PendingOtpRequest } from '../api/otp';
 import { SendRefusedError } from './otpCaptureSwitch';
+import { MIN_SEND_MS } from './otpDeadline';
 import { pickExpectation } from './otpExpectedWindow';
 import { extractOtpCode } from './otpMessage';
 
@@ -78,6 +79,11 @@ export interface BackgroundSubmitPorts {
   readonly submit: (send: CodeSend) => Promise<SaveResult>;
   /** The current time, injected so expiry is testable. */
   readonly now: () => number;
+  /**
+   * How long the caller will keep waiting. Once it returns, nothing keeps the
+   * process running, so a send starts only with at least `MIN_SEND_MS` left.
+   */
+  readonly remainingMs: () => number;
 }
 
 /**
@@ -87,9 +93,9 @@ export interface BackgroundSubmitPorts {
  * so the caller can tell "we chose not to" from "we tried and could not", and —
  * because this path has no screen and may be retried — "we do not know".
  * `not-allowed` means the send was refused as it would have started — the
- * switches had been turned off, or the user had signed in elsewhere or
- * disconnected since the session was loaded — so the code never left the
- * device.
+ * switches had been turned off, the user had signed in elsewhere or
+ * disconnected since the session was loaded, or too little time was left —
+ * so the code never left the device.
  */
 export type BackgroundSubmitOutcome =
   | 'no-code'
@@ -192,10 +198,12 @@ export function neverJudged(status: number | undefined): boolean {
  * A send refused as it would have started is the one throw that proves nothing
  * went out.
  *
- * This path waits as long as the send takes, so it never stops waiting for one
- * that has not started yet, and its claim always holds. The message was handed
- * over rather than held, so a send that starts late cannot leave a copy on
- * offer for a second one.
+ * The send can wait its turn behind a switch write, or be reached only after a
+ * slow load, and the task stops waiting for it once its budget is spent. After
+ * the task returns nothing keeps the process running, so a request started then
+ * could be cut off or frozen mid-flight. The claim therefore refuses a start
+ * with less than {@link MIN_SEND_MS} left. The message was handed over rather
+ * than held, so a refused code never leaves the device and is typed by hand.
  *
  * @param ports - The injected outside world.
  * @param target - The session and request the code answers.
@@ -209,7 +217,11 @@ async function send(
   code: string,
 ): Promise<BackgroundSubmitOutcome> {
   try {
-    const result = await ports.submit({ ...target, code, claim: () => true });
+    const result = await ports.submit({
+      ...target,
+      code,
+      claim: () => ports.remainingMs() >= MIN_SEND_MS,
+    });
     if (result.ok) return 'submitted';
     return neverJudged(result.status) ? 'failed' : 'rejected';
   } catch (error) {

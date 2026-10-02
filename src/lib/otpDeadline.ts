@@ -81,6 +81,9 @@ export const ACK_MARGIN_MS = 5_000;
  * what remains is near-certain to be abandoned. That is not unsafe — it is
  * acknowledged either way — but it spends the held message to no purpose.
  * Refusing leaves it for a run with a full lease behind it.
+ *
+ * A direct send from the SMS task is refused on the same rule for a different
+ * reason: once the task returns, nothing keeps the process running for it.
  */
 export const MIN_SEND_MS = 5_000;
 

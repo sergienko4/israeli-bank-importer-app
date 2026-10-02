@@ -59,6 +59,14 @@ internal data class StashEntry(
  * Expired entries are pruned on the next read rather than waiting for a timer,
  * so a process that never runs again still leaves nothing behind that can be
  * acted on.
+ *
+ * Every change is a read, then a write of the whole list, and the callers run on
+ * different threads: the receiver on the main thread, the module's async calls on
+ * their own queue, and the switch on the JavaScript thread. Unserialized, a
+ * message arriving mid-change writes back the list it read before the change, so
+ * a sign-in's clear, a consumed code or a recorded attempt is undone. Each
+ * changing method therefore holds this object's lock for its read and its write.
+ * All of them run in the app's one process, so that lock covers every caller.
  */
 internal object SmsStash {
   /**
@@ -72,6 +80,7 @@ internal object SmsStash {
    * @param context used to reach the app's private preferences.
    * @param enabled whether messages may be held.
    */
+  @Synchronized
   fun setEnabled(context: Context, enabled: Boolean) {
     val editor = prefs(context).edit().putBoolean(KEY_ENABLED, enabled)
     if (!enabled) editor.remove(KEY_ENTRIES)
@@ -97,6 +106,7 @@ internal object SmsStash {
    * @param timestampMillis when the network handed the message over.
    * @param body the raw text.
    */
+  @Synchronized
   fun put(context: Context, sender: String, timestampMillis: Long, body: String) {
     if (!isEnabled(context)) return
     val id = identify(sender, timestampMillis, body)
@@ -117,6 +127,7 @@ internal object SmsStash {
    * @param nowMillis the current wall-clock time.
    * @return the live entries.
    */
+  @Synchronized
   fun all(context: Context, nowMillis: Long = System.currentTimeMillis()): List<StashEntry> {
     val stored = read(context)
     val live = stored.filter { nowMillis - it.receivedAt < TTL_MILLIS }
@@ -130,6 +141,7 @@ internal object SmsStash {
    * @param context used to reach the app's private preferences.
    * @param id the entry to drop.
    */
+  @Synchronized
   fun consume(context: Context, id: String) {
     write(context, all(context).filterNot { it.id == id })
   }
@@ -145,6 +157,7 @@ internal object SmsStash {
    * @param id the entry that was submitted.
    * @param requestId the request it was submitted against.
    */
+  @Synchronized
   fun markAttempt(context: Context, id: String, requestId: String) {
     val updated = all(context).map { entry ->
       if (entry.id == id && !entry.attempted.contains(requestId)) {
@@ -161,6 +174,7 @@ internal object SmsStash {
    *
    * @param context used to reach the app's private preferences.
    */
+  @Synchronized
   fun clear(context: Context) {
     prefs(context).edit().remove(KEY_ENTRIES).apply()
   }

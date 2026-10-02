@@ -159,23 +159,6 @@ function logicalShellLines(run) {
 }
 
 /**
- * Whether a step's shell sets `umask 077` before it first names a private path.
- *
- * The file is created by that first line, so a mask set later, or reset in
- * between, leaves it readable by other users.
- *
- * @param {string} run - A workflow step's shell body.
- * @param {string} privatePath - The file the step must create as owner-only.
- * @returns {boolean} The last `umask` before the first mention is `umask 077`.
- */
-function writesPrivately(run, privatePath) {
-  const lines = logicalShellLines(run);
-  const write = lines.findIndex((line) => line.includes(privatePath));
-  const masks = lines.slice(0, Math.max(write, 0)).filter((line) => /^umask\b/u.test(line));
-  return write !== -1 && masks.at(-1) === 'umask 077';
-}
-
-/**
  * Accepts only the narrow shell forms used by credentialed EAS steps.
  *
  * @param {string} run - A workflow step's shell body.
@@ -1643,6 +1626,21 @@ function checkSecretBoundary(workflows) {
     'node --env-file="$RUNNER_TEMP/eas-production.env" scripts/build-sms-apk.mjs ' +
     '--reference "$RUNNER_TEMP/reference/israeli-bank-importer.apk" ' +
     '--out israeli-bank-importer.sms.apk';
+  // Each private file is created by the line right after `umask 077`. Shell
+  // can reset the mask in too many ways (`builtin umask`, a reset on the write's
+  // own line) to look for them, so both bodies are pinned whole.
+  const expectedPullRun = [
+    'umask 077',
+    'eas env:pull --environment production --path "$RUNNER_TEMP/eas-production.env" --non-interactive',
+  ];
+  const expectedKeyRun = [
+    'if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then',
+    'echo "::error::The release-signing environment is missing ANDROID_KEYSTORE_BASE64."',
+    'exit 1',
+    'fi',
+    'umask 077',
+    `printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload.keystore"`,
+  ];
   check(
     rule,
     JSON.stringify(guard?.env) === JSON.stringify({ EXPO_TOKEN: EXPO_TOKEN_SECRET }) &&
@@ -1669,10 +1667,10 @@ function checkSecretBoundary(workflows) {
   check(
     rule,
     typeof pull?.run === 'string' &&
-      writesPrivately(pull.run, '$RUNNER_TEMP/eas-production.env') &&
+      JSON.stringify(logicalShellLines(pull.run)) === JSON.stringify(expectedPullRun) &&
       typeof key?.run === 'string' &&
-      writesPrivately(key.run, '$RUNNER_TEMP/upload.keystore'),
-    `${SMS_WORKFLOW} should set umask 077 before writing the pulled environment or the upload keystore`,
+      JSON.stringify(logicalShellLines(key.run)) === JSON.stringify(expectedKeyRun),
+    `${SMS_WORKFLOW} should run only the pinned env pull and keystore shell, each write right after umask 077`,
   );
   check(
     rule,

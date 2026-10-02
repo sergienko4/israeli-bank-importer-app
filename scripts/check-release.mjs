@@ -790,6 +790,21 @@ function danglingStepReads(doc) {
 }
 
 /**
+ * Whether recovery text names Release APK only before Release SMS APK.
+ *
+ * The SMS build repackages the standard APK from the release, so an
+ * instruction that lists them the other way round cannot be followed.
+ *
+ * @param {string} text - One recovery message.
+ * @returns {boolean} Both are named, every standard mention first.
+ */
+function namesStandardRebuildFirst(text) {
+  const lastStandard = text.lastIndexOf('Release APK');
+  const firstSms = text.indexOf('Release SMS APK');
+  return lastStandard !== -1 && firstSms !== -1 && lastStandard < firstSms;
+}
+
+/**
  * Asserts rule 6: release-please calls the SMS build after its two inputs.
  *
  * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
@@ -1014,10 +1029,22 @@ function checkAssetSafety(workflows, actions) {
       typeof recovery.run === 'string' &&
       recovery.run.includes('::error') &&
       recovery.run.includes('$GITHUB_STEP_SUMMARY') &&
-      recovery.run.includes('Release APK') &&
-      recovery.run.includes('Release SMS APK') &&
       !recovery.run.includes('${{'),
     `${STANDARD_WORKFLOW} should explain how to restore a withdrawn SMS APK when it fails`,
+  );
+  const recoveryLines = typeof recovery?.run === 'string' ? logicalShellLines(recovery.run) : [];
+  const recoveryAnnotation = recoveryLines.filter((line) => line.includes('::error')).join('\n');
+  const recoverySummary = recoveryLines.filter((line) => !line.includes('::error')).join('\n');
+  check(
+    rule,
+    namesStandardRebuildFirst(recoveryAnnotation) && namesStandardRebuildFirst(recoverySummary),
+    `${STANDARD_WORKFLOW} should say to restore the standard APK before the SMS APK, in its error and its summary`,
+  );
+  check(
+    rule,
+    JSON.stringify(recovery?.env) === JSON.stringify({ RELEASE_TAG: '${{ inputs.tag }}' }) &&
+      recoverySummary.includes('$RELEASE_TAG'),
+    `${STANDARD_WORKFLOW} should name the release tag from inputs.tag, and need nothing else, to explain a restore`,
   );
 
   const events = [];

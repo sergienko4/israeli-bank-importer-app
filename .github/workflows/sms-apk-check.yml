@@ -2,7 +2,8 @@ name: SMS APK check
 
 # Builds the SMS auto-read APK on a pull request, the way release-apk-sms.yml
 # builds it on a release, so a change that breaks the Gradle build on a GitHub
-# runner fails here rather than on release day.
+# runner fails here rather than on release day. A second job runs the native
+# module's JVM tests, which nothing else runs.
 #
 # Separate from the release workflow on purpose: this one has no Environment,
 # no write permission and no secret, so fork and Dependabot pull requests run
@@ -136,3 +137,22 @@ jobs:
           rm -f "$RUNNER_TEMP/check.keystore" "$RUNNER_TEMP/rotated.keystore" \
             "$RUNNER_TEMP/signing-lineage" "$RUNNER_TEMP/signature-lineage" \
             "$RUNNER_TEMP/signature-no-lineage" "$RUNNER_TEMP/signature-lineage.log"
+
+  native-unit-tests:
+    # Plain JVM tests for the native module, chiefly the races between the SMS
+    # receiver and the module's own calls on the held-message stash. Prebuild
+    # makes the Gradle project they run in; nothing is built for a device.
+    name: Native module tests (JVM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node
+      - uses: ./.github/actions/setup-android-build
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Run the otp-sms-consent JVM tests
+        working-directory: android
+        run: ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain

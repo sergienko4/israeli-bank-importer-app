@@ -65,10 +65,10 @@ channel only it follows.
 `release-ota.yml` publishes each release to both channels, one matrix leg each.
 Its signing key lives in the `release-signing` Environment, limited to `main`.
 `sms-apk-check.yml` builds the same APK with a throwaway key on pull requests,
-with no secrets, and `npm run check:release` in CI keeps the asset names,
-channels and tag provenance of these workflows in step with the app. Every
-release workflow first calls `verify-release-tag.yml` and checks out the commit
-it returns.
+with no secrets, and runs the native module's JVM tests. `npm run check:release`
+in CI keeps the asset names, channels and tag provenance of these workflows in
+step with the app. Every release workflow first calls `verify-release-tag.yml`
+and checks out the commit it returns.
 
 Every workflow that touches EAS starts with the same `EXPO_TOKEN` guard step, so
 a fork without an Expo account gets a green skip instead of a red run. Keep that

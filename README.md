@@ -317,6 +317,17 @@ scoping) is additionally covered by [fast-check](https://fast-check.dev/)
 property-based tests in `src/**/*.property.test.ts`, which assert invariants over
 generated inputs rather than hand-picked examples.
 
+The native held-message stash in `modules/otp-sms-consent` has plain JVM tests
+(no device, no emulator), which `sms-apk-check.yml` runs on every PR that
+touches its native inputs. To run them locally, generate the Android project
+and call Gradle, then restore the `package.json` that prebuild rewrites:
+
+```sh
+npx expo prebuild --platform android --clean --no-install
+(cd android && ./gradlew :otp-sms-consent:testReleaseUnitTest)
+git checkout -- package.json
+```
+
 ### Working behind a corporate npm mirror
 
 This repo intentionally ships **no `.npmrc`**, so your own `registry=` setting in

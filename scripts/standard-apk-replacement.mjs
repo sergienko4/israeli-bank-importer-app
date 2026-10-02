@@ -29,8 +29,11 @@ const BACKUP_DIRECTORY = 'release-asset-backup';
  * @param {{
  *   downloadToBackup: (asset: { id: number, name: string, size: number }) => void,
  *   readBackupSize: () => number,
+ *   markWithdrawal: () => void,
  *   deleteAsset: (asset: { id: number, name: string, size: number }) => void
  * }} operations - The side effects, injected so failure ordering is testable.
+ *   `markWithdrawal` runs immediately before the DELETE, because a DELETE can
+ *   take effect on GitHub and still fail here.
  * @returns {boolean} `true` when an SMS asset was preserved and withdrawn.
  * @throws {Error} The response is malformed, ambiguous, or the backup is incomplete.
  */
@@ -82,6 +85,7 @@ export function prepareStandardApkReplacement(release, operations) {
       `The SMS backup is ${String(backupSize)} bytes, expected ${String(normalized.size)}.`,
     );
   }
+  operations.markWithdrawal();
   operations.deleteAsset(normalized);
   return true;
 }
@@ -190,6 +194,7 @@ function prepare() {
       );
     },
     readBackupSize: () => statSync(path).size,
+    markWithdrawal: () => writeOutput(output, 'sms_withdrawal', 'attempted'),
     deleteAsset: (asset) => {
       runGh([
         'api',

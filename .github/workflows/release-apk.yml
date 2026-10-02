@@ -144,21 +144,22 @@ jobs:
           release_tag: ${{ inputs.tag }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
       # The SMS backup lives only on this runner and is removed below, so a run
-      # that withdrew the SMS APK and then failed or was cancelled has to leave
-      # the way back.
+      # that started withdrawing the SMS APK and then failed or was cancelled
+      # has to leave the way back. The mark is written before the DELETE, which
+      # can take effect on GitHub and still fail here.
       - name: Explain how to restore the SMS APK
-        if: (failure() || cancelled()) && steps.prepare-upload.outputs.restore_sms == 'true'
+        if: (failure() || cancelled()) && steps.prepare-upload.outputs.sms_withdrawal == 'attempted'
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          echo "::error title=SMS APK may be missing::This run withdrew the SMS APK, then failed or was cancelled. If the release lacks it, run Release APK if needed, then Release SMS APK, for this tag; see the run summary."
+          echo "::error title=SMS APK may be missing::This run started withdrawing the SMS APK, then failed or was cancelled. If the release lacks it, run Release APK if needed, then Release SMS APK, for this tag; see the run summary."
           {
             echo "### SMS APK may be missing from \`$RELEASE_TAG\`"
             echo
-            echo "This run withdrew \`israeli-bank-importer.sms.apk\` before replacing the"
-            echo "standard APK, then failed or was cancelled. The backup it took is gone with"
-            echo "the runner. If the release no longer lists the SMS APK, restore it in this"
-            echo "order, because the SMS build repackages the standard APK:"
+            echo "This run started withdrawing \`israeli-bank-importer.sms.apk\` before"
+            echo "replacing the standard APK, then failed or was cancelled. The backup it"
+            echo "took is gone with the runner. If the release no longer lists the SMS APK,"
+            echo "restore it in this order, because the SMS build repackages the standard APK:"
             echo
             echo "1. If the release has no \`israeli-bank-importer.apk\` either, run"
             echo "   **Release APK** for \`$RELEASE_TAG\`."

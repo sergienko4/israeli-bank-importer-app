@@ -969,7 +969,7 @@ function checkAssetSafety(workflows, actions) {
     recoveryIndex > standardGuardIndex &&
       recoveryIndex < backupCleanupIndex &&
       recovery?.if ===
-        "(failure() || cancelled()) && steps.prepare-upload.outputs.restore_sms == 'true'" &&
+        "(failure() || cancelled()) && steps.prepare-upload.outputs.sms_withdrawal == 'attempted'" &&
       typeof recovery.run === 'string' &&
       recovery.run.includes('::error') &&
       recovery.run.includes('$GITHUB_STEP_SUMMARY') &&
@@ -998,13 +998,48 @@ function checkAssetSafety(workflows, actions) {
         events.push('measure');
         return 4;
       },
+      markWithdrawal: () => events.push('mark'),
       deleteAsset: () => events.push('delete'),
     },
   );
   check(
     rule,
-    prepared && JSON.stringify(events) === JSON.stringify(['download', 'measure', 'delete']),
-    `${STANDARD_REPLACEMENT} should download and measure SMS before withdrawing it`,
+    prepared &&
+      JSON.stringify(events) === JSON.stringify(['download', 'measure', 'mark', 'delete']),
+    `${STANDARD_REPLACEMENT} should download, measure and mark SMS before withdrawing it`,
+  );
+  // A DELETE can land on GitHub and still fail here, so the mark that keys the
+  // recovery note must already be written when it throws.
+  let markedBeforeFailedDelete = false;
+  let failedDeleteRejected = false;
+  try {
+    prepareStandardApkReplacement(
+      { assets: [{ id: 17, name: 'israeli-bank-importer.sms.apk', size: 4 }] },
+      {
+        downloadToBackup: () => undefined,
+        readBackupSize: () => 4,
+        markWithdrawal: () => {
+          markedBeforeFailedDelete = true;
+        },
+        deleteAsset: () => {
+          throw new Error('HTTP 502');
+        },
+      },
+    );
+  } catch {
+    failedDeleteRejected = true;
+  }
+  check(
+    rule,
+    markedBeforeFailedDelete && failedDeleteRejected,
+    `${STANDARD_REPLACEMENT} should leave its withdrawal mark when the DELETE fails`,
+  );
+  check(
+    rule,
+    readText(STANDARD_REPLACEMENT)?.includes(
+      "markWithdrawal: () => writeOutput(output, 'sms_withdrawal', 'attempted')",
+    ) === true,
+    `${STANDARD_REPLACEMENT} should write its withdrawal mark as a step output`,
   );
   let deletedAfterBadDownload = false;
   try {
@@ -1021,6 +1056,9 @@ function checkAssetSafety(workflows, actions) {
       {
         downloadToBackup: () => undefined,
         readBackupSize: () => 3,
+        markWithdrawal: () => {
+          deletedAfterBadDownload = true;
+        },
         deleteAsset: () => {
           deletedAfterBadDownload = true;
         },
@@ -1032,7 +1070,7 @@ function checkAssetSafety(workflows, actions) {
   check(
     rule,
     !deletedAfterBadDownload,
-    `${STANDARD_REPLACEMENT} should never delete SMS after an incomplete download`,
+    `${STANDARD_REPLACEMENT} should never mark or delete SMS after an incomplete download`,
   );
 
   const malformedReleases = [
@@ -1176,6 +1214,9 @@ function checkAssetSafety(workflows, actions) {
           touchedRemoteState = true;
           return 4;
         },
+        markWithdrawal: () => {
+          touchedRemoteState = true;
+        },
         deleteAsset: () => {
           touchedRemoteState = true;
         },
@@ -1197,6 +1238,9 @@ function checkAssetSafety(workflows, actions) {
       },
       readBackupSize: () => {
         throw new Error('A valid unrelated asset must not be measured.');
+      },
+      markWithdrawal: () => {
+        throw new Error('A valid unrelated asset must not be marked.');
       },
       deleteAsset: () => {
         throw new Error('A valid unrelated asset must not be deleted.');

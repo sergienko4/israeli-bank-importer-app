@@ -28,8 +28,9 @@ function ports(overrides: Partial<BackgroundSubmitPorts> = {}) {
   const base: BackgroundSubmitPorts = {
     loadSession: () => Promise.resolve(SESSION),
     getPending: () => Promise.resolve([LIVE]),
-    submit: (_session, id, code) => {
-      submitted.push({ id, code });
+    submit: ({ requestId, code, claim }) => {
+      if (!claim()) return Promise.reject(new SendRefusedError());
+      submitted.push({ id: requestId, code });
       return Promise.resolve({ ok: true });
     },
     now: () => NOW,

@@ -38,6 +38,29 @@ export interface PairedSession extends Session {
 }
 
 /**
+ * One code, ready to be given to the importer.
+ *
+ * A send can wait its turn behind a change to the switches before it starts, and
+ * its caller may stop waiting for it in that time. `claim` is how the two agree
+ * on which happened first.
+ */
+export interface CodeSend {
+  /** The session the code goes over, labelled with its pairing. */
+  readonly session: PairedSession;
+  /** The importer's id for the request the code answers. */
+  readonly requestId: string;
+  /** The code read from the message. */
+  readonly code: string;
+  /**
+   * Asked once, in the same step that would start the request. False means the
+   * caller has stopped waiting, or no longer has room to record what the send
+   * did, and the request must not be made. True means it has started, and the
+   * caller can no longer take it back.
+   */
+  readonly claim: () => boolean;
+}
+
+/**
  * Everything the background path needs from the outside world.
  *
  * These are injected rather than imported so the decision logic can be tested
@@ -48,8 +71,11 @@ export interface BackgroundSubmitPorts {
   readonly loadSession: () => Promise<PairedSession | null>;
   /** The importer's current outstanding one-time-code requests. */
   readonly getPending: (session: Session) => Promise<PendingOtpRequest[]>;
-  /** Sends a code against one request, refusing if its pairing has changed. */
-  readonly submit: (session: PairedSession, id: string, code: string) => Promise<SaveResult>;
+  /**
+   * Sends a code against one request. It refuses if the pairing has changed,
+   * and it calls `claim` before the request goes out.
+   */
+  readonly submit: (send: CodeSend) => Promise<SaveResult>;
   /** The current time, injected so expiry is testable. */
   readonly now: () => number;
 }
@@ -166,6 +192,11 @@ export function neverJudged(status: number | undefined): boolean {
  * A send refused as it would have started is the one throw that proves nothing
  * went out.
  *
+ * This path waits as long as the send takes, so it never stops waiting for one
+ * that has not started yet, and its claim always holds. The message was handed
+ * over rather than held, so a send that starts late cannot leave a copy on
+ * offer for a second one.
+ *
  * @param ports - The injected outside world.
  * @param target - The session and request the code answers.
  * @param code - The digits taken from the message.
@@ -178,7 +209,7 @@ async function send(
   code: string,
 ): Promise<BackgroundSubmitOutcome> {
   try {
-    const result = await ports.submit(target.session, target.requestId, code);
+    const result = await ports.submit({ ...target, code, claim: () => true });
     if (result.ok) return 'submitted';
     return neverJudged(result.status) ? 'failed' : 'rejected';
   } catch (error) {

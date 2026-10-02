@@ -74,9 +74,11 @@ export interface StashDrainPorts extends BackgroundSubmitPorts {
  * codes. They are all the same answer to the user — type it yourself — and none
  * of them is worth retrying. `unknown` means a code went out and no answer came
  * back, which is also not worth retrying, for the opposite reason. `superseded`
- * means the run ran out of its claim on the drain before it reached the send —
- * either a newer run has already taken over, or too little is left to record
- * what a send did — so whatever is worth doing is the next run's to do.
+ * means the run ran out of its claim on the drain before its send started —
+ * either a newer run has already taken over, too little is left to record
+ * what a send did, or the send was still waiting its turn when the run stopped
+ * waiting for it — so the code never left the device, and whatever is worth
+ * doing is the next run's to do.
  * `not-allowed` means the send was refused as it would have started — the
  * switches had been turned off, or the user had signed in elsewhere or
  * disconnected since the session was loaded — so the code never left the
@@ -156,7 +158,12 @@ async function spendChoice(ports: StashDrainPorts, choice: Choice): Promise<Stas
   const spend = (id: string): Promise<void> => ports.markAttempt(id, STASH_SPENT);
   const allowance = sendWindow(ports);
   if (allowance === null) return 'superseded';
-  const result = await sent(() => ports.submit(session, requestId, code), allowance);
+  const result = await sent(
+    (claim) => ports.submit({ session, requestId, code, claim }),
+    ports,
+    allowance,
+  );
+  if (result === 'abandoned') return 'superseded';
   if (result === 'not-allowed') return 'not-allowed';
   if (result === 'unknown') {
     // Marked spent rather than merely attempted, because the scope of the
@@ -222,25 +229,82 @@ function sendWindow(ports: StashDrainPorts): number | null {
  * A send refused as it would have started is kept apart as well: it is the one
  * failure that proves the code never left the device.
  *
- * @param submit - The send, already bound to its session, request and code.
+ * So is a send that had not started when the wait ran out. A send waits its turn
+ * behind any change to the switches before it starts, and that wait counts
+ * against the same deadline. Reporting a send that never started as `unknown`
+ * would spend a code the importer never saw, and the send would then go out
+ * late, after this run could record anything. So the send claims its start from
+ * here, and once the wait is over the claim is refused, along with the send.
+ *
+ * @param submit - The send, already bound to its session, request and code,
+ *   given the claim it must make as it starts.
+ * @param ports - The injected outside world, carrying this run's lease.
  * @param ms - How long to wait, already trimmed to what the run has left.
- * @returns What the importer said, `unknown` when it never said anything, or
- *   `not-allowed` when the send was refused before it started.
+ * @returns What the importer said, `unknown` when it never said anything,
+ *   `not-allowed` when the send was refused before it started, or `abandoned`
+ *   when it was still waiting to start, or had too little time left to start.
  */
 async function sent(
-  submit: () => Promise<SaveResult>,
+  submit: (claim: () => boolean) => Promise<SaveResult>,
+  ports: StashDrainPorts,
   ms: number,
-): Promise<SaveResult | 'unknown' | 'not-allowed'> {
-  let answer: SaveResult | 'unknown' | 'not-allowed' = 'unknown';
+): Promise<SaveResult | 'unknown' | 'not-allowed' | 'abandoned'> {
+  const start = startClaim(ports, ms);
+  let answer: SaveResult | 'unknown' | 'not-allowed' | undefined;
   const asking = (async () => {
     try {
-      answer = await submit();
+      answer = await submit(start.claim);
     } catch (error) {
-      if (error instanceof SendRefusedError) answer = 'not-allowed';
+      answer = error instanceof SendRefusedError ? 'not-allowed' : 'unknown';
     }
   })();
   await settleWithin(asking, ms);
-  return answer;
+  return start.stop(answer !== undefined) ? 'abandoned' : (answer ?? 'unknown');
+}
+
+/** The drain's half of a send's claim on its own start. */
+interface StartClaim {
+  /** Asked once by the send as it would start. True means it has started. */
+  readonly claim: () => boolean;
+  /**
+   * Stops waiting for the send. A send that neither settled nor started by now
+   * is abandoned, and a claim it makes later is refused.
+   *
+   * @param settled - Whether the send had settled by the time the wait ended.
+   * @returns True when the send was abandoned, or was refused its start.
+   */
+  readonly stop: (settled: boolean) => boolean;
+}
+
+/**
+ * Lets a send start only while this run is still waiting for it.
+ *
+ * Whichever comes first — the send claiming its start, or the run stopping its
+ * wait — settles the matter, because both happen on the one JavaScript thread.
+ * A claim also needs this run to still hold its lease, with at least the
+ * minimum send time left of its allowance, for the reason {@link sendWindow}
+ * refuses a send with less: one squeezed into a sliver is near-certain to be
+ * cut off unanswered, spending the code for nothing.
+ *
+ * @param ports - The injected outside world, carrying this run's lease.
+ * @param ms - How long the run waits for the send.
+ * @returns The claim to give the send, and the way to stop waiting.
+ */
+function startClaim(ports: StashDrainPorts, ms: number): StartClaim {
+  const endsWithRemaining = ports.remainingMs() - ms;
+  let state: 'waiting' | 'started' | 'abandoned' = 'waiting';
+  return {
+    claim: () => {
+      if (state !== 'waiting') return false;
+      const room = ports.remainingMs() - endsWithRemaining;
+      state = ports.stillOwned() && room >= MIN_SEND_MS ? 'started' : 'abandoned';
+      return state === 'started';
+    },
+    stop: (settled) => {
+      if (!settled && state === 'waiting') state = 'abandoned';
+      return state === 'abandoned';
+    },
+  };
 }
 
 /**

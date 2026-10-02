@@ -24,7 +24,7 @@ import type { SaveResult } from '../api/manifest';
 import { currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
-import type { PairedSession } from './otpBackgroundSubmit';
+import type { CodeSend } from './otpBackgroundSubmit';
 import { SendRefusedError, startIfAllowed } from './otpCaptureSwitch';
 import { loadOtpChannelIsApp } from './otpChannelStore';
 
@@ -74,23 +74,23 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  * send also checks that the pairing it was loaded for is still the one in
  * force, at the moment the send starts.
  *
- * @param session - A session renewed without a prompt, labelled with its pairing.
- * @param id - The pending request id.
- * @param code - The code read from the message.
+ * The caller can stop waiting while the send waits its turn, so the send claims
+ * its start from the caller last, in the same step. A caller that has already
+ * given up then gets no request that it would have to answer for.
+ *
+ * @param send - The code, the request it answers, the session it goes over,
+ *   and the caller's claim on its start.
  * @returns What the importer said.
  * @throws SendRefusedError when the send was refused before it started, so
  *   the caller can tell a code that never left the device from one whose fate
  *   is unknown; or whatever the send itself threw.
  */
-export async function submitWhileAllowed(
-  session: PairedSession,
-  id: string,
-  code: string,
-): Promise<SaveResult> {
+export async function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
+  const { session, requestId, code, claim } = send;
   const started = await startIfAllowed(
     loadBackgroundCaptureAllowed,
-    () => submitOtpUnattended(session, id, code),
-    () => currentPairing() === session.pairing,
+    () => submitOtpUnattended(session, requestId, code),
+    () => currentPairing() === session.pairing && claim(),
   );
   if (started === null) throw new SendRefusedError();
   return started.result;

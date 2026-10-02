@@ -757,6 +757,39 @@ function checkIsolation(workflows) {
 }
 
 /**
+ * Every string anywhere inside a parsed YAML value.
+ *
+ * @param {unknown} value - A parsed YAML node.
+ * @returns {string[]} Its strings, depth first.
+ */
+function stringsIn(value) {
+  if (typeof value === 'string') {
+    return [value];
+  }
+  return typeof value === 'object' && value !== null ? Object.values(value).flatMap(stringsIn) : [];
+}
+
+/**
+ * The `steps.<id>` reads in a workflow that name no earlier step of their job.
+ *
+ * GitHub resolves a read of an undeclared step to null rather than failing, so
+ * a condition keyed on a renamed or dropped id is silently false.
+ *
+ * @param {any} doc - The parsed workflow.
+ * @returns {string[]} Each dangling read as `job/step -> id`.
+ */
+function danglingStepReads(doc) {
+  return jobsOf(doc).flatMap(([jobId, job]) => {
+    const steps = job.steps ?? [];
+    return steps.flatMap((step, index) =>
+      captures(stringsIn(step), /\bsteps\.([\w-]+)\./gu)
+        .filter((id) => !steps.slice(0, index).some((earlier) => earlier.id === id))
+        .map((id) => `${jobId}/${String(step.name ?? step.uses ?? index)} -> ${id}`),
+    );
+  });
+}
+
+/**
  * Asserts rule 6: release-please calls the SMS build after its two inputs.
  *
  * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
@@ -899,6 +932,14 @@ function checkAssetSafety(workflows, actions) {
     [SMS_WORKFLOW, sms],
   ]) {
     const steps = stepsOf(doc);
+    // The pinned conditions below read step ids; one that names no step is
+    // silently false, which skips a restore or a guard instead of failing.
+    const dangling = danglingStepReads(doc);
+    check(
+      rule,
+      dangling.length === 0,
+      `${name} should read only steps declared earlier in the same job, not ${JSON.stringify(dangling)}`,
+    );
     const uploadIndex = steps.findIndex(
       (step) => typeof step.run === 'string' && /\bgh release upload\b/u.test(step.run),
     );

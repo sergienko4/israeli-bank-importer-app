@@ -34,6 +34,8 @@
  *                          only the signing certificate.
  *  11. secret boundary - EAS CLI finishes before signing material exists, and
  *                        the builder receives no Expo token.
+ *  12. secret delivery - every reusable call passes, by name, exactly the
+ *                        secrets its callee declares and reads.
  *
  * Usage:
  *   node scripts/check-release.mjs
@@ -124,6 +126,24 @@ const EXPO_ACTION = 'expo/expo-github-action@';
 
 /** The exact workflow expression that provides the Expo credential. */
 const EXPO_TOKEN_SECRET = '${{ secrets.EXPO_TOKEN }}';
+
+/**
+ * The secrets release-please passes to the SMS build: the Expo token and the
+ * four signing secrets, which only the `release-signing` Environment holds.
+ */
+const SMS_SECRETS = [
+  'ANDROID_KEYSTORE_BASE64',
+  'ANDROID_KEYSTORE_PASSWORD',
+  'ANDROID_KEY_ALIAS',
+  'ANDROID_KEY_PASSWORD',
+  'EXPO_TOKEN',
+];
+
+/** The secret every workflow, reusable or not, receives without being passed. */
+const AUTOMATIC_SECRET = 'GITHUB_TOKEN';
+
+/** Stands for a `secrets` read that names no one secret. */
+const COMPUTED_SECRET_READ = '<computed secret>';
 
 /** A file name ending in `.apk`, as it appears in a shell command. */
 const APK_NAME = /(?<![\w.-])[\w-][\w.-]*\.apk(?![\w.-])/gu;
@@ -938,10 +958,12 @@ function checkOrchestration(workflows) {
     JSON.stringify(sms.permissions) === JSON.stringify({ contents: 'write' }),
     `${RELEASE_WORKFLOW} SMS job should grant contents: write and nothing else`,
   );
+  const smsSecrets = typeof sms.secrets === 'object' && sms.secrets !== null ? sms.secrets : {};
   check(
     rule,
-    JSON.stringify(sms.secrets) === JSON.stringify({ EXPO_TOKEN: '${{ secrets.EXPO_TOKEN }}' }),
-    `${RELEASE_WORKFLOW} SMS job should pass only EXPO_TOKEN`,
+    sameNames(Object.keys(smsSecrets), SMS_SECRETS) &&
+      Object.entries(smsSecrets).every(([name, value]) => passesOwnSecret(name, value)),
+    `${RELEASE_WORKFLOW} SMS job should pass exactly ${JSON.stringify(SMS_SECRETS)}, each by its own name`,
   );
 }
 
@@ -1812,6 +1834,139 @@ function checkSecretBoundary(workflows) {
   );
 }
 
+/**
+ * Whether two lists hold the same secret names, ignoring order and case.
+ *
+ * GitHub matches secret names ignoring case and stores them upper-cased.
+ *
+ * @param {string[]} actual - The names found.
+ * @param {string[]} expected - The names required.
+ * @returns {boolean} Both hold each name exactly once.
+ */
+function sameNames(actual, expected) {
+  const normalize = (names) => names.map((name) => name.toUpperCase()).sort();
+  const found = normalize(actual);
+  return (
+    new Set(found).size === found.length &&
+    JSON.stringify(found) === JSON.stringify(normalize(expected))
+  );
+}
+
+/**
+ * Whether a reusable call passes a secret as the caller's secret of the same
+ * name, `${{ secrets.<name> }}`, matching the name ignoring case as GitHub does.
+ *
+ * @param {string} name - The secret name the callee receives.
+ * @param {unknown} value - The value the caller passes for it.
+ * @returns {boolean} The value reads the caller's secret of that name.
+ */
+function passesOwnSecret(name, value) {
+  const read = /^\$\{\{ secrets\.([a-z_]\w*) \}\}$/iu.exec(String(value));
+  return read !== null && read[1].toUpperCase() === name.toUpperCase();
+}
+
+/**
+ * The secrets that a workflow's expressions read.
+ *
+ * Only `${{ }}` text is read, split into tokens as GitHub's lexer does, so
+ * comments and descriptions never count. `secrets` counts only as the root of
+ * a read, not as a property such as `inputs.secrets`. A read through a
+ * computed index, a wildcard or the whole context names no single secret, so
+ * it comes back as {@link COMPUTED_SECRET_READ}.
+ *
+ * @param {any} doc - The parsed workflow.
+ * @returns {string[]} Each name read, once, upper-cased.
+ */
+function secretReadsIn(doc) {
+  const expressions = captures(stringsIn(doc), /\$\{\{((?:'[^']*'|[^'}]|\}(?!\}))*)\}\}/gu);
+  const reads = expressions.flatMap((text) => {
+    const tokens = expressionTokens(text);
+    return tokens.flatMap((token, index) => {
+      if (token.toLowerCase() !== 'secrets' || tokens[index - 1] === '.') {
+        return [];
+      }
+      const [next, key = '', close] = tokens.slice(index + 1, index + 4);
+      if (next === '.' && /^[a-z_]\w*$/iu.test(key)) {
+        return [key.toUpperCase()];
+      }
+      if (next === '[' && key.startsWith("'") && close === ']') {
+        return [key.slice(1, -1).replaceAll("''", "'").toUpperCase()];
+      }
+      return [COMPUTED_SECRET_READ];
+    });
+  });
+  return [...new Set(reads)];
+}
+
+/**
+ * Asserts rule 12: each reusable call passes, by name, every secret that its
+ * callee reads.
+ *
+ * A called workflow sees only the secrets its caller passes. That holds even
+ * for an Environment secret, when the callee's job enters the Environment: the
+ * job receives it only if the caller names the secret, although the caller's
+ * own value is empty. Probe runs 37285798414 and 37286384140 showed this.
+ * Without the name, the signing key arrived empty. Naming it explicitly, or
+ * using `secrets: inherit`, delivered it. So each callee declares exactly the
+ * secrets it reads, apart from the automatic token, and each caller passes
+ * exactly those names, each as its own `${{ secrets.<name> }}`. Inheriting
+ * would also hand the callee every unrelated repository secret.
+ *
+ * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
+ */
+function checkSecretDelivery(workflows) {
+  const rule = 'secret delivery';
+  const local = `./${WORKFLOWS}/`;
+  for (const [callerName, caller] of workflows) {
+    for (const [jobId, job] of jobsOf(caller.doc)) {
+      const uses = String(job.uses ?? '');
+      if (!uses.startsWith(local)) {
+        continue;
+      }
+      const calleeName = uses.slice(local.length);
+      const callee = workflows.get(calleeName);
+      const at = `${callerName} job ${jobId}`;
+      check(rule, callee !== undefined, `${at} calls ${uses}, which does not exist`);
+      if (callee === undefined) {
+        continue;
+      }
+      const reads = secretReadsIn(callee.doc);
+      check(
+        rule,
+        !reads.includes(COMPUTED_SECRET_READ),
+        `${calleeName} should read each secret by a literal name`,
+      );
+      const needed = reads
+        .filter((name) => name !== COMPUTED_SECRET_READ && name !== AUTOMATIC_SECRET)
+        .sort();
+      const declared = Object.keys(triggersOf(callee.doc).workflow_call?.secrets ?? {});
+      check(
+        rule,
+        sameNames(declared, needed),
+        `${calleeName} should declare exactly the secrets it reads, ${JSON.stringify(needed)}, found ${JSON.stringify(declared)}`,
+      );
+      check(
+        rule,
+        job.secrets !== 'inherit',
+        `${at} should name each secret rather than inherit every repository secret`,
+      );
+      const passed = typeof job.secrets === 'object' && job.secrets !== null ? job.secrets : {};
+      check(
+        rule,
+        sameNames(Object.keys(passed), needed),
+        `${at} should pass exactly ${JSON.stringify(needed)} to ${calleeName}, found ${JSON.stringify(Object.keys(passed))}`,
+      );
+      for (const [name, value] of Object.entries(passed)) {
+        check(
+          rule,
+          passesOwnSecret(name, value),
+          `${at} should pass ${name} as \${{ secrets.${name} }}, found ${JSON.stringify(value)}`,
+        );
+      }
+    }
+  }
+}
+
 try {
   const workflows = loadWorkflows();
   const actions = loadActions();
@@ -1826,6 +1981,7 @@ try {
   checkBuildHygiene();
   checkSignatureProfile(workflows);
   checkSecretBoundary(workflows);
+  checkSecretDelivery(workflows);
 
   if (failures.length > 0) {
     console.error(
@@ -1838,8 +1994,8 @@ try {
     console.log(
       'Release workflows agree with the app: asset names, update channels, tag\n' +
         'provenance, gh tokens, pull-request isolation, orchestration, asset safety,\n' +
-        'paginated update lookup, local build hygiene, APK signature profiles and\n' +
-        'release-secret boundaries all hold.',
+        'paginated update lookup, local build hygiene, APK signature profiles,\n' +
+        'release-secret boundaries and secret delivery all hold.',
     );
   }
 } catch (error) {

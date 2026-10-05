@@ -31,10 +31,13 @@ on:
         # the guard step below turns an absent token into a skip, not a failure.
         description: 'Expo access token used to read the EAS environment and updates'
         required: false
-      # The signing key comes from the `release-signing` Environment, and no
-      # caller passes it. GitHub uses an Environment's secret over a passed
-      # one once the job names the Environment; these are declared so the
-      # names are part of the interface and linters can type-check them.
+      # The signing key lives only in the `release-signing` Environment. A
+      # caller must still pass each name, as release-please.yml does: apart
+      # from the automatic GITHUB_TOKEN, GitHub gives a called workflow only the
+      # secrets its caller names, even when the callee's job enters the
+      # Environment that holds the value. The value the caller passes is empty,
+      # and the Environment replaces it inside the build job. A
+      # `workflow_dispatch` run reads the Environment directly.
       ANDROID_KEYSTORE_BASE64:
         description: 'Upload keystore (JKS, base64); set in the release-signing Environment'
         required: false

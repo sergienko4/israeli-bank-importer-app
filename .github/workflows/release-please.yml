@@ -75,7 +75,14 @@ jobs:
     uses: ./.github/workflows/release-apk-sms.yml
     with:
       tag: ${{ needs.release-please.outputs.tag_name }}
-    # The signing key is not passed: the callee reads it from the
-    # `release-signing` Environment, which only its build job can enter.
+    # Each signing secret is named, though only the callee's `release-signing`
+    # Environment holds it: the value passed here is empty, and the Environment
+    # replaces it once the build job enters it. Without the name, the job
+    # receives nothing. `secrets: inherit` would also deliver it, but would hand
+    # the build every unrelated repository secret too.
     secrets:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}

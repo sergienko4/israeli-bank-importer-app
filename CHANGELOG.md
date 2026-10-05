@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.15](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.14...israeli-bank-importer-app-v0.2.15) (2026-10-05)
+
+
+### Bug Fixes
+
+* **release:** pass signing secrets to SMS build ([#149](https://github.com/sergienko4/israeli-bank-importer-app/issues/149)) ([0ec8eff](https://github.com/sergienko4/israeli-bank-importer-app/commit/0ec8eff3dbfde785ea0a7f7fac7571a8f9be3b47))
+
 ## [0.2.14](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.13...israeli-bank-importer-app-v0.2.14) (2026-10-02)
 
 

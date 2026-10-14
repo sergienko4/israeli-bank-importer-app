@@ -139,7 +139,7 @@ jobs:
         # Pinned to an untagged main commit: v24.2.0 bundles markdownlint-cli2
         # 0.23.2, and `npm run lint:md` needs 0.23.3 for the smol-toml fix
         # (GHSA-7w5x-hrqm-74c2). Move to the first release that bundles 0.23.3.
-        uses: DavidAnson/markdownlint-cli2-action@4d036b826b8b2df8671d140de0d86cef0f5c2202 # v24.2.0-18-g63bcb64 (markdownlint-cli2 0.23.3)
+        uses: DavidAnson/markdownlint-cli2-action@2e4139533dbfd7d0476295a9e8ada75220dfd882 # v24.2.0-18-g63bcb64 (markdownlint-cli2 0.23.3)
         with:
           globs: |
             **/*.md

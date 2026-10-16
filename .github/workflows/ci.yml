@@ -227,10 +227,103 @@ jobs:
             -Dsonar.organization=${{ secrets.SONAR_ORG }}
             -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY }}
 
+  # Dependabot pull requests merge on green CI alone (dependabot-auto-merge.yml),
+  # and auto-merge stays enabled when someone else pushes to the branch. The
+  # workflow that switches it off runs only after that push, so a human edit
+  # could pass the other checks and merge first. This job closes that window at
+  # the merge gate: CI Pass is required, and required checks are judged per head
+  # commit, so a branch holding any commit not made by Dependabot itself or by
+  # the "Update branch" button cannot merge without a human.
+  #
+  # Both kinds of allowed commit are committed by GitHub. A Dependabot commit
+  # has one parent and Dependabot as author. An "Update branch" merge has the
+  # clicking user as author, so it is accepted only when its content is exactly
+  # what git produces by merging the base branch in with no conflicts: a merge
+  # resolved by hand in the conflict editor, or edited after the fact, fails.
+  #
+  # The guard is against an accidental human edit merging unreviewed, not a
+  # malicious writer, who can already merge their own pull request because no
+  # review is required. Author and committer emails are not verified here.
+  dependabot-gate:
+    name: Dependabot provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check whether this is a Dependabot pull request
+        id: guard
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Not a Dependabot pull request - nothing to check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      # fetch-depth 0 fetches every branch into origin/*, which provides the
+      # base branch the commits are measured against.
+      - if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - if: steps.guard.outputs.run == 'true'
+        name: Every commit comes from Dependabot or "Update branch"
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # The current tip rather than the event's base SHA, so a base commit
+          # brought in by "Update branch" is never counted as a branch commit.
+          base="refs/remotes/origin/$BASE_REF"
+          if ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            echo "::error::$base is missing from the checkout, so the commits on this pull request cannot be listed."
+            exit 1
+          fi
+          dependabot='49699333+dependabot[bot]@users.noreply.github.com'
+          commits="$(git rev-list --parents "$base..$HEAD_SHA")"
+          bad=0
+          while read -r c p1 p2 extra; do
+            [ -n "$c" ] || continue
+            author="$(git show -s --format=%ae "$c")"
+            committer="$(git show -s --format=%ce "$c")"
+            subject="$(git show -s --format=%s "$c")"
+            reason=""
+            if [ "$committer" != "noreply@github.com" ]; then
+              reason="committed outside GitHub"
+            elif [ -z "$p1" ] || [ -n "$extra" ]; then
+              reason="neither a single-parent commit nor a two-parent merge"
+            elif [ -z "$p2" ]; then
+              [ "$author" = "$dependabot" ] || reason="not authored by Dependabot"
+            elif [[ "$subject" != "Merge branch '$BASE_REF' into "* ]]; then
+              reason="not an \"Update branch\" merge"
+            elif ! git merge-base --is-ancestor "$p2" "$base"; then
+              reason="merges a commit that is not on $BASE_REF"
+            elif ! tree="$(git merge-tree --write-tree "$p1" "$p2")"; then
+              reason="the merge had conflicts that were resolved by hand"
+            elif [ "${tree%%$'\n'*}" != "$(git rev-parse "$c^{tree}")" ]; then
+              reason="the merge result differs from a clean merge"
+            fi
+            if [ -n "$reason" ]; then
+              echo "::error::$c: $reason (author $author, committer $committer, subject \"$subject\")"
+              bad=1
+            else
+              echo "ok $c $subject"
+            fi
+          done <<< "$commits"
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::This Dependabot pull request holds commits that neither Dependabot nor a clean \"Update branch\" merge made, so it cannot merge on green CI. Comment \"@dependabot recreate\" to drop them, or have an admin merge it after review."
+            exit 1
+          fi
+          echo "Every commit came from Dependabot or a clean \"Update branch\" merge."
+
   ci-pass:
     name: CI Pass
     runs-on: ubuntu-latest
-    needs: [build, expo-pins, docs, licenses, sonar]
+    needs: [build, expo-pins, docs, licenses, sonar, dependabot-gate]
     if: always()
     steps:
       - name: Verify required jobs succeeded
@@ -239,7 +332,8 @@ jobs:
             || [ "${{ needs['expo-pins'].result }}" != "success" ] \
             || [ "${{ needs.docs.result }}" != "success" ] \
             || [ "${{ needs.licenses.result }}" != "success" ] \
-            || [ "${{ needs.sonar.result }}" != "success" ]; then
+            || [ "${{ needs.sonar.result }}" != "success" ] \
+            || [ "${{ needs['dependabot-gate'].result }}" != "success" ]; then
             echo "One or more required CI jobs failed."
             exit 1
           fi

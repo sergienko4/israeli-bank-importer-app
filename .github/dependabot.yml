@@ -99,7 +99,8 @@ updates:
       # patch is unsafe: an expo patch can move a native pin (57.0.17 moved
       # react-native), and the grouped bump in PR #106 left npm ci unable to
       # resolve. A major is a whole SDK upgrade. So the family moves only by
-      # hand, and the `expo-pins` job in ci.yml reports when that is overdue.
+      # hand, as a deliberate SDK upgrade: nothing opens a pull request when a
+      # new SDK ships, so watch the Expo changelog for it.
       - dependency-name: expo
         update-types:
           [
@@ -165,6 +166,11 @@ updates:
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
     groups:
+      # Dormant: a group without `applies-to` covers version updates only, and
+      # every member is ignored for all three update types above. Kept so that
+      # lifting those ignores brings the family back as one pull request
+      # rather than one per package. eslint-config-expo is SDK-pinned too but
+      # is not listed: it matches `eslint-*` below, so it would land there.
       expo:
         patterns:
           - 'expo'

@@ -406,8 +406,10 @@ user cannot act on.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
   `dependabot-auto-merge.yml` turns on auto-merge for each Dependabot pull
-  request, so it merges once the required checks pass. Those merges start no
-  `push` workflows, so re-test `main` by hand with
+  request, so it merges once the required checks pass. **CI Pass** fails unless
+  the git history of such a branch holds only Dependabot commits and clean
+  "Update branch" merges. Auto-merges start no `push` workflows, so re-test
+  `main` by hand with
   `gh workflow run ci.yml --ref main`. The Expo SDK family is excluded from
   version updates and upgraded by hand with `npx expo install --fix`; see
   [SECURITY.md](SECURITY.md#dependabot-automation).

@@ -20,7 +20,13 @@ name: Dependabot auto-merge
 # pinned to the commit the run was started for, so a slow run cannot switch
 # auto-merge on after someone else has pushed. When anyone else pushes to a
 # Dependabot branch - including the "Update branch" button - the second job
-# switches auto-merge off and a human merges it.
+# switches auto-merge off, so a human normally merges it.
+#
+# That job runs only after the push, so on its own it leaves a window in which
+# a human edit could pass the checks and merge. The `Dependabot provenance` job
+# in ci.yml closes it: CI Pass fails on any commit that neither Dependabot nor
+# a clean "Update branch" merge made, so such a pull request cannot merge on
+# green CI at all. The second job stays as a second line of defence.
 #
 # The merge is made with GITHUB_TOKEN, and GitHub does not start workflows
 # from pushes that token makes. The `push: main` workflows therefore run again

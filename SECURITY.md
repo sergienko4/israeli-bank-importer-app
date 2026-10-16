@@ -115,8 +115,8 @@ satisfied, and a red check leaves the pull request open for a human. The
 required checks are `Typecheck, lint & bundle`, `SonarCloud Analysis` and
 `CI Pass`, and `CI Pass` succeeds only when every job it aggregates in
 [`ci.yml`](.github/workflows/ci.yml) succeeds: the build, `Expo SDK pin
-drift`, `Documentation Quality`, `License Compliance` and `SonarCloud
-Analysis`. CodeQL and Gitleaks also run on each pull request but are not
+drift`, `Documentation Quality`, `License Compliance`, `SonarCloud Analysis`
+and `Dependabot provenance`. CodeQL and Gitleaks also run on each pull request but are not
 required, so a finding from either does not hold the merge back. Review CodeQL
 findings in the Security tab. Gitleaks uploads nothing there, so a leak shows
 only as a failed `Gitleaks` check, with the details in that run's log.
@@ -136,8 +136,23 @@ The limits are deliberate:
   when Dependabot opened the pull request, pushed its head commit and started
   the run, and the call is pinned to that commit, so a slow run cannot enable
   it after someone else has pushed. Any other push to a Dependabot branch,
-  including the "Update branch" button, switches auto-merge off, and a human
-  merges that pull request.
+  including the "Update branch" button, switches auto-merge off, so a human
+  normally merges that pull request. That switch runs after the push, so a
+  clean "Update branch" merge can still auto-merge if its checks finish
+  first; the check below accepts that merge because it adds nothing that is
+  not already on `main`.
+- **Human commits on a Dependabot branch fail CI.** Turning auto-merge off
+  happens only after the push, so a human edit could otherwise pass the checks
+  and merge in between. The `Dependabot provenance` job closes that window: on
+  a Dependabot pull request it fails, and with it `CI Pass`, unless every
+  commit since `main` is either a Dependabot commit or a merge from the
+  "Update branch" button that git reproduces exactly by merging `main` in with
+  no conflicts. A web edit, a local push, a merge resolved in the conflict
+  editor and an edited merge all fail. To keep such a change, an admin merges
+  the pull request after review; to discard it, comment
+  `@dependabot recreate`. The check guards against an accidental edit merging
+  unreviewed, not against a writer, who can merge a pull request of their own
+  anyway, and it trusts commit emails without verifying them.
 - **SonarCloud does not analyse Dependabot pull requests.** Dependabot runs
   receive no Actions secrets, and no Dependabot secret holds `SONAR_TOKEN`, so
   the `sonar` job skips its scan steps and still concludes as a success. Both

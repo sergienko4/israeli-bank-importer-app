@@ -1,0 +1,52 @@
+name: Dependabot auto-merge
+
+# Turns on squash auto-merge for every Dependabot pull request, so version and
+# security updates land without a human in the loop. This job never merges by
+# itself: GitHub merges only once branch protection is satisfied, which makes
+# the required checks (CI Pass among them) the real gate. A red check leaves
+# the pull request open for a human, exactly as before.
+#
+# Patch, minor and major updates are all eligible on purpose. What Dependabot
+# may propose is decided in dependabot.yml - the Expo SDK family and the
+# native pins it chooses are ignored there and upgraded by hand with
+# `npx expo install --fix` - so anything that reaches this workflow is an
+# update CI is expected to judge.
+#
+# Both conditions are required. `user.login` limits it to pull requests
+# Dependabot opened; `actor` limits it to runs Dependabot itself triggered, so
+# a human pushing onto a Dependabot branch does not inherit the automation.
+#
+# The merge is made with GITHUB_TOKEN, and GitHub does not start workflows
+# from pushes that token makes. The `push: main` workflows therefore run again
+# on the next human push to main rather than on the Dependabot merge itself.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor == 'dependabot[bot]'
+      && github.repository == 'sergienko4/israeli-bank-importer-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Dependabot runs get a read-only token unless the job asks for more.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable squash auto-merge
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}

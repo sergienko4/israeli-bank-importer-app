@@ -15,8 +15,10 @@ updates:
       timezone: Asia/Jerusalem
     open-pull-requests-limit: 5
     labels: ['dependencies', 'npm']
+    # `include: scope` appends `(deps)` or `(deps-dev)` itself, so the prefix
+    # carries the type only: `chore(deps): ...`, never `chore(deps)(deps):`.
     commit-message:
-      prefix: 'chore(deps)'
+      prefix: 'chore'
       include: scope
     # Upgrades that the registry offers but this app cannot take. Each entry
     # records what blocks it, so the list can be re-tested rather than
@@ -172,8 +174,10 @@ updates:
       timezone: Asia/Jerusalem
     open-pull-requests-limit: 3
     labels: ['dependencies', 'github-actions']
+    # Renders as `ci(deps): ...`; `ci` keeps workflow bumps out of the
+    # release-please changelog, like `chore`.
     commit-message:
-      prefix: 'chore(ci)'
+      prefix: 'ci'
       include: scope
     groups:
       actions-core:

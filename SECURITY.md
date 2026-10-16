@@ -104,6 +104,68 @@ OSV, so the exception is recorded once more, in machine-readable form, in
 date: when it lapses the finding returns on its own, which is the intended
 prompt to re-read the advisory rather than renew the exception by habit.
 
+### Dependabot automation
+
+Dependabot pull requests merge themselves once CI is green.
+[`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml)
+turns on squash auto-merge for every pull request Dependabot opens, for npm and
+GitHub Actions alike, whether the update is a patch, a minor or a major. The
+workflow never merges by itself: GitHub merges only once branch protection is
+satisfied. The required checks (`Typecheck, lint & bundle`, `SonarCloud
+Analysis` and `CI Pass`) are therefore the gate, and a red check leaves the pull
+request open for a human.
+
+The limits are deliberate:
+
+- **The Expo SDK family is upgraded by hand.** `expo`, `expo-*`, `@expo/*`,
+  `jest-expo` and `eslint-config-expo` are ignored for version updates in
+  [`.github/dependabot.yml`](.github/dependabot.yml), as are the native pins
+  the SDK chooses, such as `react` and `react-native`. The SDK moves these
+  versions together, and `npx expo install --fix` is the only supported way to
+  change them. The ignores list `update-types`, which apply to version updates
+  only, so Dependabot security updates for these packages still open. Do not
+  shorten them to a bare `dependency-name` entry: that blocks security updates
+  as well.
+- **SonarCloud does not analyse Dependabot pull requests.** Dependabot runs
+  receive no repository secrets, so the `sonar` job skips without
+  `SONAR_TOKEN`, and a skipped required check counts as passing. Every other
+  check still gates the merge.
+- **Branch protection does not require an up-to-date branch** (`strict:
+  false`). With that rule on, each merge would leave every other open
+  Dependabot pull request behind `main`, and auto-merge would stall until
+  someone rebased it. Dependabot rebases on its own when the lockfile
+  conflicts, and linear history is still enforced.
+- **Merges do not start `push: main` workflows.** The merge is made with
+  `GITHUB_TOKEN`, and GitHub starts no workflows from pushes that token makes.
+  CI, CodeQL, Gitleaks, Scorecard and release-please therefore catch up on the
+  next human push to `main`. Nothing is lost: release-please cuts no release
+  for `chore`, `ci` or `deps` commits, which is all Dependabot writes.
+- **The SMS APK build is not part of the gate.** `sms-apk-check.yml` can run
+  for over an hour and is not a required check, so a bump can merge before it
+  finishes or after it fails. A break in the Gradle build would then first
+  surface in `release-apk-sms.yml`. Before tagging a release that follows
+  dependency bumps, confirm that `sms-apk-check.yml` passed on each of those
+  Dependabot pull requests.
+
+Some alerts have no fix that Dependabot can reach. They stay open on purpose:
+each one closes on its own when an upstream release lets Dependabot propose a
+patched version. Three have no patched release at all. The other two have one,
+but only outside the range their parent declares, and forcing a version past
+that range is the build break the scoped-`overrides` rule above exists to
+avoid. So no `overrides` entry is added for any of them. As of October 2026 the
+open alerts are:
+
+| Alert | Package | Severity | Reached through | Waiting on |
+| --- | --- | --- | --- | --- |
+| [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | `node-forge` | high | Expo CLI code signing, `sonarqube-scanner` | a patched release |
+| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | a patched release |
+| [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | a patched release |
+| [GHSA-r4xh-jqrq-34v2](https://github.com/advisories/GHSA-r4xh-jqrq-34v2) | `smol-toml` | medium | `markdownlint-cli2`, which pins `1.8.0` (dev) | `markdownlint-cli2` accepting `1.9.0` |
+| [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | `katex` | low | `micromark-extension-math` via `markdownlint` (dev) | `micromark-extension-math` accepting `0.18` |
+
+None of these packages is imported by the app or included in its JavaScript
+bundle; they run only in build, test and lint tooling.
+
 ### Review policy
 
 This project has a single maintainer, so a required-approval rule cannot be

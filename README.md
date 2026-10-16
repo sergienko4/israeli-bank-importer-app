@@ -405,6 +405,10 @@ user cannot act on.
   a third party's downtime cannot block a merge.
 - **Security**: CodeQL (`codeql.yml`), OSSF Scorecard (`scorecard.yml`), gitleaks
   secret scanning (`gitleaks.yml`), and weekly Dependabot updates.
+  `dependabot-auto-merge.yml` merges each Dependabot pull request once the
+  required checks pass. The Expo SDK family is excluded from version updates
+  and upgraded by hand with `npx expo install --fix`; see
+  [SECURITY.md](SECURITY.md#dependabot-automation).
 - **Release DAG**: [release-please](https://github.com/googleapis/release-please)
   maintains a version/changelog PR from Conventional Commits; merging it tags a
   release and, in that same run, fans out to **APK publish**

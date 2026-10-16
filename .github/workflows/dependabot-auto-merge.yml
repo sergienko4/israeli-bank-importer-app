@@ -70,6 +70,8 @@ jobs:
       && github.repository == 'sergienko4/israeli-bank-importer-app'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Turning auto-merge off is a write to the pull request, the same scope
+    # the enable job needs.
     permissions:
       contents: write
       pull-requests: write

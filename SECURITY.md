@@ -137,10 +137,13 @@ The limits are deliberate:
   the run, and the call is pinned to that commit, so a slow run cannot enable
   it after someone else has pushed. Any other push to a Dependabot branch,
   including the "Update branch" button, switches auto-merge off, so a human
-  normally merges that pull request. That switch runs after the push, so a
-  clean "Update branch" merge can still auto-merge if its checks finish
+  normally merges that pull request. Switching it off happens after the push,
+  so a clean "Update branch" merge can still auto-merge if its checks finish
   first; the check below accepts that merge because it adds nothing that is
-  not already on `main`.
+  not already on `main`. Each run checks the branch head immediately before
+  acting and leaves the decision to the run for any newer push, and the runs
+  for one pull request queue behind each other, so a delayed switch-off
+  cannot undo a later `@dependabot recreate`.
 - **Human commits on a Dependabot branch fail CI.** Turning auto-merge off
   happens only after the push, so a human edit could otherwise pass the checks
   and merge in between. The `Dependabot provenance` job closes that window: on

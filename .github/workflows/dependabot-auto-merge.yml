@@ -28,6 +28,24 @@ name: Dependabot auto-merge
 # a clean "Update branch" merge made, so such a pull request cannot merge on
 # green CI at all. The second job stays as a second line of defence.
 #
+# Both jobs share one queue per pull request, and each re-reads the branch
+# head immediately before acting. A run whose commit is no longer the head
+# steps aside and leaves the decision to the run for the newer push. Without
+# this, a delayed or re-run disable could switch auto-merge off after a newer
+# Dependabot push - `@dependabot recreate`, say - had switched it on, leaving
+# the pull request waiting for a human. The check and the write are not
+# atomic, but the queue keeps a second run from acting in between, so a push
+# that lands in that gap is handled by its own run, which waits and acts
+# after it. `queue: max` keeps up to 100 waiting runs, where the default
+# would cancel one as the next arrives; no run is cancelled once it has
+# started.
+#
+# Two cases leave the setting stale rather than wrong. GitHub starts no
+# `pull_request` run for a pull request with a merge conflict, and it
+# cancels runs beyond those 100. In both, the newest head may get no run, so
+# auto-merge can stay off and the pull request waits for a human, or stay on
+# for a human commit that the provenance check in CI still refuses to merge.
+#
 # The merge is made with GITHUB_TOKEN, and GitHub does not start workflows
 # from pushes that token makes. The `push: main` workflows therefore run again
 # on the next human push to main rather than on the Dependabot merge itself.
@@ -43,11 +61,10 @@ permissions:
 jobs:
   auto-merge:
     name: Enable auto-merge
-    # Only the enable job is grouped: a stale enable run is safe to cancel,
-    # but a disable run must always finish.
+    # Same queue as the disable job; see the header.
     concurrency:
       group: dependabot-auto-merge-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      queue: max
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]'
       && github.actor == 'dependabot[bot]'
@@ -61,7 +78,13 @@ jobs:
       pull-requests: write
     steps:
       - name: Enable squash auto-merge
-        run: gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+        run: |
+          head="$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)"
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "::notice::Head is now $head, not $HEAD_SHA; the run for that push decides."
+            exit 0
+          fi
+          gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -69,6 +92,10 @@ jobs:
 
   disable-auto-merge:
     name: Disable auto-merge after a human push
+    # Same queue as the enable job; see the header.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+      queue: max
     if: >-
       github.event.pull_request.user.login == 'dependabot[bot]'
       && github.event.action == 'synchronize'
@@ -82,10 +109,16 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # Checked first so a pull request that never had auto-merge is a no-op
-      # rather than an API error, without hiding a real failure to disable it.
+      # The state is checked before disabling, so a pull request that never
+      # had auto-merge is a no-op rather than an API error, without hiding a
+      # real failure to disable it.
       - name: Disable auto-merge if it is on
         run: |
+          head="$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)"
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "::notice::Head is now $head, not $HEAD_SHA; the run for that push decides."
+            exit 0
+          fi
           enabled="$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')"
           if [ "$enabled" = "true" ]; then
             gh pr merge --disable-auto "$PR_URL"
@@ -95,3 +128,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

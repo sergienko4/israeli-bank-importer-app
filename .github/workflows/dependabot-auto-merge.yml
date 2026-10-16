@@ -1,0 +1,131 @@
+name: Dependabot auto-merge
+
+# Turns on squash auto-merge for every Dependabot pull request, so version and
+# security updates land without a human in the loop. This workflow never merges
+# by itself: GitHub merges only once branch protection is satisfied, which makes
+# the required checks (CI Pass among them) the real gate. A red check leaves
+# the pull request open for a human, exactly as before.
+#
+# Patch, minor and major updates are all eligible on purpose. What Dependabot
+# may propose is decided in dependabot.yml - the Expo SDK family and the
+# native pins it chooses are ignored there and upgraded by hand with
+# `npx expo install --fix` - so anything that reaches this workflow is an
+# update CI is expected to judge.
+#
+# Auto-merge stays on once enabled, even after the branch changes, so trust
+# is re-decided on every push. A run enables it only when Dependabot opened
+# the pull request, pushed the commit, and started the run; `triggering_actor`
+# matters because a human re-running an old Dependabot run would otherwise
+# re-enable it against whatever the branch holds now. The enable call is also
+# pinned to the commit the run was started for, so a slow run cannot switch
+# auto-merge on after someone else has pushed. When anyone else pushes to a
+# Dependabot branch - including the "Update branch" button - the second job
+# switches auto-merge off, so a human normally merges it.
+#
+# That job runs only after the push, so on its own it leaves a window in which
+# a human edit could pass the checks and merge. The `Dependabot provenance` job
+# in ci.yml closes it: CI Pass fails on any commit that neither Dependabot nor
+# a clean "Update branch" merge made, so such a pull request cannot merge on
+# green CI at all. The second job stays as a second line of defence.
+#
+# Both jobs share one queue per pull request, and each re-reads the branch
+# head immediately before acting. A run whose commit is no longer the head
+# steps aside and leaves the decision to the run for the newer push. Without
+# this, a delayed or re-run disable could switch auto-merge off after a newer
+# Dependabot push - `@dependabot recreate`, say - had switched it on, leaving
+# the pull request waiting for a human. The check and the write are not
+# atomic, but the queue keeps a second run from acting in between, so a push
+# that lands in that gap is handled by its own run, which waits and acts
+# after it. `queue: max` keeps up to 100 waiting runs, where the default
+# would cancel one as the next arrives; no run is cancelled once it has
+# started.
+#
+# Two cases leave the setting stale rather than wrong. GitHub starts no
+# `pull_request` run for a pull request with a merge conflict, and it
+# cancels runs beyond those 100. In both, the newest head may get no run, so
+# auto-merge can stay off and the pull request waits for a human, or stay on
+# for a human commit that the provenance check in CI still refuses to merge.
+#
+# The merge is made with GITHUB_TOKEN, and GitHub does not start workflows
+# from pushes that token makes. The `push: main` workflows therefore run again
+# on the next human push to main rather than on the Dependabot merge itself.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    # Same queue as the disable job; see the header.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+      queue: max
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.actor == 'dependabot[bot]'
+      && github.triggering_actor == 'dependabot[bot]'
+      && github.repository == 'sergienko4/israeli-bank-importer-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Dependabot runs get a read-only token unless the job asks for more.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Enable squash auto-merge
+        run: |
+          head="$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)"
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "::notice::Head is now $head, not $HEAD_SHA; the run for that push decides."
+            exit 0
+          fi
+          gh pr merge --auto --squash --match-head-commit "$HEAD_SHA" "$PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+  disable-auto-merge:
+    name: Disable auto-merge after a human push
+    # Same queue as the enable job; see the header.
+    concurrency:
+      group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+      queue: max
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.action == 'synchronize'
+      && github.actor != 'dependabot[bot]'
+      && github.repository == 'sergienko4/israeli-bank-importer-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Turning auto-merge off is a write to the pull request, the same scope
+    # the enable job needs.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # The state is checked before disabling, so a pull request that never
+      # had auto-merge is a no-op rather than an API error, without hiding a
+      # real failure to disable it.
+      - name: Disable auto-merge if it is on
+        run: |
+          head="$(gh pr view "$PR_URL" --json headRefOid --jq .headRefOid)"
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "::notice::Head is now $head, not $HEAD_SHA; the run for that push decides."
+            exit 0
+          fi
+          enabled="$(gh pr view "$PR_URL" --json autoMergeRequest --jq '.autoMergeRequest != null')"
+          if [ "$enabled" = "true" ]; then
+            gh pr merge --disable-auto "$PR_URL"
+          else
+            echo "Auto-merge is not enabled; nothing to disable."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

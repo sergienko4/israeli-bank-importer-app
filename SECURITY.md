@@ -104,6 +104,107 @@ OSV, so the exception is recorded once more, in machine-readable form, in
 date: when it lapses the finding returns on its own, which is the intended
 prompt to re-read the advisory rather than renew the exception by habit.
 
+### Dependabot automation
+
+Dependabot pull requests merge themselves once CI is green.
+[`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml)
+turns on squash auto-merge for every pull request Dependabot opens, for npm and
+GitHub Actions alike, whether the update is a patch, a minor or a major. The
+workflow never merges by itself: GitHub merges only once branch protection is
+satisfied, and a red check leaves the pull request open for a human. The
+required checks are `Typecheck, lint & bundle`, `SonarCloud Analysis` and
+`CI Pass`, and `CI Pass` succeeds only when every job it aggregates in
+[`ci.yml`](.github/workflows/ci.yml) succeeds: the build, `Expo SDK pin
+drift`, `Documentation Quality`, `License Compliance`, `SonarCloud Analysis`
+and `Dependabot provenance`. CodeQL and Gitleaks also run on each pull request but are not
+required, so a finding from either does not hold the merge back. Review CodeQL
+findings in the Security tab. Gitleaks uploads nothing there, so a leak shows
+only as a failed `Gitleaks` check, with the details in that run's log.
+
+The limits are deliberate:
+
+- **The Expo SDK family is upgraded by hand.** `expo`, `expo-*`, `@expo/*`,
+  `jest-expo` and `eslint-config-expo` are ignored for version updates in
+  [`.github/dependabot.yml`](.github/dependabot.yml), as are the native pins
+  the SDK chooses, such as `react` and `react-native`. The SDK moves these
+  versions together, and `npx expo install --fix` is the only supported way to
+  change them. The ignores list `update-types`, which apply to version updates
+  only, so Dependabot security updates for these packages still open. Do not
+  shorten them to a bare `dependency-name` entry: that blocks security updates
+  as well.
+- **Auto-merge follows Dependabot's own pushes only.** It is switched on only
+  when Dependabot opened the pull request, pushed its head commit and started
+  the run, and the call is pinned to that commit, so a slow run cannot enable
+  it after someone else has pushed. Any other push to a Dependabot branch,
+  including the "Update branch" button, switches auto-merge off, so a human
+  normally merges that pull request. Switching it off happens after the push,
+  so a clean "Update branch" merge can still auto-merge if its checks finish
+  first; the check below accepts that merge because it adds nothing that is
+  not already on `main`. Each run checks the branch head immediately before
+  acting and leaves the decision to the run for any newer push, and the runs
+  for one pull request queue behind each other, so a delayed switch-off
+  cannot undo a later `@dependabot recreate`.
+- **Human commits on a Dependabot branch fail CI.** Turning auto-merge off
+  happens only after the push, so a human edit could otherwise pass the checks
+  and merge in between. The `Dependabot provenance` job closes that window: on
+  a Dependabot pull request it fails, and with it `CI Pass`, unless every
+  commit since `main` is either a Dependabot commit or a merge from the
+  "Update branch" button that git reproduces exactly by merging `main` in with
+  no conflicts. A web edit, a local push, a merge resolved in the conflict
+  editor and an edited merge all fail. To keep such a change, an admin merges
+  the pull request after review; to discard it, comment
+  `@dependabot recreate`. The check guards against an accidental edit merging
+  unreviewed, not against a writer, who can merge a pull request of their own
+  anyway, and it trusts commit emails without verifying them.
+- **SonarCloud does not analyse Dependabot pull requests.** Dependabot runs
+  receive no Actions secrets, and no Dependabot secret holds `SONAR_TOKEN`, so
+  the `sonar` job skips its scan steps and still concludes as a success. Both
+  `SonarCloud Analysis` and `CI Pass` therefore pass without an analysis; the
+  code is analysed on the next CI run on `main`.
+- **Branch protection does not require an up-to-date branch** (`strict:
+  false`). With that rule on, each merge would leave every other open
+  Dependabot pull request behind `main`, and auto-merge would stall until
+  someone rebased it. Dependabot rebases on its own when the lockfile
+  conflicts, and linear history is still enforced. The cost is that two pull
+  requests that each pass alone are never tested together, so their combined
+  result first meets CI on `main`.
+- **Merges do not start `push: main` workflows.** The merge is made with
+  `GITHUB_TOKEN`, and GitHub starts no workflows from pushes that token makes.
+  CI, CodeQL, Gitleaks, Scorecard and release-please therefore catch up on the
+  next human push to `main`. To test `main` sooner after Dependabot merges,
+  run CI by hand from the Actions tab or with
+  `gh workflow run ci.yml --ref main`. release-please has no manual trigger on
+  purpose: a run that finds a merged release pull request tags the release and
+  starts the APK and OTA publishes, so only a real push should start one.
+  Waiting costs nothing: release-please treats `chore` and `ci` commits as not
+  user-facing and opens no release for them, and Dependabot writes only
+  `chore(deps)`, `chore(deps-dev)` and `ci(deps)` commits here.
+- **The SMS APK build is not part of the gate.** `sms-apk-check.yml` can run
+  for over an hour and is not a required check, so a bump can merge before it
+  finishes or after it fails. A break in the Gradle build would then first
+  surface in `release-apk-sms.yml`. Before tagging a release that follows
+  dependency bumps, confirm that `sms-apk-check.yml` passed on each of those
+  Dependabot pull requests.
+
+Some alerts have no fix that Dependabot can reach. They stay open on purpose:
+each one closes on its own when an upstream release lets Dependabot propose a
+patched version. Three have no patched release at all. The other two have one,
+but only outside the range their parent declares, and forcing a version past
+that range is the build break the scoped-`overrides` rule above exists to
+avoid. So no `overrides` entry is added for any of them. As of October 2026 the
+open alerts are:
+
+| Alert | Package | Severity | Reached through | Waiting on |
+| --- | --- | --- | --- | --- |
+| [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | `node-forge` | high | Expo CLI code signing, `sonarqube-scanner` | a patched release |
+| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | a patched release |
+| [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | a patched release |
+| [GHSA-r4xh-jqrq-34v2](https://github.com/advisories/GHSA-r4xh-jqrq-34v2) | `smol-toml` | medium | `markdownlint-cli2`, which pins `1.8.0` (dev) | `markdownlint-cli2` accepting `1.9.0` |
+| [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | `katex` | low | `micromark-extension-math` via `markdownlint` (dev) | `micromark-extension-math` accepting `0.18` |
+
+None of these packages is imported by the app or included in its JavaScript
+bundle; they run only in build, test and lint tooling.
+
 ### Review policy
 
 This project has a single maintainer, so a required-approval rule cannot be

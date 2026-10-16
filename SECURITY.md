@@ -111,9 +111,14 @@ Dependabot pull requests merge themselves once CI is green.
 turns on squash auto-merge for every pull request Dependabot opens, for npm and
 GitHub Actions alike, whether the update is a patch, a minor or a major. The
 workflow never merges by itself: GitHub merges only once branch protection is
-satisfied. The required checks (`Typecheck, lint & bundle`, `SonarCloud
-Analysis` and `CI Pass`) are therefore the gate, and a red check leaves the pull
-request open for a human.
+satisfied, and a red check leaves the pull request open for a human. The
+required checks are `Typecheck, lint & bundle`, `SonarCloud Analysis` and
+`CI Pass`, and `CI Pass` succeeds only when every job it aggregates in
+[`ci.yml`](.github/workflows/ci.yml) succeeds: the build, `Expo SDK pin
+drift`, `Documentation Quality`, `License Compliance` and `SonarCloud
+Analysis`. CodeQL and Gitleaks also run on each pull request but are not
+required, so a finding from either does not hold the merge back; review their
+alerts in the Security tab.
 
 The limits are deliberate:
 
@@ -126,20 +131,35 @@ The limits are deliberate:
   only, so Dependabot security updates for these packages still open. Do not
   shorten them to a bare `dependency-name` entry: that blocks security updates
   as well.
+- **Auto-merge follows Dependabot's own pushes only.** It is switched on only
+  when Dependabot opened the pull request, pushed its head commit and started
+  the run, and the call is pinned to that commit, so a slow run cannot enable
+  it after someone else has pushed. Any other push to a Dependabot branch,
+  including the "Update branch" button, switches auto-merge off, and a human
+  merges that pull request.
 - **SonarCloud does not analyse Dependabot pull requests.** Dependabot runs
-  receive no repository secrets, so the `sonar` job skips without
-  `SONAR_TOKEN`, and a skipped required check counts as passing. Every other
-  check still gates the merge.
+  receive no Actions secrets, and no Dependabot secret holds `SONAR_TOKEN`, so
+  the `sonar` job skips its scan steps and still concludes as a success. Both
+  `SonarCloud Analysis` and `CI Pass` therefore pass without an analysis; the
+  code is analysed on the next CI run on `main`.
 - **Branch protection does not require an up-to-date branch** (`strict:
   false`). With that rule on, each merge would leave every other open
   Dependabot pull request behind `main`, and auto-merge would stall until
   someone rebased it. Dependabot rebases on its own when the lockfile
-  conflicts, and linear history is still enforced.
+  conflicts, and linear history is still enforced. The cost is that two pull
+  requests that each pass alone are never tested together, so their combined
+  result first meets CI on `main`.
 - **Merges do not start `push: main` workflows.** The merge is made with
   `GITHUB_TOKEN`, and GitHub starts no workflows from pushes that token makes.
   CI, CodeQL, Gitleaks, Scorecard and release-please therefore catch up on the
-  next human push to `main`. Nothing is lost: release-please cuts no release
-  for `chore`, `ci` or `deps` commits, which is all Dependabot writes.
+  next human push to `main`. To test `main` sooner after Dependabot merges,
+  run CI by hand from the Actions tab or with
+  `gh workflow run ci.yml --ref main`. release-please has no manual trigger on
+  purpose: a run that finds a merged release pull request tags the release and
+  starts the APK and OTA publishes, so only a real push should start one.
+  Waiting costs nothing: release-please treats `chore` and `ci` commits as not
+  user-facing and opens no release for them, and Dependabot writes only
+  `chore(deps)`, `chore(deps-dev)` and `ci(deps)` commits here.
 - **The SMS APK build is not part of the gate.** `sms-apk-check.yml` can run
   for over an hour and is not a required check, so a bump can merge before it
   finishes or after it fails. A break in the Gradle build would then first

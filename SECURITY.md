@@ -117,8 +117,9 @@ required checks are `Typecheck, lint & bundle`, `SonarCloud Analysis` and
 [`ci.yml`](.github/workflows/ci.yml) succeeds: the build, `Expo SDK pin
 drift`, `Documentation Quality`, `License Compliance` and `SonarCloud
 Analysis`. CodeQL and Gitleaks also run on each pull request but are not
-required, so a finding from either does not hold the merge back; review their
-alerts in the Security tab.
+required, so a finding from either does not hold the merge back. Review CodeQL
+findings in the Security tab. Gitleaks uploads nothing there, so a leak shows
+only as a failed `Gitleaks` check, with the details in that run's log.
 
 The limits are deliberate:
 

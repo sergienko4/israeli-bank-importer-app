@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # A merge that Dependabot auto-merge performs is pushed with GITHUB_TOKEN,
+  # which starts no workflow run, so `push` above misses it. Run this by hand
+  # to test main after such merges.
+  workflow_dispatch:
 
 permissions:
   contents: read

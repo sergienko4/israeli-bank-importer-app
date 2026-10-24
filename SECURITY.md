@@ -88,24 +88,6 @@ checks. The rules below are enforced automatically, not by convention:
   directly.** `npm view` reads whichever registry is configured locally; a
   lagging mirror will misreport a version as unpublished.
 
-### Known `npm audit` deviation
-
-`npm audit` currently reports findings for `brace-expansion` via
-[GHSA-mh99-v99m-4gvg](https://github.com/advisories/GHSA-mh99-v99m-4gvg). The
-advisory declares a single flat range, `<= 5.0.7`, which semver-wise also covers
-the maintainer's v1 and v2 backports. The versions installed here — `1.1.17`,
-`2.1.3` and `5.0.8` — each contain the upstream commit
-`fix: backport GHSA-mh99-v99m-4gvg`, so they are patched; the advisory metadata
-simply has not been amended with the per-major ranges yet. `npm audit` is
-therefore not wired into the CI gate. The matching Dependabot alert is dismissed
-on the same evidence.
-
-The same advisory reaches OpenSSF Scorecard's `Vulnerabilities` check through
-OSV, so the exception is recorded once more, in machine-readable form, in
-[`osv-scanner.toml`](osv-scanner.toml). That entry carries an `ignoreUntil`
-date: when it lapses the finding returns on its own, which is the intended
-prompt to re-read the advisory rather than renew the exception by habit.
-
 ### Dependabot automation
 
 Dependabot pull requests merge themselves once CI is green.

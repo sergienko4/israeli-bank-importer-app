@@ -33,6 +33,10 @@ export interface OtpCaptureSource {
  * code as before.
  */
 export const noopOtpCaptureSource: OtpCaptureSource = {
+  /**
+   * Never calls the listener, because this device has no message capture.
+   * @returns A stop function that has nothing to release.
+   */
   start: () => (): void => undefined,
 };
 

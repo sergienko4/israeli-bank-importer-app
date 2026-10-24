@@ -45,8 +45,15 @@ const FLOORS: readonly AdvisoryFloor[] = [
   { ghsa: 'GHSA-7q85-xj36-vmfc', name: 'adm-zip', floor: '0.6.1' },
   { ghsa: 'GHSA-vwc7-r8mq-g2x9', name: 'adm-zip', floor: '0.6.1' },
   { ghsa: 'GHSA-7w5x-hrqm-74c2', name: 'smol-toml', floor: '1.7.1' },
+  { ghsa: 'GHSA-r4xh-jqrq-34v2', name: 'smol-toml', floor: '1.9.0' },
   { ghsa: 'GHSA-5p2g-fcmc-qvqq', name: 'image-size', floor: '2.0.3' },
   { ghsa: 'GHSA-w3rx-r6r6-pgpr', name: 'image-size', floor: '2.0.3' },
+  { ghsa: 'GHSA-gfr2-rv44-r23c', name: 'markdown-it', introduced: '14.1.0', floor: '14.3.3' },
+  { ghsa: 'GHSA-gfr2-rv44-r23c', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.3' },
+  { ghsa: 'GHSA-vfgh-jcmw-g37q', name: 'markdown-it', floor: '14.3.3' },
+  { ghsa: 'GHSA-vfgh-jcmw-g37q', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.3' },
+  { ghsa: 'GHSA-r7fv-28h4-cvq7', name: 'markdown-it', floor: '14.3.2' },
+  { ghsa: 'GHSA-r7fv-28h4-cvq7', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.2' },
 ];
 
 const NODE_MODULES = 'node_modules/';

@@ -188,18 +188,17 @@ The limits are deliberate:
 
 Some alerts have no fix that Dependabot can reach. They stay open on purpose:
 each one closes on its own when an upstream release lets Dependabot propose a
-patched version. Three have no patched release at all. The other two have one,
-but only outside the range their parent declares, and forcing a version past
-that range is the build break the scoped-`overrides` rule above exists to
-avoid. So no `overrides` entry is added for any of them. As of October 2026 the
-open alerts are:
+patched version. Three have no patched release at all. The fourth has one, but
+only outside the range its parent declares, and forcing a version past that
+range is the build break the scoped-`overrides` rule above exists to avoid. So
+no `overrides` entry is added for any of them. As of October 2026 the open
+alerts are:
 
 | Alert | Package | Severity | Reached through | Waiting on |
 | --- | --- | --- | --- | --- |
 | [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | `node-forge` | high | Expo CLI code signing, `sonarqube-scanner` | a patched release |
 | [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | a patched release |
 | [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | a patched release |
-| [GHSA-r4xh-jqrq-34v2](https://github.com/advisories/GHSA-r4xh-jqrq-34v2) | `smol-toml` | medium | `markdownlint-cli2`, which pins `1.8.0` (dev) | `markdownlint-cli2` accepting `1.9.0` |
 | [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | `katex` | low | `micromark-extension-math` via `markdownlint` (dev) | `micromark-extension-math` accepting `0.18` |
 
 None of these packages is imported by the app or included in its JavaScript

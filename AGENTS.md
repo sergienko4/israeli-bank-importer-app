@@ -25,7 +25,7 @@ hooks are enforced. Before committing, keep these green:
 
 - `npm run lint` - strict ESLint, `--max-warnings=0`, **no** `eslint-disable`/`any`/non-null `!`.
 - `npm run format:check` - Prettier.
-- `npm run lint:md` - markdownlint, same globs and pinned version as the CI job.
+- `npm run lint:md` - markdownlint; CI's build job runs this same script.
 - `npm run typecheck` and `npm test`.
 
 Hooks run automatically: **pre-commit** (`lint-staged`), **commit-msg**

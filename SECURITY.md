@@ -81,7 +81,9 @@ checks. The rules below are enforced automatically, not by convention:
 - **Transitive vulnerabilities are patched with version-scoped `overrides`.**
   Scoped keys (for example `brace-expansion@1`) are used deliberately: a blanket
   bump would drag a CommonJS consumer onto an ESM-only major and break the
-  build.
+  build. [`packageOverrides.test.ts`](src/config/packageOverrides.test.ts)
+  fails when an override no longer applies to any locked package, so one that
+  an upstream release has left behind is removed instead of passing for a fix.
 - **Verify published versions against `https://registry.npmjs.org/<pkg>`
   directly.** `npm view` reads whichever registry is configured locally; a
   lagging mirror will misreport a version as unpublished.

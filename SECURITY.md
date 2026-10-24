@@ -186,13 +186,14 @@ The limits are deliberate:
   dependency bumps, confirm that `sms-apk-check.yml` passed on each of those
   Dependabot pull requests.
 
-Some alerts have no fix that Dependabot can reach. They stay open on purpose:
-each one closes on its own when an upstream release lets Dependabot propose a
-patched version. Three have no patched release at all. The fourth has one, but
-only outside the range its parent declares, and forcing a version past that
-range is the build break the scoped-`overrides` rule above exists to avoid. So
-no `overrides` entry is added for any of them. As of October 2026 the open
-alerts are:
+Some advisories have no fix that Dependabot can reach. Their alerts stay open
+on purpose: each one closes on its own when an upstream release lets Dependabot
+propose a patched version. GitHub raises an alert some time after it reviews an
+advisory, so a row can appear here before its alert does. Three have no patched
+release at all. The other two have one, but only outside the range their parent
+declares, and forcing a version past that range is the build break the
+scoped-`overrides` rule above exists to avoid. So no `overrides` entry is added
+for any of them. As of October 2026 the advisories left open are:
 
 | Alert | Package | Severity | Reached through | Waiting on |
 | --- | --- | --- | --- | --- |
@@ -200,6 +201,7 @@ alerts are:
 | [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | a patched release |
 | [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | a patched release |
 | [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | `katex` | low | `micromark-extension-math` via `markdownlint` (dev) | `micromark-extension-math` accepting `0.18` |
+| [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) | `zod` 3.x | high | Expo CLI, which requires `^3.25.76` | Expo CLI accepting zod `4.6.6` |
 
 None of these packages is imported by the app or included in its JavaScript
 bundle; they run only in build, test and lint tooling.

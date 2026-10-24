@@ -39,7 +39,9 @@ interface Violation {
  * Vulnerable ranges per advisory, as GitHub publishes them. GHSA-vwc7-r8mq-g2x9
  * lists no patched version; its vulnerable range ends at 0.6.0 and adm-zip 0.6.1
  * blocks extraction through symlinks, so 0.6.1 is the floor for both adm-zip
- * advisories.
+ * advisories. GHSA-mrhx-c7xc-m3w5 is published as below zod 4.6.6, but 3.x has
+ * no patched release and Expo CLI still requires it, so only the 4.x line is held
+ * here; SECURITY.md tracks the 3.x copy.
  */
 const FLOORS: readonly AdvisoryFloor[] = [
   { ghsa: 'GHSA-7q85-xj36-vmfc', name: 'adm-zip', floor: '0.6.1' },
@@ -56,6 +58,19 @@ const FLOORS: readonly AdvisoryFloor[] = [
   { ghsa: 'GHSA-r7fv-28h4-cvq7', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.2' },
   { ghsa: 'GHSA-q3jh-wrc6-jgq8', name: 'follow-redirects', introduced: '1.16.0', floor: '1.16.1' },
   { ghsa: 'GHSA-8r9p-f939-6h3c', name: 'follow-redirects', introduced: '1.16.0', floor: '1.16.1' },
+  { ghsa: 'GHSA-w74x-v6f9-j3xg', name: 'fast-uri', floor: '2.4.8' },
+  { ghsa: 'GHSA-w74x-v6f9-j3xg', name: 'fast-uri', introduced: '3.0.0', floor: '3.1.9' },
+  { ghsa: 'GHSA-w74x-v6f9-j3xg', name: 'fast-uri', introduced: '4.0.0', floor: '4.2.3' },
+  { ghsa: 'GHSA-xhq7-xmqj-769h', name: 'fast-uri', floor: '2.4.8' },
+  { ghsa: 'GHSA-xhq7-xmqj-769h', name: 'fast-uri', introduced: '3.0.0', floor: '3.1.9' },
+  { ghsa: 'GHSA-xhq7-xmqj-769h', name: 'fast-uri', introduced: '4.0.0', floor: '4.2.3' },
+  { ghsa: 'GHSA-wjr9-j795-jxcr', name: 'fast-uri', introduced: '2.4.2', floor: '2.4.8' },
+  { ghsa: 'GHSA-wjr9-j795-jxcr', name: 'fast-uri', introduced: '3.1.3', floor: '3.1.9' },
+  { ghsa: 'GHSA-wjr9-j795-jxcr', name: 'fast-uri', introduced: '4.0.1', floor: '4.2.3' },
+  { ghsa: 'GHSA-333x-w4r6-6crp', name: 'fast-uri', floor: '2.4.8' },
+  { ghsa: 'GHSA-333x-w4r6-6crp', name: 'fast-uri', introduced: '3.0.0', floor: '3.1.9' },
+  { ghsa: 'GHSA-333x-w4r6-6crp', name: 'fast-uri', introduced: '4.0.0', floor: '4.2.3' },
+  { ghsa: 'GHSA-mrhx-c7xc-m3w5', name: 'zod', introduced: '4.0.0', floor: '4.6.6' },
 ];
 
 const NODE_MODULES = 'node_modules/';

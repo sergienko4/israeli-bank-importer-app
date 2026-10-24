@@ -74,10 +74,13 @@ checks. The rules below are enforced automatically, not by convention:
   asserts every `resolved` URL starts with `https://registry.npmjs.org/`. This
   keeps internal mirror hostnames out of a public repo and guarantees external
   contributors and CI can install.
-- **The registry is configured in exactly one place**,
-  `.github/actions/setup-node/action.yml`, which every workflow consumes. The
-  repo ships no `.npmrc` so contributors behind a corporate mirror are not
-  overridden.
+- **The registry is pinned to the public one.** The committed `.npmrc` sets
+  `registry=https://registry.npmjs.org/`, and
+  `.github/actions/setup-node/action.yml`, which every workflow consumes,
+  exports the same value for CI. A project `.npmrc` outranks a contributor's
+  own, so a corporate mirror configured there is not used here: a mirror that
+  lags the public registry reports the newest versions as unpublished and
+  cannot install the lockfile.
 - **Transitive vulnerabilities are patched with version-scoped `overrides`.**
   Scoped keys (for example `brace-expansion@1`) are used deliberately: a blanket
   bump would drag a CommonJS consumer onto an ESM-only major and break the
@@ -173,22 +176,60 @@ The limits are deliberate:
 Some advisories have no fix that Dependabot can reach. Their alerts stay open
 on purpose: each one closes on its own when an upstream release lets Dependabot
 propose a patched version. GitHub raises an alert some time after it reviews an
-advisory, so a row can appear here before its alert does. Three have no patched
-release at all. The other two have one, but only outside the range their parent
-declares, and forcing a version past that range is the build break the
+advisory, so a row can appear here before its alert does. One has no patched
+release at all. Two have one, but only outside the range their parent
+declares, and forcing a version past that range risks the build break the
 scoped-`overrides` rule above exists to avoid. So no `overrides` entry is added
-for any of them. As of October 2026 the advisories left open are:
+for any of them. GitHub withdrew the last two advisories after raising their
+alerts. Those alerts are kept open rather than dismissed, and each row goes
+when GitHub closes its alert. As of October 2026 the advisories left open are:
 
 | Alert | Package | Severity | Reached through | Waiting on |
 | --- | --- | --- | --- | --- |
 | [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv) | `node-forge` | high | Expo CLI code signing; `sonarqube-scanner`, fetched outside the lockfile by `npm run sonar` | a patched release |
-| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | a patched release |
-| [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | a patched release |
 | [GHSA-238p-pmpm-9mq7](https://github.com/advisories/GHSA-238p-pmpm-9mq7) | `katex` | low | `micromark-extension-math` via `markdownlint` (dev) | `micromark-extension-math` accepting `0.18` |
 | [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5) | `zod` 3.x | high | Expo CLI, which requires `^3.25.76` | Expo CLI accepting zod `4.6.6` |
+| [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) | `braces` | high | `micromatch` in Metro, Jest and `markdownlint-cli2` | GitHub closing the alert; advisory withdrawn 2026-10-23 |
+| [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) | `sprintf-js` | medium | `argparse@1` via `js-yaml@3` (dev) | GitHub closing the alert; advisory withdrawn 2026-10-22 |
 
 None of these packages is imported by the app or included in its JavaScript
 bundle; they run only in build, test and lint tooling.
+
+### When an alert has a fix but no pull request
+
+Dependabot opens a security update only when it can reach a patched version.
+If an alert names a fixed version but links no pull request, open the alert:
+GitHub shows there the error that stopped Dependabot. Then find the case:
+
+1. **Every parent's declared range already admits the fix.** Run
+   `npm update <package>`, which refreshes the lockfile and leaves
+   `package.json` alone. Add the advisory's vulnerable ranges to
+   [`lockfileAdvisories.test.ts`](src/config/lockfileAdvisories.test.ts), so a
+   later lockfile regeneration cannot bring the old version back.
+2. **A parent pins the vulnerable version exactly.** Only a new release of
+   that parent carries the fix, as `markdownlint-cli2` 0.24.0 did for the
+   `markdown-it` 15.0.1 and `smol-toml` 1.8.0 that 0.23.3 pinned. Once the
+   parent publishes one, the weekly version update proposes it. To run that
+   check early, open **Insights → Dependency graph → Dependabot** and click
+   **Check for updates**. The Expo SDK family is not version-updated, so a fix
+   there arrives with `npx expo install --fix` instead.
+3. **No release of the parent admits the fix.** Record the advisory in the
+   table above. Forcing the fix with an `overrides` entry past the parent's
+   range is a last resort: npm applies it, but nothing upstream has tested the
+   parent against that version. The one such entry here is `uuid`: `xcode`
+   declares `^7.0.3`, and 11.x was checked with a real Android prebuild before
+   the override went in.
+
+After unblocking a fix, the alert's **Create Dependabot security update**
+button retries the pull request. An alert whose fix has merged closes on its
+own after the dependency graph reads the new lockfile, which can trail the
+merge.
+
+An advisory whose metadata is wrong for the installed tree, such as one range
+that also covers a maintainer's backports, can be excepted from OpenSSF
+Scorecard's `Vulnerabilities` check in [`osv-scanner.toml`](osv-scanner.toml).
+Give the entry an `ignoreUntil` date, so the finding returns when it lapses and
+prompts a fresh read of the advisory.
 
 ### Review policy
 

@@ -51,7 +51,6 @@
     "lint-staged": "^17.6.0",
     "markdownlint-cli2": "0.24.0",
     "prettier": "^3.9.10",
-    "sonarqube-scanner": "^5.0.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.2",
     "yaml": "^2.9.0"
@@ -79,7 +78,7 @@
     "format:check": "prettier --check .",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "sonar": "sonar-scanner",
+    "sonar": "npx --yes sonarqube-scanner@5.0.2",
     "sonar:issues": "node scripts/sonar-issues.mjs",
     "lint:licenses": "npx --yes license-checker-rseidelsohn@4.4.2 --production --excludePrivatePackages --failOn \"AGPL-1.0;AGPL-3.0\"",
     "export": "expo export --platform android --platform ios",

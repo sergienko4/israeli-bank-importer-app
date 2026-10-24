@@ -54,6 +54,8 @@ const FLOORS: readonly AdvisoryFloor[] = [
   { ghsa: 'GHSA-vfgh-jcmw-g37q', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.3' },
   { ghsa: 'GHSA-r7fv-28h4-cvq7', name: 'markdown-it', floor: '14.3.2' },
   { ghsa: 'GHSA-r7fv-28h4-cvq7', name: 'markdown-it', introduced: '15.0.0', floor: '15.0.2' },
+  { ghsa: 'GHSA-q3jh-wrc6-jgq8', name: 'follow-redirects', introduced: '1.16.0', floor: '1.16.1' },
+  { ghsa: 'GHSA-8r9p-f939-6h3c', name: 'follow-redirects', introduced: '1.16.0', floor: '1.16.1' },
 ];
 
 const NODE_MODULES = 'node_modules/';

@@ -88,6 +88,7 @@ describe('a held code sent against its deadline (property)', () => {
     await fc.assert(
       fc.asyncProperty(
         fc.record({
+          id: fc.uuid(),
           lease: fc.integer({ min: 0, max: TASK_BUDGET_MS }),
           hold: delay,
           // Most interesting when the queue frees right around the deadline.
@@ -97,9 +98,10 @@ describe('a held code sent against its deadline (property)', () => {
           }),
           reply: fc.option(delay, { nil: null }),
         }),
-        async ({ lease, hold, nearDeadline, reply }) => {
+        async ({ id, lease, hold, nearDeadline, reply }) => {
           jest.setSystemTime(NOW);
           processLedger.forget();
+          const live = { ...LIVE, id };
           const events: string[] = [];
           let held: StashedMessage[] = [
             {
@@ -130,7 +132,7 @@ describe('a held code sent against its deadline (property)', () => {
                   ledger: processLedger,
                   pairing: currentPairing,
                 })(),
-              getPending: () => Promise.resolve([LIVE]),
+              getPending: () => Promise.resolve([live]),
               submit: submitWhileAllowed,
               now: Date.now,
               list: () => Promise.resolve([...held]),

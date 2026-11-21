@@ -1,5 +1,5 @@
 import type { PendingOtpRequest } from '../api/otp';
-import { OTP_DISMISS_SNOOZE_MS, pruneSnoozed, selectPendingOtp } from './otpQueue';
+import { OTP_DISMISS_SNOOZE_MS, pruneSnoozed, pruneUsed, selectPendingOtp } from './otpQueue';
 
 function req(id: string, deadline: number): PendingOtpRequest {
   return { id, bankId: 'leumi', createdAt: 0, deadline };
@@ -63,5 +63,21 @@ describe('pruneSnoozed', () => {
 
   it('returns an empty map when nothing is pending', () => {
     expect(pruneSnoozed(new Map([['a', 5_000]]), [])).toEqual(new Map());
+  });
+});
+
+describe('pruneUsed', () => {
+  it('keeps auto-submit markers that are still pending', () => {
+    const used = new Set(['a', 'b']);
+
+    expect(pruneUsed(used, [req('a', 9_000), req('b', 9_000)])).toEqual(used);
+  });
+
+  it('drops markers for requests the importer no longer reports', () => {
+    expect(pruneUsed(new Set(['a', 'b']), [req('b', 9_000)])).toEqual(new Set(['b']));
+  });
+
+  it('returns an empty set when nothing is pending', () => {
+    expect(pruneUsed(new Set(['a']), [])).toEqual(new Set());
   });
 });

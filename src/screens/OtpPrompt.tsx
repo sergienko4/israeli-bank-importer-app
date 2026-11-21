@@ -166,6 +166,10 @@ interface Props {
   request: PendingOtpRequest;
   /** Whether the prompt sheet is open. */
   visible: boolean;
+  /** Whether this request already used its one automatic attempt. */
+  autoSubmitUsed: boolean;
+  /** Marks the request as having used its automatic attempt. */
+  onAutoSubmitUsed: () => void;
   /** Called after a successful submit. */
   onSubmitted: () => void;
   /** Called when the user dismisses without submitting. */
@@ -240,6 +244,8 @@ function useOtpSubmission(requestId: string, onSubmitted: () => void): OtpSubmis
 export function OtpPrompt({
   request,
   visible,
+  autoSubmitUsed,
+  onAutoSubmitUsed,
   onSubmitted,
   onDismiss,
 }: Readonly<Props>): ReactElement {
@@ -248,6 +254,13 @@ export function OtpPrompt({
   const { submitting, error, setError, submit } = useOtpSubmission(request.id, onSubmitted);
   const autoEnabled = useAutoSubmitPreference(visible);
   const codeRef = useRef<{ focus: () => void } | null>(null);
+  // The parent owns the one-shot guard so it survives this prompt's per-request
+  // remount. The ref keeps the same-tick check synchronous; the effect syncs a
+  // marker that arrives after the first render.
+  const autoUsed = useRef(autoSubmitUsed);
+  useEffect(() => {
+    autoUsed.current = autoSubmitUsed;
+  }, [autoSubmitUsed]);
 
   // The shell remounts this prompt per request, so there is no stale code to
   // clear here; opening the sheet only has to put the cursor in the field.
@@ -262,11 +275,8 @@ export function OtpPrompt({
     }
   }, [visible]);
 
-  // Holds the request this prompt has already armed for. Because it is never
-  // cleared for the same id, a rejected automatic code cannot re-arm: the user
-  // finishes that request by hand.
-  const autoUsedForRequest = useRef<string | null>(null);
-
+  // The countdown belongs to this prompt; the one-shot guard lives in the
+  // parent so it cannot be reset by a remount.
   const countdown = useAutoSubmitCountdown({
     requestId: request.id,
     visible,
@@ -284,12 +294,13 @@ export function OtpPrompt({
     countdown.cancel();
     const arm = shouldArmAutoSubmit({
       enabled: autoEnabled,
-      alreadyArmed: autoUsedForRequest.current === request.id,
+      alreadyArmed: autoUsed.current,
       previous,
       next,
     });
     if (arm) {
-      autoUsedForRequest.current = request.id;
+      autoUsed.current = true;
+      onAutoSubmitUsed();
       countdown.arm(next);
       AccessibilityInfo.announceForAccessibility(
         `Sending the code automatically in ${String(

@@ -40,7 +40,7 @@ const ORDER: Tab[] = TABS.map((tab) => tab.key);
  */
 export function AppShell(): ReactElement {
   const theme = useTheme();
-  const { pending, dismiss } = useOtpWatcher();
+  const { pending, dismiss, autoSubmitted, markAutoSubmitted } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
   const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
@@ -102,6 +102,10 @@ export function AppShell(): ReactElement {
           key={promptRequest.id}
           request={promptRequest}
           visible={pending !== null}
+          autoSubmitUsed={autoSubmitted.has(promptRequest.id)}
+          onAutoSubmitUsed={() => {
+            markAutoSubmitted(promptRequest.id);
+          }}
           onSubmitted={dismiss}
           onDismiss={dismiss}
         />

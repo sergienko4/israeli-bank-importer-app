@@ -268,6 +268,7 @@ export function useBanksScreenModel(
       selected,
       baseline: data.baseline,
       config: data.config,
+      saving,
       setConfig: data.setConfig,
       clearErrors: () => {
         setSaveErrors(null);

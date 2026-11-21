@@ -106,6 +106,15 @@ jobs:
           npm run check:release
           npm run lint:licenses
           EXPO_OFFLINE=1 npx --no-install expo install --check
+      # The docs job's offline link check is a required CI gate. A refresh PR
+      # starts no CI, so run it here; only relative links are checked, which is
+      # what an SDK refresh could break.
+      - name: Check documentation links
+        if: steps.check.outputs.drift == 'true'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --offline --no-progress --exclude-path CHANGELOG.md "./**/*.md"
+          fail: true
       # The same pinned Doctor and environment setting as ci.yml. The offline
       # version check above validates the declared pins; Doctor is what catches
       # a missing native peer or a dependency that drifted off the SDK line.
@@ -223,7 +232,8 @@ jobs:
           request.
 
           Note: GitHub does not start CI for a pull request created with
-          GITHUB_TOKEN, so the required checks will not run here. Review the
-          diff and the workflow run, then merge.
+          GITHUB_TOKEN. If GitHub offers "Approve workflows to run", approve it
+          and wait for the required checks; otherwise the gates above already
+          ran in this workflow. Review the diff and the run, then merge.
           EOF
           )"

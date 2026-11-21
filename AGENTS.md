@@ -86,10 +86,12 @@ shape when adding one.
 `npx expo install --fix`, proves the result with every CI gate that needs no
 secret (including Expo Doctor and the importer contract), and calls
 `sms-apk-check.yml` for the APK build and JVM tests before it opens a pull
-request. It uses `GITHUB_TOKEN`, so that pull request starts no workflows: the
-gates run inside the workflow and a human merges it. Do not hand this line back
-to Dependabot — an expo patch can move a native pin, and Dependabot resolves to
-npm `latest` instead of the SDK's `bundledNativeModules`.
+request. It uses `GITHUB_TOKEN`, so that pull request normally starts no
+workflows: the gates run inside the workflow. If GitHub offers "Approve
+workflows to run", approve it and wait for the required checks before merging.
+Do not hand this line back to Dependabot — an expo patch can move a native pin,
+and Dependabot resolves to npm `latest` instead of the SDK's
+`bundledNativeModules`.
 
 Releases are distributed as the two APKs attached to the GitHub Release. Nothing
 here builds or submits a store binary, and nothing should be added that does

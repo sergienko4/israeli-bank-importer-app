@@ -94,9 +94,15 @@ describe('bankRunRowLabel', () => {
     );
   });
 
-  it('treats an unknown status as pending', () => {
+  it('preserves a skipped outcome instead of calling it pending', () => {
     expect(bankRunRowLabel({ name: 'discount', status: 'skipped', txns: 1 })).toBe(
-      'discount: import pending, 1 transaction.',
+      'discount: import skipped, 1 transaction.',
+    );
+  });
+
+  it('uses an unknown label when the outcome word is empty', () => {
+    expect(bankRunRowLabel({ name: 'discount', status: '', txns: 0 })).toBe(
+      'discount: import outcome unknown, 0 transactions.',
     );
   });
 });

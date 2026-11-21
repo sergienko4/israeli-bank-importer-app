@@ -81,7 +81,10 @@ function bankStatusLabel(status: string): string {
   if (status === 'failure') {
     return 'import failed';
   }
-  return 'import pending';
+  if (status === 'skipped') {
+    return 'import skipped';
+  }
+  return status === '' ? 'import outcome unknown' : `import ${status}`;
 }
 
 /**

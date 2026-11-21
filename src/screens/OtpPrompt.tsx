@@ -284,7 +284,13 @@ export function OtpPrompt({
     requestId: request.id,
     visible,
     onFire: (value: string): void => {
-      void submit(value);
+      // Re-read at fire time: the user may have turned auto-submit off while
+      // the countdown was running. A failed read stays on the safe side.
+      void (async () => {
+        if (await loadOtpAutoSubmit()) {
+          await submit(value);
+        }
+      })();
     },
   });
 

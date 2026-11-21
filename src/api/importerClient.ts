@@ -85,6 +85,59 @@ async function reachable(send: () => Promise<Response>): Promise<Response> {
 }
 
 /**
+ * Reads a response body inside the request deadline.
+ *
+ * The transport timeout in {@link reachable} ends when the headers arrive. A
+ * response that then stalls its JSON body would leave a screen spinning, so
+ * every body read goes through its own deadline.
+ * @param read - Consumes the response body.
+ * @returns The parsed value.
+ * @throws RequestTimeoutError when the body never finishes.
+ */
+async function readWithinDeadline<T>(read: () => Promise<T>): Promise<T> {
+  return withRequestTimeout(read());
+}
+
+/** The shape `toFailure` reads from a non-ok response. */
+interface FailureBody {
+  error?: string;
+  errors?: string[];
+}
+
+/**
+ * Reads an optional failure body, treating an unreadable one as empty.
+ * A timeout is not an unreadable body; it must reach the caller.
+ * @param res - The non-ok response.
+ * @returns The failure fields, or an empty object.
+ */
+async function readJsonOrEmpty(res: Response): Promise<FailureBody> {
+  try {
+    return (await readWithinDeadline(() => res.json())) as FailureBody;
+  } catch (error) {
+    if (isRequestTimeout(error)) {
+      throw error;
+    }
+    return {};
+  }
+}
+
+/**
+ * Reads an optional JSON body, treating an unreadable one as undefined.
+ * @param res - The response.
+ * @returns The parsed body, or undefined when it could not be read.
+ */
+async function readJsonOrUndefined(res: Response): Promise<unknown> {
+  try {
+    return await readWithinDeadline(() => res.json());
+  } catch (error) {
+    if (isRequestTimeout(error)) {
+      throw error;
+    }
+    return undefined;
+  }
+}
+
+/**
  * Reports whether a bearer token is currently authorized via `GET /auth/status`.
  *
  * This one stays a question rather than a contract parse, and reads only the
@@ -106,7 +159,7 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   if (!res.ok) {
     return false;
   }
-  const authStatus: unknown = await res.json().catch(() => undefined);
+  const authStatus = await readJsonOrUndefined(res);
   return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
@@ -217,7 +270,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, MANIFEST_BODY);
+  return readWithinDeadline(() => parsedBody(res, MANIFEST_BODY));
 }
 
 /**
@@ -234,7 +287,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, CONFIG_BODY);
+  return readWithinDeadline(() => parsedBody(res, CONFIG_BODY));
 }
 
 /**
@@ -243,7 +296,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
  * @returns A failure SaveResult with the importer's message + errors when present.
  */
 async function toFailure(res: Response): Promise<SaveResult> {
-  const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
+  const data = await readJsonOrEmpty(res);
   return {
     ok: false,
     error: data.error ?? messageForStatus(res.status),
@@ -292,7 +345,7 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const statusBody = await parsedBody(res, STATUS_BODY);
+  const statusBody = await readWithinDeadline(() => parsedBody(res, STATUS_BODY));
   return statusBody.runs;
 }
 
@@ -337,7 +390,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, OTP_SETTINGS);
+  return readWithinDeadline(() => parsedBody(res, OTP_SETTINGS));
 }
 
 /**
@@ -365,7 +418,7 @@ async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  const pendingBody = await readWithinDeadline(() => parsedBody(res, PENDING_OTP_BODY));
   return pendingBody.requests;
 }
 

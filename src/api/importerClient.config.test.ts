@@ -110,6 +110,51 @@ describe('removeBank', () => {
   });
 });
 
+describe('a response body that never finishes', () => {
+  /**
+   * Builds a response whose headers arrive but whose body never resolves.
+   * @param ok - Whether the status is a success.
+   * @returns A Response-shaped stub.
+   */
+  function stalledBody(ok: boolean): Response {
+    return {
+      ok,
+      status: ok ? 200 : 400,
+      json: () => new Promise<unknown>(() => undefined),
+    } as unknown as Response;
+  }
+
+  it('bounds a load body instead of leaving the screen spinning', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(true)));
+      const result = getConfig(session);
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('bounds the failure body read on a rejected save', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(false)));
+      const result = saveConfig(session, { a: 1 });
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});
+
 describe('getStatus', () => {
   it('returns the runs on success', async () => {
     stubFetch(200, {

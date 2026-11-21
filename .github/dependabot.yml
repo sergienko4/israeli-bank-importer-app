@@ -99,8 +99,10 @@ updates:
       # patch is unsafe: an expo patch can move a native pin (57.0.17 moved
       # react-native), and the grouped bump in PR #106 left npm ci unable to
       # resolve. A major is a whole SDK upgrade. So the family moves only by
-      # hand, as a deliberate SDK upgrade: nothing opens a pull request when a
-      # new SDK ships, so watch the Expo changelog for it.
+      # hand, as a deliberate SDK upgrade. The patch line is not left to
+      # memory: `expo-sdk-refresh.yml` runs `expo install --fix` weekly and
+      # opens a pull request when the installed SDK has moved. A new SDK
+      # *major* still opens nothing, so watch the Expo changelog for it.
       - dependency-name: expo
         update-types:
           [

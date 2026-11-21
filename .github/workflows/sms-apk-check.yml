@@ -12,6 +12,10 @@ name: SMS APK check
 #
 # Only the inputs of prebuild and Gradle trigger it. A JavaScript-only change
 # is already bundled for both platforms by ci.yml on every pull request.
+#
+# It is also callable: expo-sdk-refresh.yml calls it against the branch it just
+# pushed, because a pull request created with GITHUB_TOKEN starts no workflows,
+# so the native checks would otherwise never see an SDK refresh.
 
 on:
   pull_request:
@@ -31,12 +35,18 @@ on:
       - 'scripts/compare-apk-signatures.mjs'
       - '.github/actions/**'
       - '.github/workflows/sms-apk-check.yml'
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or branch to check.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: sms-apk-check-${{ github.event.pull_request.number }}
+  group: sms-apk-check-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 # `shell: bash` adds `-o pipefail`, which the implicit default does not.
@@ -53,6 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-android-build
       - name: Build with a throwaway key
@@ -64,6 +75,14 @@ jobs:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/check.keystore
           ANDROID_KEY_ALIAS: sms-apk-check
           ANDROID_VERSION_CODE: '1'
+          # Gradle resolves plugins and Kotlin artifacts from public
+          # repositories at configuration time. A dedicated home avoids a
+          # pre-baked or poisoned cache; the retry below covers a transient
+          # repository failure.
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.repository.max.retries=5
+            -Dorg.gradle.internal.repository.initial.backoff=2000
         run: |
           ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 16)
           ANDROID_KEY_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
@@ -73,8 +92,22 @@ jobs:
             -dname 'CN=SMS APK check' \
             -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
           output="$RUNNER_TEMP/israeli-bank-importer.sms.apk"
-          node scripts/build-sms-apk.mjs --self-reference \
-            --out "$output"
+          # The script restores package.json and removes the generated project
+          # on every exit, so a retry starts from a clean tree. The plugin
+          # portal has been intermittently unreachable from the runners; a
+          # negative cache from the failed attempt is dropped as well.
+          for attempt in 1 2 3 4 5; do
+            if node scripts/build-sms-apk.mjs --self-reference --out "$output"; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::The SMS APK build failed after 5 attempts."
+              exit 1
+            fi
+            echo "SMS APK build attempt $attempt failed; retrying in 60s."
+            sleep 60
+            rm -rf "$GRADLE_USER_HOME"
+          done
 
           versions=node_modules/react-native/gradle/libs.versions.toml
           build_tools=$(sed -n -E 's/^buildTools[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$versions")
@@ -149,10 +182,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-android-build
       - name: Generate the Android project
         run: npx expo prebuild --platform android --clean --no-install
       - name: Run the otp-sms-consent JVM tests
         working-directory: android
-        run: ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain
+        env:
+          # Same clean cache and repository retry as the APK build.
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.repository.max.retries=5
+            -Dorg.gradle.internal.repository.initial.backoff=2000
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::Gradle failed after 5 attempts."
+              exit 1
+            fi
+            echo "Gradle attempt $attempt failed; retrying in 60s."
+            sleep 60
+            rm -rf "$GRADLE_USER_HOME"
+          done

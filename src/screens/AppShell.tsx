@@ -45,6 +45,11 @@ export function AppShell(): ReactElement {
   const [depth, setDepth] = useState(0);
   const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
   const prevIndex = useRef(0);
+  const depthRef = useRef(0);
+
+  useEffect(() => {
+    depthRef.current = depth;
+  }, [depth]);
 
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -52,7 +57,11 @@ export function AppShell(): ReactElement {
       if (data?.type === 'otp') {
         return;
       }
-      setDepth(0);
+      // Do not discard an open editor's draft from a background notification;
+      // the user finishes the save or backs out first.
+      if (depthRef.current > 0) {
+        return;
+      }
       setActive('status');
     });
     return () => {

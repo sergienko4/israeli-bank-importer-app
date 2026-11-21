@@ -48,46 +48,6 @@ describe('selectPendingOtp', () => {
   });
 });
 
-describe('pruneSnoozed', () => {
-  it('keeps ids that are still pending', () => {
-    const snoozed = new Map([
-      ['a', 5_000],
-      ['b', 6_000],
-    ]);
-
-    expect(pruneSnoozed(snoozed, [req('a', 9_000), req('b', 9_000)])).toEqual(snoozed);
-  });
-
-  it('drops ids the importer no longer reports', () => {
-    const snoozed = new Map([
-      ['a', 5_000],
-      ['b', 6_000],
-    ]);
-
-    expect(pruneSnoozed(snoozed, [req('b', 9_000)])).toEqual(new Map([['b', 6_000]]));
-  });
-
-  it('returns an empty map when nothing is pending', () => {
-    expect(pruneSnoozed(new Map([['a', 5_000]]), [])).toEqual(new Map());
-  });
-});
-
-describe('pruneUsed', () => {
-  it('keeps auto-submit markers that are still pending', () => {
-    const used = new Set(['a', 'b']);
-
-    expect(pruneUsed(used, [req('a', 9_000), req('b', 9_000)])).toEqual(used);
-  });
-
-  it('drops markers for requests the importer no longer reports', () => {
-    expect(pruneUsed(new Set(['a', 'b']), [req('b', 9_000)])).toEqual(new Set(['b']));
-  });
-
-  it('returns an empty set when nothing is pending', () => {
-    expect(pruneUsed(new Set(['a']), [])).toEqual(new Set());
-  });
-});
-
 describe('snoozeUntil', () => {
   const now = 10_000;
 
@@ -105,5 +65,49 @@ describe('snoozeUntil', () => {
 
   it('never returns before now', () => {
     expect(snoozeUntil(now - 1_000, now)).toBe(now);
+  });
+});
+
+describe('pruneSnoozed', () => {
+  const now = 10_000;
+
+  it('keeps a snooze through its exact end', () => {
+    const snoozed = new Map([
+      ['a', now],
+      ['b', now + 1],
+    ]);
+
+    expect(pruneSnoozed(snoozed, now)).toEqual(new Map([['b', now + 1]]));
+  });
+
+  it('keeps a dismissal through a transient empty poll', () => {
+    const snoozed = new Map([['a', now + 30_000]]);
+
+    expect(pruneSnoozed(snoozed, now)).toEqual(snoozed);
+  });
+
+  it('returns an empty map once every snooze has elapsed', () => {
+    expect(pruneSnoozed(new Map([['a', now - 1]]), now)).toEqual(new Map());
+  });
+});
+
+describe('pruneUsed', () => {
+  const now = 10_000;
+
+  it('keeps markers whose request is still live', () => {
+    const used = new Map([
+      ['a', 9_000],
+      ['b', 11_000],
+    ]);
+
+    expect(pruneUsed(used, now)).toEqual(new Map([['b', 11_000]]));
+  });
+
+  it('drops a marker once its deadline has passed', () => {
+    expect(pruneUsed(new Map([['a', now]]), now + 1)).toEqual(new Map());
+  });
+
+  it('returns an empty map when nothing is live', () => {
+    expect(pruneUsed(new Map([['a', 500]]), now)).toEqual(new Map());
   });
 });

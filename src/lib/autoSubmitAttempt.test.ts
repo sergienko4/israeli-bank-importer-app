@@ -38,6 +38,7 @@ describe('submitIfCurrent', () => {
       attempt,
       token,
       readPreference: () => preference.promise,
+      isStillWanted: () => true,
       send: async (code) => {
         sent.push(code);
       },
@@ -60,6 +61,7 @@ describe('submitIfCurrent', () => {
         attempt,
         token: attempt.token,
         readPreference: () => Promise.resolve(true),
+        isStillWanted: () => true,
         send: async (code) => {
           sent.push(code);
         },
@@ -78,6 +80,69 @@ describe('submitIfCurrent', () => {
         attempt,
         token: attempt.token,
         readPreference: () => Promise.resolve(false),
+        isStillWanted: () => true,
+        send: async (code) => {
+          sent.push(code);
+        },
+        code: '123456',
+      }),
+    ).resolves.toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it('does not send when the prompt is no longer wanted', async () => {
+    const attempt = createAutoSubmitAttempt();
+    const sent: string[] = [];
+
+    await expect(
+      submitIfCurrent({
+        attempt,
+        token: attempt.token,
+        readPreference: () => Promise.resolve(true),
+        isStillWanted: () => false,
+        send: async (code) => {
+          sent.push(code);
+        },
+        code: '123456',
+      }),
+    ).resolves.toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it('does not send when the prompt is hidden during the read', async () => {
+    const attempt = createAutoSubmitAttempt();
+    const preference = deferredRead();
+    let wanted = true;
+    const sent: string[] = [];
+
+    const result = submitIfCurrent({
+      attempt,
+      token: attempt.token,
+      readPreference: () => preference.promise,
+      isStillWanted: () => wanted,
+      send: async (code) => {
+        sent.push(code);
+      },
+      code: '123456',
+    });
+
+    wanted = false;
+    preference.resolve(true);
+
+    await expect(result).resolves.toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it('does not send when the preference cannot be read', async () => {
+    const attempt = createAutoSubmitAttempt();
+    const sent: string[] = [];
+
+    await expect(
+      submitIfCurrent({
+        attempt,
+        token: attempt.token,
+        readPreference: () => Promise.reject(new Error('storage unavailable')),
+        isStillWanted: () => true,
         send: async (code) => {
           sent.push(code);
         },

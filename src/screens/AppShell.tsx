@@ -40,7 +40,7 @@ const ORDER: Tab[] = TABS.map((tab) => tab.key);
  */
 export function AppShell(): ReactElement {
   const theme = useTheme();
-  const { pending, dismiss, autoSubmitted, markAutoSubmitted } = useOtpWatcher();
+  const { pending, dismiss, clearAnswered, autoSubmitted, markAutoSubmitted } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
   const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
@@ -110,13 +110,17 @@ export function AppShell(): ReactElement {
         <OtpPrompt
           key={promptRequest.id}
           request={promptRequest}
-          visible={pending !== null}
+          visible={pending?.id === promptRequest.id}
           autoSubmitUsed={autoSubmitted.has(promptRequest.id)}
           onAutoSubmitUsed={() => {
-            markAutoSubmitted(promptRequest.id);
+            markAutoSubmitted(promptRequest.id, promptRequest.deadline);
           }}
-          onSubmitted={dismiss}
-          onDismiss={dismiss}
+          onSubmitted={(id) => {
+            clearAnswered(id, promptRequest.deadline);
+          }}
+          onDismiss={(id) => {
+            dismiss(id, promptRequest.deadline);
+          }}
         />
       ) : null}
       <ReconnectBanner />

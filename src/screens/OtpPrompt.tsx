@@ -22,30 +22,25 @@
  * The countdown is plain text rather than an animation, so it needs no
  * reduced-motion branch: there is no motion to reduce.
  */
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
 import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { Button, Sheet, TextField } from '../components/ui';
-import {
-  type AutoSubmitAttempt,
-  createAutoSubmitAttempt,
-  submitIfCurrent,
-} from '../lib/autoSubmitAttempt';
+import { submitIfCurrent } from '../lib/autoSubmitAttempt';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
+import { AUTO_SUBMIT_DELAY_SECONDS, useAutoSubmitCountdown } from '../lib/useAutoSubmitCountdown';
+import { useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
 import { useOtpCapture } from '../lib/useOtpCapture';
 import { useTheme } from '../theme/ThemeContext';
 
 const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
-
-/** How long the user has to stop an automatic submission. */
-const AUTO_SUBMIT_DELAY_SECONDS = 3;
 
 /**
  * Sends a code to the importer and flattens every outcome to one value.
@@ -93,77 +88,6 @@ function useAutoSubmitPreference(visible: boolean): boolean {
     };
   }, [visible]);
   return enabled;
-}
-
-/** What the countdown needs in order to stay tied to one visible request. */
-interface CountdownOptions {
-  /** The pending request the armed code belongs to. */
-  readonly requestId: string;
-  /** Whether the sheet is on screen. */
-  readonly visible: boolean;
-  /** Called with the armed code once the window elapses. */
-  readonly onFire: (code: string) => void;
-}
-
-/** The countdown state the prompt renders and drives. */
-interface Countdown {
-  /** Whether a code is waiting to be sent. */
-  readonly pending: boolean;
-  /** Seconds left in the cancel window. */
-  readonly secondsLeft: number;
-  /** Starts the window for a code. */
-  readonly arm: (code: string) => void;
-  /** Stops the window before anything reaches the network. */
-  readonly cancel: () => void;
-}
-
-/**
- * Holds an armed code for a few seconds so the user can stop it.
- *
- * The armed value carries its own request id, so a dismissed sheet or a new
- * request drops the countdown by making it inactive rather than by racing a
- * reset: there is no window in which a stale code could still be sent.
- * @param options - The request the code belongs to, and what to do on expiry.
- * @returns The countdown state and its controls.
- */
-function useAutoSubmitCountdown({ requestId, visible, onFire }: CountdownOptions): Countdown {
-  const [armed, setArmed] = useState<{ requestId: string; code: string } | null>(null);
-  const [secondsLeft, setSecondsLeft] = useState(AUTO_SUBMIT_DELAY_SECONDS);
-  const fireRef = useRef(onFire);
-  useEffect(() => {
-    fireRef.current = onFire;
-  });
-
-  const active = armed !== null && armed.requestId === requestId && visible ? armed : null;
-
-  useEffect(() => {
-    if (active === null) {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      if (secondsLeft <= 1) {
-        setArmed(null);
-        fireRef.current(active.code);
-      } else {
-        setSecondsLeft((left) => left - 1);
-      }
-    }, 1000);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [active, secondsLeft]);
-
-  return {
-    pending: active !== null,
-    secondsLeft,
-    arm: (code: string): void => {
-      setSecondsLeft(AUTO_SUBMIT_DELAY_SECONDS);
-      setArmed({ requestId, code });
-    },
-    cancel: (): void => {
-      setArmed(null);
-    },
-  };
 }
 
 interface Props {
@@ -244,47 +168,6 @@ function useOtpSubmission(
   return { submitting, error, setError, submit };
 }
 
-/** The refs and invalidation shared by manual and automatic submission. */
-interface AutoSubmitGuard {
-  /** Reports whether this request already armed. */
-  isUsed: () => boolean;
-  /** Records that this request used its attempt. */
-  markUsed: () => void;
-  /** Returns the current attempt tracker. */
-  currentAttempt: () => AutoSubmitAttempt;
-  /** Invalidates a pending automatic attempt. */
-  invalidate: () => void;
-}
-
-/**
- * Keeps the one-shot guard and the auto-send generation across renders.
- * @param autoSubmitUsed - Whether the parent already recorded an attempt.
- * @returns The guard reads and controls.
- */
-function useAutoSubmitGuard(autoSubmitUsed: boolean): AutoSubmitGuard {
-  const used = useRef(autoSubmitUsed);
-  const attempt = useRef(createAutoSubmitAttempt());
-  useEffect(() => {
-    used.current = autoSubmitUsed;
-  }, [autoSubmitUsed]);
-  useEffect(
-    () => () => {
-      attempt.current.invalidate();
-    },
-    [],
-  );
-  return {
-    isUsed: () => used.current,
-    markUsed: () => {
-      used.current = true;
-    },
-    currentAttempt: () => attempt.current,
-    invalidate: () => {
-      attempt.current.invalidate();
-    },
-  };
-}
-
 /**
  * Renders the OTP entry sheet.
  * @param props - The request plus submit/dismiss callbacks.
@@ -306,19 +189,17 @@ export function OtpPrompt({
   // The parent owns the one-shot guard so it survives this prompt's per-request
   // remount; the guard hook keeps the same-tick check and the attempt token.
   const autoGuard = useAutoSubmitGuard(autoSubmitUsed);
+  const visibleRef = useRef(visible);
 
   // The shell remounts this prompt per request, so there is no stale code to
   // clear here; opening the sheet only has to put the cursor in the field.
   // `onShow` is the reliable moment: the effect below runs before the modal's
   // contents have mounted on a recovered request.
-  const focusCode = (): void => {
-    codeRef.current?.focus();
-  };
-  useEffect(() => {
-    if (visible) {
-      focusCode();
-    }
-  }, [visible]);
+  useLayoutEffect(() => {
+    visibleRef.current = visible;
+    if (visible) codeRef.current?.focus();
+    else autoGuard.invalidate();
+  }, [visible, autoGuard]);
 
   // The countdown belongs to this prompt; the one-shot guard lives in the
   // parent so it cannot be reset by a remount.
@@ -334,6 +215,7 @@ export function OtpPrompt({
         attempt,
         token: attempt.token,
         readPreference: loadOtpAutoSubmit,
+        isStillWanted: () => visibleRef.current,
         send: submit,
         code: value,
       });
@@ -392,7 +274,9 @@ export function OtpPrompt({
     <Sheet
       visible={visible}
       onClose={dismiss}
-      onShow={focusCode}
+      onShow={() => {
+        codeRef.current?.focus();
+      }}
       title={`Enter OTP for ${request.bankId}`}
     >
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>

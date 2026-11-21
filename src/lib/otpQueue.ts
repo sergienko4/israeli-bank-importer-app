@@ -19,6 +19,9 @@ export const OTP_DISMISS_SNOOZE_MS = 60_000;
 /** Keeps enough of the request alive to poll and type the code after a snooze. */
 export const OTP_DISMISS_RESUME_MARGIN_MS = 10_000;
 
+/** A short quiet period after a successful answer while the importer catches up. */
+export const OTP_ANSWERED_QUIET_MS = 5_000;
+
 /**
  * Computes when a dismissed request may prompt again.
  *
@@ -57,45 +60,35 @@ export function selectPendingOtp(
 }
 
 /**
- * Returns the ids the importer still reports.
- * @param requests - The latest pending requests.
- * @returns The live request ids.
- */
-function pendingIds(requests: readonly PendingOtpRequest[]): Set<string> {
-  return new Set(requests.map((request) => request.id));
-}
-
-/**
- * Drops snooze entries for requests the importer no longer reports.
+ * Drops snooze entries once their quiet period has elapsed.
  *
- * Without this the map grows for the life of the connection and a request id
- * reused by the importer would stay silent because of a dismissal from an
- * earlier one.
+ * Presence in the latest poll is deliberately not required: the importer can
+ * answer with one transient empty snapshot while a request is still live, and
+ * treating that as proof of completion would re-prompt a request the user just
+ * dismissed. The entry is dead on its own clock instead.
  * @param snoozedUntil - Request ids mapped to the time their snooze ends.
- * @param requests - The pending requests from the latest poll.
- * @returns A map containing only ids that are still pending.
+ * @param now - Current time in epoch ms (defaults to Date.now()).
+ * @returns A map containing only entries that are still quiet.
  */
 export function pruneSnoozed(
   snoozedUntil: ReadonlyMap<string, number>,
-  requests: readonly PendingOtpRequest[],
+  now: number = Date.now(),
 ): Map<string, number> {
-  const pending = pendingIds(requests);
-  return new Map([...snoozedUntil].filter(([id]) => pending.has(id)));
+  return new Map([...snoozedUntil].filter(([, until]) => until > now));
 }
 
 /**
- * Drops auto-submit markers for requests the importer no longer reports.
+ * Drops auto-submit markers whose request deadline has passed.
  *
- * A request that has ended no longer needs its one-shot guard, and keeping it
- * would suppress the attempt for a future request that reuses the id.
- * @param used - Request ids that already armed an automatic submission.
- * @param requests - The pending requests from the latest poll.
- * @returns A set containing only ids that are still pending.
+ * Kept by deadline rather than by the latest poll so one transient empty
+ * snapshot cannot re-arm a request that already spent its automatic attempt.
+ * @param used - Request ids mapped to their deadlines.
+ * @param now - Current time in epoch ms (defaults to Date.now()).
+ * @returns A map containing only live markers.
  */
 export function pruneUsed(
-  used: ReadonlySet<string>,
-  requests: readonly PendingOtpRequest[],
-): Set<string> {
-  const pending = pendingIds(requests);
-  return new Set([...used].filter((id) => pending.has(id)));
+  used: ReadonlyMap<string, number>,
+  now: number = Date.now(),
+): Map<string, number> {
+  return new Map([...used].filter(([, deadline]) => deadline >= now));
 }

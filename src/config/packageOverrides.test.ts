@@ -8,6 +8,8 @@
  * lockfile and, for a major-scoped key, that a parent still requests that
  * major and resolves the replacement. A stale one fails here and gets removed.
  */
+import { intersects, satisfies } from 'semver';
+
 import manifest from '../../package.json';
 import lockfile from '../../package-lock.json';
 
@@ -29,60 +31,17 @@ interface OverrideTarget {
 const NODE_MODULES = 'node_modules/';
 
 /**
- * Compares two version triples.
- * @param left - The first version as major/minor/patch numbers.
- * @param right - The second version as major/minor/patch numbers.
- * @returns A negative, zero, or positive number in sort order.
- */
-function compareVersions(left: number[], right: number[]): number {
-  for (let index = 0; index < 3; index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return 0;
-}
-
-/**
- * Returns the first version outside a caret range.
- * @param floor - The range's minimum as major/minor/patch numbers.
- * @returns The exclusive upper bound of the range.
- */
-function caretUpperBound(floor: number[]): number[] {
-  const major = floor[0] ?? 0;
-  const minor = floor[1] ?? 0;
-  const patch = floor[2] ?? 0;
-  if (major > 0) {
-    return [major + 1, 0, 0];
-  }
-  if (minor > 0) {
-    return [0, minor + 1, 0];
-  }
-  return [0, 0, patch + 1];
-}
-
-/**
- * Tells whether a resolved version satisfies the caret range an override names.
+ * Tells whether a resolved version satisfies the range an override installs.
  *
- * An override has to prove it landed: a cross-major replacement leaves no
- * entry on the old major line, so checking the key alone would report a live
- * security pin as inert. Only the `^x.y.z` form used in `package.json` is
- * accepted; anything else throws so a new form is handled here first.
+ * `semver` excludes prereleases from a stable range by default, so
+ * `8.6.0-rc.1` does not satisfy `^8.5.18` while `8.6.0` does - the same rule
+ * npm applies when it resolves the override.
  * @param version - The resolved version from the lockfile.
  * @param range - The override value, such as `^11.0.9`.
  * @returns True when the version is inside the range.
  */
-function satisfiesCaretRange(version: string, range: string): boolean {
-  const minimum = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
-  if (minimum === null) {
-    throw new Error(`Unsupported override range "${range}"`);
-  }
-  const current = version.split('.').map(Number);
-  const floor = [Number(minimum[1]), Number(minimum[2]), Number(minimum[3])];
-  return (
-    compareVersions(current, floor) >= 0 && compareVersions(current, caretUpperBound(floor)) < 0
-  );
+function satisfiesOverrideRange(version: string, range: string): boolean {
+  return satisfies(version, range);
 }
 
 /**
@@ -132,7 +91,7 @@ function isTargeted(
   if (candidate.entry.version === undefined) {
     throw new Error(`${candidate.name} has no resolved version`);
   }
-  return satisfiesCaretRange(candidate.entry.version, range);
+  return satisfiesOverrideRange(candidate.entry.version, range);
 }
 
 /**
@@ -155,21 +114,17 @@ function dependencyRanges(entry: LockEntry, name: string): string[] {
 }
 
 /**
- * Reads the major lines a range names.
+ * Tells whether a range can produce a version on the selected major.
  *
- * Splits on `||` first, then reads the first version in each clause. That
- * covers the caret, tilde, and comparator forms npm records in the lockfile;
- * `*` yields nothing because it names no major line to prove.
- * @param range - A semver range such as `^10.2.6` or `^9 || ^10 || ^11`.
- * @returns The major lines the range names.
+ * `intersects` handles carets, tildes, comparator sets such as
+ * `>10.2.6 <11.0.0`, and `||` lists, so a parent that still asks for major 10
+ * is recognised regardless of how its range is written.
+ * @param range - A semver range from a parent's dependency map.
+ * @param major - The selected major line.
+ * @returns True when the range intersects that major.
  */
-function requestedMajors(range: string): number[] {
-  const majors = range.split('||').flatMap((raw) => {
-    const clause = raw.trim().replace(/^(?:\^|~|>=|=)\s*/, '');
-    const match = /^(\d+)/.exec(clause);
-    return match === null ? [] : [Number(match[1])];
-  });
-  return [...new Set(majors)];
+function requestsMajor(range: string, major: number): boolean {
+  return intersects(range, `${String(major)}.x`);
 }
 
 /**
@@ -228,7 +183,7 @@ function satisfiesResolvedDependency(
   if (version === undefined) {
     throw new Error(`${dependency.name} has no resolved version`);
   }
-  return satisfiesCaretRange(version, dependency.range);
+  return satisfiesOverrideRange(version, dependency.range);
 }
 
 /**
@@ -261,7 +216,7 @@ function findInertOverrides(
           }
           return dependencyRanges(entry, target.name).some(
             (range) =>
-              requestedMajors(range).includes(major) &&
+              requestsMajor(range, major) &&
               satisfiesResolvedDependency(packages, path, dependency),
           );
         });
@@ -278,6 +233,36 @@ describe('package.json overrides', () => {
   it('lands every override on a locked version', () => {
     const packages: Readonly<Record<string, LockEntry>> = lockfile.packages;
     expect(findInertOverrides(manifest.overrides, packages)).toEqual([]);
+  });
+});
+
+describe('satisfiesOverrideRange', () => {
+  it('accepts a stable release inside the range', () => {
+    expect(satisfiesOverrideRange('8.6.0', '^8.5.18')).toBe(true);
+  });
+
+  it('rejects a prerelease the stable range does not include', () => {
+    expect(satisfiesOverrideRange('8.6.0-rc.1', '^8.5.18')).toBe(false);
+  });
+});
+
+describe('requestsMajor', () => {
+  it('recognises a caret range on the selected major', () => {
+    expect(requestsMajor('^10.2.6', 10)).toBe(true);
+    expect(requestsMajor('^10.2.6', 11)).toBe(false);
+  });
+
+  it('recognises a comparator set', () => {
+    expect(requestsMajor('>10.2.6 <11.0.0', 10)).toBe(true);
+    expect(requestsMajor('>10.2.6 <11.0.0', 11)).toBe(false);
+  });
+
+  it('recognises a union that still names the major', () => {
+    expect(requestsMajor('^9.0.3 || ^10.1.2 || ^11.0.1', 10)).toBe(true);
+  });
+
+  it('rejects a range that starts after the major', () => {
+    expect(requestsMajor('>=11.0.0', 10)).toBe(false);
   });
 });
 
@@ -316,6 +301,33 @@ describe('findInertOverrides', () => {
       'node_modules/glob/node_modules/minimatch': { version: '11.0.9' },
     };
     expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
+  });
+
+  it('recognises a comparator range on the selected major', () => {
+    const packages = {
+      'node_modules/parent': {
+        version: '1.0.0',
+        dependencies: { minimatch: '>10.2.6 <11.0.0' },
+      },
+      'node_modules/parent/node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
+  });
+
+  it('rejects a prerelease the override range does not include', () => {
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/parent/node_modules/minimatch': { version: '11.0.9-rc.1' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
+  });
+
+  it('accepts the stable release of the same version', () => {
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/parent/node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
   });
 
   it('flags a major-scoped override after every parent moved off that major', () => {

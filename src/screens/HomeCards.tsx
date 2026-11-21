@@ -8,10 +8,10 @@ import type { ReactElement } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { RunEntry } from '../api/status';
-import type { PillTone } from '../components/ui';
 import { Card, Entrance, Skeleton, StatusPill } from '../components/ui';
-import { bankCountCardLabel, lastImportCardLabel } from '../lib/a11yLabels';
+import { bankCountCardLabel, lastImportCardLabel, runPillLabel } from '../lib/a11yLabels';
 import { relativeTime, runSummary, successRateLabel } from '../lib/homeOverview';
+import { runTone } from '../lib/runOutcome';
 import { useTheme } from '../theme/ThemeContext';
 
 interface ConnectionCardProps {
@@ -30,19 +30,6 @@ interface BankCountCardProps {
   unavailable: boolean;
   bankCount: number;
   onOpen: () => void;
-}
-
-/**
- * Picks the pill tone for a run from its success ratio.
- * @param run - The run entry.
- * @returns The status pill tone.
- */
-function runTone(run: RunEntry): PillTone {
-  if (run.successfulBanks >= run.totalBanks) {
-    return 'success';
-  }
-
-  return run.successfulBanks === 0 ? 'danger' : 'warning';
 }
 
 /**
@@ -105,9 +92,7 @@ export function ConnectionCard({ baseUrl }: Readonly<ConnectionCardProps>): Reac
           </Text>
           <StatusPill label="Connected" tone="success" />
         </View>
-        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]} numberOfLines={1}>
-          {baseUrl}
-        </Text>
+        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>{baseUrl}</Text>
       </Card>
     </Entrance>
   );
@@ -150,8 +135,8 @@ function LastImportBody({
         </View>
         <StatusPill
           label={successRateLabel(last)}
-          tone={runTone(last)}
-          accessibilityLabel={`${successRateLabel(last)} of banks succeeded`}
+          tone={runTone(last.totalBanks, last.successfulBanks)}
+          accessibilityLabel={runPillLabel(last)}
         />
       </View>
     );
@@ -195,7 +180,12 @@ export function LastImportCard({
             >
               <Ionicons name="pulse" size={18} color={theme.colors.primary} accessible={false} />
             </View>
-            <Text style={[theme.typography.h3, { color: theme.colors.text }]}>Last import</Text>
+            <Text
+              accessibilityRole="header"
+              style={[theme.typography.h3, { color: theme.colors.text }]}
+            >
+              Last import
+            </Text>
           </View>
           <Ionicons
             name="chevron-forward"
@@ -240,7 +230,12 @@ export function BankCountCard({
             >
               <Ionicons name="business" size={18} color={theme.colors.primary} accessible={false} />
             </View>
-            <Text style={[theme.typography.h3, { color: theme.colors.text }]}>Banks</Text>
+            <Text
+              accessibilityRole="header"
+              style={[theme.typography.h3, { color: theme.colors.text }]}
+            >
+              Banks
+            </Text>
           </View>
           <Ionicons
             name="chevron-forward"

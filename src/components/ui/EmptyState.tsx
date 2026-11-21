@@ -52,7 +52,12 @@ export function EmptyState({
       >
         <Ionicons name={icon} size={30} color={theme.colors.primary} accessible={false} />
       </Animated.View>
-      <Text style={[theme.typography.h3, styles.title, { color: theme.colors.text }]}>{title}</Text>
+      <Text
+        accessibilityRole="header"
+        style={[theme.typography.h3, styles.title, { color: theme.colors.text }]}
+      >
+        {title}
+      </Text>
       {message ? (
         <Text style={[theme.typography.body, styles.message, { color: theme.colors.textMuted }]}>
           {message}

@@ -115,4 +115,10 @@ describe('runPillLabel', () => {
   it('uses the singular for a one-bank run', () => {
     expect(runPillLabel(run({ successfulBanks: 1, totalBanks: 1 }))).toBe('1 of 1 bank succeeded');
   });
+
+  it('does not describe an empty run as a success', () => {
+    expect(runPillLabel(run({ successfulBanks: 0, totalBanks: 0, successRate: 100 }))).toBe(
+      'No banks were attempted',
+    );
+  });
 });

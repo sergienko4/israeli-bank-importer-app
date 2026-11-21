@@ -10,6 +10,7 @@ import type { ReactElement } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useAnnounceOnChange } from '../../lib/useAnnounce';
 import { useTheme } from '../../theme/ThemeContext';
 import { Button } from './Button';
 
@@ -46,6 +47,7 @@ export function TopBanner({
 }: TopBannerProps): ReactElement {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  useAnnounceOnChange(`${title}. ${detail}`);
 
   return (
     <View style={[styles.wrap, { top: insets.top + theme.spacing.sm }]} pointerEvents="box-none">
@@ -69,13 +71,7 @@ export function TopBanner({
           <Ionicons name={icon} size={16} color={theme.colors.primary} accessible={false} />
         </View>
         <View style={styles.text}>
-          <Text
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={[theme.typography.bodyMedium, { color: theme.colors.text }]}
-          >
-            {title}
-          </Text>
+          <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>{title}</Text>
           <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>{detail}</Text>
         </View>
         <Button title={actionTitle} size="sm" fullWidth={false} loading={busy} onPress={onPress} />

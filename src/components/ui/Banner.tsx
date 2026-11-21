@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactElement } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useAnnounceOnChange } from '../../lib/useAnnounce';
 import { useMountPop } from '../../lib/useMountPop';
 import type { Theme } from '../../theme/ThemeContext';
 import { useTheme } from '../../theme/ThemeContext';
@@ -70,17 +71,15 @@ export function Banner({
 }: Readonly<BannerProps>): ReactElement | null {
   const theme = useTheme();
   const pop = useMountPop();
+  useAnnounceOnChange(messages.length > 0 ? messages.join('. ') : null);
   if (messages.length === 0) {
     return null;
   }
 
   const style = resolveBannerToneStyle(theme, tone);
-  const shouldAnnounce = tone === 'danger' || tone === 'warning';
   const translateY = pop.opacity.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] });
   return (
     <Animated.View
-      accessibilityRole={shouldAnnounce ? 'alert' : undefined}
-      accessibilityLiveRegion={shouldAnnounce ? 'polite' : undefined}
       style={[
         styles.root,
         {
@@ -113,7 +112,12 @@ export function Banner({
             accessibilityLabel={action.label}
             onPress={action.onPress}
             hitSlop={12}
-            style={styles.action}
+            style={({ pressed }) => [
+              styles.action,
+              pressed
+                ? { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm }
+                : null,
+            ]}
           >
             <Text style={[theme.typography.small, styles.actionLabel, { color: style.fg }]}>
               {action.label}

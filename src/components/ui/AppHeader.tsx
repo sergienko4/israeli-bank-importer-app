@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactElement, ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import type { Theme } from '../../theme/ThemeContext';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface AppHeaderProps {
@@ -22,16 +23,23 @@ interface AppHeaderProps {
 }
 
 /**
- * Resolves the back button's opacity.
+ * Resolves the back button's fill and icon colours.
+ *
+ * A disabled button is not the enabled one at 40% opacity: that composites the
+ * icon below 3:1. It gets a muted icon and its normal fill instead.
+ * @param theme - The active theme.
  * @param disabled - Whether the button is disabled.
  * @param pressed - Whether the button is pressed.
- * @returns The opacity to render.
+ * @returns The fill and icon colours.
  */
-function resolveBackOpacity(disabled: boolean, pressed: boolean): number {
+function backColors(theme: Theme, disabled: boolean, pressed: boolean): { bg: string; fg: string } {
   if (disabled) {
-    return 0.4;
+    return { bg: theme.colors.surfaceAlt, fg: theme.colors.textMuted };
   }
-  return pressed ? 0.7 : 1;
+  if (pressed) {
+    return { bg: theme.colors.primarySoft, fg: theme.colors.primary };
+  }
+  return { bg: theme.colors.surfaceAlt, fg: theme.colors.text };
 }
 
 /**
@@ -67,16 +75,25 @@ export function AppHeader({
           disabled={backDisabled}
           onPress={onBack}
           hitSlop={8}
-          style={({ pressed }) => [
-            styles.back,
-            {
-              backgroundColor: theme.colors.surfaceAlt,
-              borderRadius: theme.radius.sm,
-              opacity: resolveBackOpacity(backDisabled, pressed),
-            },
-          ]}
+          style={({ pressed }) => {
+            const colors = backColors(theme, backDisabled, pressed);
+            return [
+              styles.back,
+              {
+                backgroundColor: colors.bg,
+                borderRadius: theme.radius.sm,
+              },
+            ];
+          }}
         >
-          <Ionicons name="chevron-back" size={22} color={theme.colors.text} accessible={false} />
+          {({ pressed }) => (
+            <Ionicons
+              name="chevron-back"
+              size={22}
+              color={backColors(theme, backDisabled, pressed).fg}
+              accessible={false}
+            />
+          )}
         </Pressable>
       ) : null}
       <View style={styles.titles}>

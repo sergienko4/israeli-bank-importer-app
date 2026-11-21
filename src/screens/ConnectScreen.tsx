@@ -56,7 +56,12 @@ export function ConnectScreen(): ReactElement {
         >
           <Ionicons name="wallet" size={32} color={theme.colors.onPrimary} accessible={false} />
         </View>
-        <Text style={[theme.typography.display, { color: theme.colors.text }]}>Bank Importer</Text>
+        <Text
+          accessibilityRole="header"
+          style={[theme.typography.display, { color: theme.colors.text }]}
+        >
+          Bank Importer
+        </Text>
         <Text style={[theme.typography.body, styles.tagline, { color: theme.colors.textMuted }]}>
           Manage your self-hosted importer from anywhere on your private network.
         </Text>

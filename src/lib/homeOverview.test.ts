@@ -85,6 +85,12 @@ describe('successRateLabel', () => {
     expect(successRateLabel({ ...run('2026-07-01T10:00:00Z'), successRate })).toBe(label);
   });
 
+  it('says there were no banks instead of reporting a rate', () => {
+    expect(
+      successRateLabel({ ...run('2026-07-01T10:00:00Z'), totalBanks: 0, successRate: 100 }),
+    ).toBe('No banks');
+  });
+
   it('never multiplies the rate a second time', () => {
     expect(successRateLabel({ ...run('2026-07-01T10:00:00Z'), successRate: 100 })).not.toBe(
       '10000%',

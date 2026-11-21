@@ -165,7 +165,10 @@ export function Sheet({
         >
           <View style={[styles.handle, { backgroundColor: theme.colors.borderStrong }]} />
           {title ? (
-            <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>
+            <Text
+              accessibilityRole="header"
+              style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}
+            >
               {title}
             </Text>
           ) : null}

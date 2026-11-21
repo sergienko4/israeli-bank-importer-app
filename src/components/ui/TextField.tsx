@@ -8,6 +8,7 @@ import { type ReactElement, useState } from 'react';
 import type { KeyboardTypeOptions, TextInputProps } from 'react-native';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useAnnounceOnChange } from '../../lib/useAnnounce';
 import type { Theme } from '../../theme/ThemeContext';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -136,11 +137,7 @@ function FieldSupportText({ error, help }: Readonly<FieldSupportTextProps>): Rea
   const theme = useTheme();
   if (error) {
     return (
-      <Text
-        accessibilityRole="alert"
-        accessibilityLiveRegion="polite"
-        style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}
-      >
+      <Text style={[theme.typography.small, { color: theme.colors.danger, marginTop: 6 }]}>
         {/* The mark carries the error where colour cannot: a red border alone
             says nothing to a screen reader or to anyone who cannot see red. */}
         ⚠ {error}
@@ -182,6 +179,7 @@ export function TextField({
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  useAnnounceOnChange(error);
   const borderColor = resolveBorderColor(theme, error, focused);
   const toggleRevealed = (): void => {
     setRevealed((prev) => !prev);

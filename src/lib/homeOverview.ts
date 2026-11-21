@@ -49,6 +49,9 @@ export function runSummary(run: RunEntry): string {
  * @returns The rate as a percentage string.
  */
 export function successRateLabel(run: RunEntry): string {
+  if (run.totalBanks <= 0) {
+    return 'No banks';
+  }
   return `${String(Math.round(run.successRate))}%`;
 }
 

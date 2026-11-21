@@ -103,6 +103,9 @@ export function bankRunRowLabel(bank: RunBank): string {
  * @returns The successful-bank count spelled out.
  */
 export function runPillLabel(run: RunEntry): string {
+  if (run.totalBanks <= 0) {
+    return 'No banks were attempted';
+  }
   const noun = run.totalBanks === 1 ? 'bank' : 'banks';
   return `${String(run.successfulBanks)} of ${String(run.totalBanks)} ${noun} succeeded`;
 }

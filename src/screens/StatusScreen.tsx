@@ -4,12 +4,11 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { type ReactElement, useEffect, useRef, useState } from 'react';
-import { RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { getStatus } from '../api/importerClient';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
-import type { PillTone } from '../components/ui';
 import {
   AppHeader,
   Banner,
@@ -24,25 +23,84 @@ import {
 } from '../components/ui';
 import { bankRunRowLabel, runPillLabel } from '../lib/a11yLabels';
 import { failureMessage, reportedOrFallback } from '../lib/errorMessages';
+import { runTone } from '../lib/runOutcome';
 import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
 
 const UNREACHABLE = failureMessage('unreachable').text;
 
 /**
+ * Header action that refreshes without requiring a pull gesture.
+ * @param props - The busy flag and refresh callback.
+ * @returns The refresh button.
+ */
+function RefreshButton({
+  busy,
+  onPress,
+}: Readonly<{ busy: boolean; onPress: () => void }>): ReactElement {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Refresh import runs"
+      accessibilityState={{ disabled: busy, busy }}
+      disabled={busy}
+      hitSlop={8}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.refresh,
+        pressed && !busy
+          ? { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm }
+          : null,
+      ]}
+    >
+      <Ionicons
+        name="refresh"
+        size={20}
+        color={busy ? theme.colors.textSubtle : theme.colors.primary}
+        accessible={false}
+      />
+    </Pressable>
+  );
+}
+
+/**
+ * Renders the status screen's header with its refresh action.
+ * @param props - Back, busy, and refresh wiring.
+ * @returns The header.
+ */
+function StatusHeader({
+  onBack,
+  refreshing,
+  onRefresh,
+}: Readonly<{ onBack?: () => void; refreshing: boolean; onRefresh: () => void }>): ReactElement {
+  return (
+    <AppHeader
+      title="Import status"
+      subtitle="Recent runs"
+      onBack={onBack}
+      right={<RefreshButton busy={refreshing} onPress={onRefresh} />}
+    />
+  );
+}
+
+/**
  * Renders the run history, or an explanation of why it is empty.
  * @param props - The runs, newest first.
  * @returns The list, or the empty state when there is nothing to show.
  */
-function RunList({ runs }: Readonly<{ runs: readonly RunEntry[] }>): ReactElement {
+function RunList({
+  runs,
+  onRefresh,
+}: Readonly<{ runs: readonly RunEntry[]; onRefresh: () => void }>): ReactElement {
   if (runs.length === 0) {
     return (
       <EmptyState
         icon="pulse-outline"
         title="No runs yet"
-        message={
-          'Import runs will appear here after the importer scrapes your banks. Pull down to refresh.'
-        }
+        message="Import runs will appear here after the importer scrapes your banks."
+        actionLabel="Refresh"
+        onAction={onRefresh}
       />
     );
   }
@@ -69,19 +127,6 @@ interface Props {
 function formatTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
-}
-
-/**
- * Picks the overall run tone from its success ratio.
- * @param entry - The run entry.
- * @returns The pill tone.
- */
-function runTone(entry: RunEntry): PillTone {
-  if (entry.successfulBanks >= entry.totalBanks) {
-    return 'success';
-  }
-
-  return entry.successfulBanks === 0 ? 'danger' : 'warning';
 }
 
 function bankStatusMeta(
@@ -114,7 +159,7 @@ function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
         </Text>
         <StatusPill
           label={`${String(entry.successfulBanks)}/${String(entry.totalBanks)} banks`}
-          tone={runTone(entry)}
+          tone={runTone(entry.totalBanks, entry.successfulBanks)}
           accessibilityLabel={runPillLabel(entry)}
         />
       </View>
@@ -133,7 +178,7 @@ function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
           >
             <View style={styles.bankName}>
               <Ionicons name={icon} size={16} color={color} accessible={false} />
-              <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={1}>
+              <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={2}>
                 {bank.name}
               </Text>
             </View>
@@ -246,7 +291,15 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
 
   return (
     <Screen
-      header={<AppHeader title="Import status" subtitle="Recent runs" onBack={onBack} />}
+      header={
+        <StatusHeader
+          onBack={onBack}
+          refreshing={refreshing}
+          onRefresh={() => {
+            void onRefresh();
+          }}
+        />
+      }
       contentStyle={styles.list}
       notice={
         refreshError === null ? undefined : (
@@ -272,7 +325,12 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
         />
       }
     >
-      <RunList runs={ordered} />
+      <RunList
+        runs={ordered}
+        onRefresh={() => {
+          void onRefresh();
+        }}
+      />
     </Screen>
   );
 }
@@ -290,4 +348,5 @@ const styles = StyleSheet.create({
   },
   bankName: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, marginRight: 8 },
   errorLine: { marginTop: 6 },
+  refresh: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
 });

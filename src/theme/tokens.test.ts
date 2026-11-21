@@ -53,6 +53,7 @@ describe.each([
 
   it('keeps input boundaries visible at 3:1', () => {
     expect(contrastRatio(colors.borderStrong, colors.surface)).toBeGreaterThanOrEqual(3);
+    expect(contrastRatio(colors.borderStrong, colors.surfaceAlt)).toBeGreaterThanOrEqual(3);
   });
 });
 

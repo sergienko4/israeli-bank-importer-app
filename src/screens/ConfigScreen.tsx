@@ -3,7 +3,7 @@
  * section, edit its fields, and save. Validation errors from the importer are
  * shown inline. Structured sections (banks, lists) are handled elsewhere.
  */
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text } from 'react-native';
 
 import { getConfig, getManifest, saveConfig, type Session } from '../api/importerClient';
@@ -55,14 +55,6 @@ interface ConfigSectionListProps {
 interface ConfigErrorProps {
   error: string;
   onRetry: () => void;
-}
-
-function ConfigLoading(): ReactElement {
-  return (
-    <Screen scroll={false} header={<AppHeader title="Configuration" />}>
-      <Loader label="Loading configuration" />
-    </Screen>
-  );
 }
 
 function ConfigError({ error, onRetry }: Readonly<ConfigErrorProps>): ReactElement {
@@ -223,7 +215,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
   const [showOtp, setShowOtp] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
-
+  const saveInFlight = useRef(false);
   useEffect(() => {
     onDepthChange?.(selected || showOtp ? 1 : 0);
   }, [selected, showOtp, onDepthChange]);
@@ -231,11 +223,11 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
   const update = (path: string[], value: unknown): void => {
     setConfig((current) => setAtPath(current, path, value));
   };
-
   const save = async (): Promise<void> => {
-    if (!connection) {
+    if (!connection || saveInFlight.current) {
       return;
     }
+    saveInFlight.current = true;
     setSaving(true);
     setSaveErrors(null);
     try {
@@ -257,6 +249,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
         ),
       ]);
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -264,7 +257,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     setShowOtp(false);
   };
   const discardSelected = (): void => {
-    if (saving) {
+    if (saveInFlight.current) {
       return;
     }
     if (baseline !== null) {
@@ -274,7 +267,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     setSelected(null);
   };
   const closeSelected = (): void => {
-    if (saving) {
+    if (saveInFlight.current) {
       return;
     }
     if (baseline !== null && hasUnsavedChanges(baseline, config)) {
@@ -291,7 +284,11 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
   };
 
   if (loading) {
-    return <ConfigLoading />;
+    return (
+      <Screen scroll={false} header={<AppHeader title="Configuration" />}>
+        <Loader label="Loading configuration" />
+      </Screen>
+    );
   }
   if (error) {
     return <ConfigError error={error} onRetry={reload} />;

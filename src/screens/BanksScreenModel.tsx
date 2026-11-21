@@ -1,7 +1,7 @@
 /**
  * State model and pure helpers for the banks screen.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { getConfig, getManifest, saveConfig, type Session } from '../api/importerClient';
@@ -174,6 +174,20 @@ function useBanksData(connection: Session | null, reloadKey: number): BanksDataS
 }
 
 /**
+ * Builds the message list for a save that never reached a verdict.
+ * @param error - The caught error value.
+ * @returns One user-facing line.
+ */
+function saveFailure(error: unknown): string[] {
+  return [
+    reportedOrFallback(
+      error instanceof Error ? error.message : undefined,
+      'Save failed. Check your connection and try again.',
+    ),
+  ];
+}
+
+/**
  * Builds the state model used by the banks screen.
  * @param onDepthChange - Optional drill-down depth reporter.
  * @returns Banks screen state and actions.
@@ -189,6 +203,7 @@ export function useBanksScreenModel(
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const saveInFlight = useRef(false);
 
   useEffect(() => {
     onDepthChange?.(selected ? 1 : 0);
@@ -224,9 +239,10 @@ export function useBanksScreenModel(
   };
 
   const save = async (): Promise<void> => {
-    if (!connection) {
+    if (!connection || saveInFlight.current) {
       return;
     }
+    saveInFlight.current = true;
     setSaving(true);
     setSaveErrors(null);
     try {
@@ -241,13 +257,9 @@ export function useBanksScreenModel(
       }
     } catch (error: unknown) {
       haptics.warning();
-      setSaveErrors([
-        reportedOrFallback(
-          error instanceof Error ? error.message : undefined,
-          'Save failed. Check your connection and try again.',
-        ),
-      ]);
+      setSaveErrors(saveFailure(error));
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
@@ -268,7 +280,7 @@ export function useBanksScreenModel(
       selected,
       baseline: data.baseline,
       config: data.config,
-      saving,
+      saving: saveInFlight.current,
       setConfig: data.setConfig,
       clearErrors: () => {
         setSaveErrors(null);

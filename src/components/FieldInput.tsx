@@ -8,6 +8,7 @@ import { type ReactElement, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
+import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
 
 type ParsedNumberFieldText = { kind: 'valid'; value: number | undefined } | { kind: 'invalid' };
@@ -63,6 +64,20 @@ interface Props {
 }
 
 /**
+ * Picks a chip background that keeps the label legible while pressed.
+ * @param theme - The active theme.
+ * @param selected - Whether the chip is selected.
+ * @param pressed - Whether it is pressed.
+ * @returns The chip fill.
+ */
+function chipBackground(theme: Theme, selected: boolean, pressed: boolean): string {
+  if (!pressed) {
+    return selected ? theme.colors.primary : theme.colors.surface;
+  }
+  return selected ? theme.colors.primaryPressed : theme.colors.primarySoft;
+}
+
+/**
  * Renders the option chips for a `select` field.
  * @param props - The field, current value, and change handler.
  * @returns The select control.
@@ -84,8 +99,7 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
               {
                 borderRadius: theme.radius.pill,
                 borderColor: selected ? theme.colors.primary : theme.colors.borderStrong,
-                backgroundColor: selected ? theme.colors.primary : theme.colors.surface,
-                opacity: pressed ? 0.8 : 1,
+                backgroundColor: chipBackground(theme, selected, pressed),
               },
             ]}
             onPress={() => {

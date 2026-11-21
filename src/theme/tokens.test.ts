@@ -33,6 +33,7 @@ const TEXT_PAIRS = [
   ['textSubtle', 'surface'],
   ['textSubtle', 'surfaceAlt'],
   ['onPrimary', 'primary'],
+  ['onPrimary', 'primaryPressed'],
   ['primary', 'bg'],
   ['primary', 'surface'],
   ['primary', 'primarySoft'],

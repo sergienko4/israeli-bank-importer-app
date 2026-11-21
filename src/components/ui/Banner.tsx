@@ -113,7 +113,7 @@ export function Banner({
             accessibilityLabel={action.label}
             onPress={action.onPress}
             hitSlop={12}
-            style={({ pressed }) => [styles.action, pressed ? styles.actionPressed : null]}
+            style={styles.action}
           >
             <Text style={[theme.typography.small, styles.actionLabel, { color: style.fg }]}>
               {action.label}
@@ -132,7 +132,8 @@ const styles = StyleSheet.create({
   // hitSlop widens the press area but not the frame a screen reader reports, so
   // the target is sized here and hitSlop is left as tolerance around it.
   action: { alignSelf: 'flex-start', justifyContent: 'center', minHeight: 44, minWidth: 44 },
-  actionPressed: { opacity: 0.6 },
+  // The action keeps full contrast while pressed: a fade dropped every tone
+  // below AA. The permanent underline is the affordance.
   // Underlined so the action is not signalled by colour alone.
   actionLabel: { fontWeight: '700', textDecorationLine: 'underline' },
 });

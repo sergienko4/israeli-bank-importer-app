@@ -83,6 +83,30 @@ function resolvePressedOpacity(blocked: boolean, pressed: boolean): number {
 }
 
 /**
+ * Picks the pressed fill for variants that can swap colour instead of fading.
+ * @param theme - The active theme.
+ * @param variant - The button variant.
+ * @param pressed - Whether the button is pressed.
+ * @returns The pressed fill, or undefined to keep the base fill.
+ */
+function pressedBackground(
+  theme: Theme,
+  variant: ButtonVariant,
+  pressed: boolean,
+): string | undefined {
+  if (!pressed) {
+    return undefined;
+  }
+  if (variant === 'primary') {
+    return theme.colors.primaryPressed;
+  }
+  if (variant === 'ghost') {
+    return theme.colors.primarySoft;
+  }
+  return undefined;
+}
+
+/**
  * Renders a themed button.
  * @param props - Button configuration.
  * @returns The button element.
@@ -134,10 +158,13 @@ export function Button({
             minWidth: 44,
             paddingVertical: dims.padV,
             paddingHorizontal: theme.spacing.lg,
-            backgroundColor: palette.bg,
+            backgroundColor: pressedBackground(theme, variant, pressed) ?? palette.bg,
             borderColor: palette.border,
             borderRadius: theme.radius.md,
-            opacity: resolvePressedOpacity(blocked, pressed),
+            opacity: resolvePressedOpacity(
+              blocked,
+              pressed && variant !== 'primary' && variant !== 'ghost',
+            ),
           },
         ]}
       >

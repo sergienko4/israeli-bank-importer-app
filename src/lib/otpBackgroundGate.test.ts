@@ -1,4 +1,5 @@
 import { submitOtpUnattended } from '../api/importerClient';
+import { withOtpLane } from '../api/writeQueue';
 import { changePairing, currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
@@ -233,6 +234,52 @@ describe('submitWhileAllowed', () => {
     expect(reading).toBe(true);
     changePairing();
     answer(true);
+
+    await expect(sending).rejects.toBeInstanceOf(SendRefusedError);
+    expect(mockSubmit).not.toHaveBeenCalled();
+  });
+
+  it('waits for a foreground submission of the same request before sending', async () => {
+    switches(true);
+    let release: () => void = () => undefined;
+    const foreground = withOtpLane(
+      'req-1',
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const sending = submitWhileAllowed(send(session()));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    expect(mockSubmit).not.toHaveBeenCalled();
+
+    release();
+    await foreground;
+    await expect(sending).resolves.toEqual({ ok: true });
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('rechecks the switches when the shared lane reaches the send', async () => {
+    switches(true);
+    let release: () => void = () => undefined;
+    const foreground = withOtpLane(
+      'req-1',
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const sending = submitWhileAllowed(send(session()));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+
+    switches(false);
+    release();
+    await foreground;
 
     await expect(sending).rejects.toBeInstanceOf(SendRefusedError);
     expect(mockSubmit).not.toHaveBeenCalled();

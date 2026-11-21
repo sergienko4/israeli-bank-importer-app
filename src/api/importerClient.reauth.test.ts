@@ -65,6 +65,22 @@ describe('silent re-auth on 401', () => {
     await expect(getConfig(session)).rejects.toThrow('session has ended');
   });
 
+  it('returns the 401 when the re-auth handler rejects', async () => {
+    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
+    setReauthHandler(() => Promise.reject(new Error('biometric failed')));
+
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
+  });
+
+  it('returns the 401 when the re-auth handler throws synchronously', async () => {
+    globalThis.fetch = jest.fn(() => Promise.resolve(fakeResponse(401, {})));
+    setReauthHandler(() => {
+      throw new Error('biometric unavailable');
+    });
+
+    await expect(getConfig(session)).rejects.toThrow('session has ended');
+  });
+
   it('retries at most once', async () => {
     let call = 0;
     globalThis.fetch = jest.fn(() => {

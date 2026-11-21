@@ -45,6 +45,8 @@ interface SheetProps {
   visible: boolean;
   /** Called when the backdrop or hardware back is used to dismiss. */
   onClose: () => void;
+  /** Called when the modal has finished presenting. */
+  onShow?: () => void;
   /** Optional sheet title. */
   title?: string;
   /** Sheet content. */
@@ -62,6 +64,7 @@ const SHEET_MAX_HEIGHT_RATIO = 0.8;
 export function Sheet({
   visible,
   onClose,
+  onShow,
   title,
   children,
 }: Readonly<SheetProps>): ReactElement | null {
@@ -116,7 +119,14 @@ export function Sheet({
   }
 
   return (
-    <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={onClose}>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onClose}
+      onShow={onShow}
+    >
       <Animated.View
         style={[
           StyleSheet.absoluteFill,
@@ -155,7 +165,10 @@ export function Sheet({
         >
           <View style={[styles.handle, { backgroundColor: theme.colors.borderStrong }]} />
           {title ? (
-            <Text style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}>
+            <Text
+              accessibilityRole="header"
+              style={[theme.typography.h2, styles.title, { color: theme.colors.text }]}
+            >
               {title}
             </Text>
           ) : null}

@@ -15,8 +15,23 @@ interface AppHeaderProps {
   subtitle?: string;
   /** When provided, renders a back button that calls this. */
   onBack?: () => void;
+  /** Disables the back button while an action owns the screen. */
+  backDisabled?: boolean;
   /** Optional right-aligned content (e.g. an action). */
   right?: ReactNode;
+}
+
+/**
+ * Resolves the back button's opacity.
+ * @param disabled - Whether the button is disabled.
+ * @param pressed - Whether the button is pressed.
+ * @returns The opacity to render.
+ */
+function resolveBackOpacity(disabled: boolean, pressed: boolean): number {
+  if (disabled) {
+    return 0.4;
+  }
+  return pressed ? 0.7 : 1;
 }
 
 /**
@@ -28,6 +43,7 @@ export function AppHeader({
   title,
   subtitle,
   onBack,
+  backDisabled = false,
   right,
 }: Readonly<AppHeaderProps>): ReactElement {
   const theme = useTheme();
@@ -47,6 +63,8 @@ export function AppHeader({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Go back"
+          accessibilityState={{ disabled: backDisabled }}
+          disabled={backDisabled}
           onPress={onBack}
           hitSlop={8}
           style={({ pressed }) => [
@@ -54,7 +72,7 @@ export function AppHeader({
             {
               backgroundColor: theme.colors.surfaceAlt,
               borderRadius: theme.radius.sm,
-              opacity: pressed ? 0.7 : 1,
+              opacity: resolveBackOpacity(backDisabled, pressed),
             },
           ]}
         >

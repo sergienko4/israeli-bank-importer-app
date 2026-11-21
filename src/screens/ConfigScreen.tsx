@@ -84,7 +84,14 @@ function ConfigSectionEditor({
 }: Readonly<ConfigSectionEditorProps>): ReactElement {
   return (
     <Screen
-      header={<AppHeader title={selected.label} subtitle="Edit fields and save" onBack={onBack} />}
+      header={
+        <AppHeader
+          title={selected.label}
+          subtitle="Edit fields and save"
+          onBack={onBack}
+          backDisabled={saving}
+        />
+      }
       notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
@@ -257,6 +264,9 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     setShowOtp(false);
   };
   const discardSelected = (): void => {
+    if (saving) {
+      return;
+    }
     if (baseline !== null) {
       setConfig(baseline);
     }
@@ -264,6 +274,9 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     setSelected(null);
   };
   const closeSelected = (): void => {
+    if (saving) {
+      return;
+    }
     if (baseline !== null && hasUnsavedChanges(baseline, config)) {
       Alert.alert('Discard changes?', 'Your edits to this section have not been saved.', [
         { text: 'Keep editing', style: 'cancel' },

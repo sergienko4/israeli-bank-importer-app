@@ -69,7 +69,14 @@ export function BanksEditorView({
 }: Readonly<BanksEditorViewProps>): ReactElement {
   return (
     <Screen
-      header={<AppHeader title={bankName} subtitle="Credentials & targets" onBack={onBack} />}
+      header={
+        <AppHeader
+          title={bankName}
+          subtitle="Credentials & targets"
+          onBack={onBack}
+          backDisabled={saving}
+        />
+      }
       notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >

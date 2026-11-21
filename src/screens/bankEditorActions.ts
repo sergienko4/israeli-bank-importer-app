@@ -19,6 +19,8 @@ interface CloseBankEditorOptions {
   readonly baseline: ConfigObject | null;
   /** The config currently being edited. */
   readonly config: ConfigObject;
+  /** Whether a save is still in flight, which must settle before leaving. */
+  readonly saving: boolean;
   /** Replaces the draft config. */
   readonly setConfig: (config: ConfigObject) => void;
   /** Clears any validation message from the previous save. */
@@ -30,12 +32,13 @@ interface CloseBankEditorOptions {
 /**
  * Closes the bank editor, confirming first when the draft differs from the
  * saved config. A bank that exists only in the draft is removed on discard, so
- * cancelling an add cannot leave a phantom row in the list.
+ * cancelling an add cannot leave a phantom row in the list. A pending save owns
+ * the screen until it settles, so its result cannot be discarded underneath it.
  * @param options - The selected id, the saved and draft configs, and callbacks.
  */
 export function closeBankEditor(options: CloseBankEditorOptions): void {
-  const { selected, baseline, config, setConfig, clearErrors, close } = options;
-  if (selected === null) {
+  const { selected, baseline, config, saving, setConfig, clearErrors, close } = options;
+  if (saving || selected === null) {
     return;
   }
   const finish = (nextConfig?: ConfigObject): void => {

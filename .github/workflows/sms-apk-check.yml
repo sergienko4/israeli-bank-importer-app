@@ -93,17 +93,20 @@ jobs:
             -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
           output="$RUNNER_TEMP/israeli-bank-importer.sms.apk"
           # The script restores package.json and removes the generated project
-          # on every exit, so a retry starts from a clean tree.
-          for attempt in 1 2 3; do
+          # on every exit, so a retry starts from a clean tree. The plugin
+          # portal has been intermittently unreachable from the runners; a
+          # negative cache from the failed attempt is dropped as well.
+          for attempt in 1 2 3 4 5; do
             if node scripts/build-sms-apk.mjs --self-reference --out "$output"; then
               break
             fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "::error::The SMS APK build failed after 3 attempts."
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::The SMS APK build failed after 5 attempts."
               exit 1
             fi
-            echo "SMS APK build attempt $attempt failed; retrying in 20s."
-            sleep 20
+            echo "SMS APK build attempt $attempt failed; retrying in 60s."
+            sleep 60
+            rm -rf "$GRADLE_USER_HOME"
           done
 
           versions=node_modules/react-native/gradle/libs.versions.toml
@@ -194,14 +197,15 @@ jobs:
             -Dorg.gradle.internal.repository.initial.backoff=2000
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5; do
             if ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain; then
               exit 0
             fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "::error::Gradle failed after 3 attempts."
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::Gradle failed after 5 attempts."
               exit 1
             fi
-            echo "Gradle attempt $attempt failed; retrying in 20s."
-            sleep 20
+            echo "Gradle attempt $attempt failed; retrying in 60s."
+            sleep 60
+            rm -rf "$GRADLE_USER_HOME"
           done

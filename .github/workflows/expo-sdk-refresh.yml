@@ -114,6 +114,9 @@ jobs:
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
           args: --offline --no-progress --exclude-path CHANGELOG.md "./**/*.md"
+          # The report must stay outside the checkout: the push guard below
+          # rejects any file the refresh does not own.
+          output: ${{ runner.temp }}/lychee/out.md
           fail: true
       # The same pinned Doctor and environment setting as ci.yml. The offline
       # version check above validates the declared pins; Doctor is what catches

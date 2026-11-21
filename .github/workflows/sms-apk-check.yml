@@ -59,15 +59,6 @@ jobs:
     name: Build the SMS APK (Gradle on this runner)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    # Gradle resolves plugins and Kotlin artifacts from public repositories at
-    # configuration time. A dedicated home avoids a pre-baked or poisoned
-    # cache on the runner image; the retry in the build step covers a
-    # transient repository failure.
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
-      GRADLE_OPTS: >-
-        -Dorg.gradle.internal.repository.max.retries=5
-        -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,6 +75,14 @@ jobs:
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/check.keystore
           ANDROID_KEY_ALIAS: sms-apk-check
           ANDROID_VERSION_CODE: '1'
+          # Gradle resolves plugins and Kotlin artifacts from public
+          # repositories at configuration time. A dedicated home avoids a
+          # pre-baked or poisoned cache; the retry below covers a transient
+          # repository failure.
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.repository.max.retries=5
+            -Dorg.gradle.internal.repository.initial.backoff=2000
         run: |
           ANDROID_KEYSTORE_PASSWORD=$(openssl rand -hex 16)
           ANDROID_KEY_PASSWORD=$ANDROID_KEYSTORE_PASSWORD
@@ -176,11 +175,6 @@ jobs:
     name: Native module tests (JVM)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    env:
-      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
-      GRADLE_OPTS: >-
-        -Dorg.gradle.internal.repository.max.retries=5
-        -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -192,6 +186,12 @@ jobs:
         run: npx expo prebuild --platform android --clean --no-install
       - name: Run the otp-sms-consent JVM tests
         working-directory: android
+        env:
+          # Same clean cache and repository retry as the APK build.
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+          GRADLE_OPTS: >-
+            -Dorg.gradle.internal.repository.max.retries=5
+            -Dorg.gradle.internal.repository.initial.backoff=2000
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do

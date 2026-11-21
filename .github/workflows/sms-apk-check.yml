@@ -59,6 +59,15 @@ jobs:
     name: Build the SMS APK (Gradle on this runner)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    # Gradle resolves plugins and Kotlin artifacts from public repositories at
+    # configuration time. A dedicated home avoids a pre-baked or poisoned
+    # cache on the runner image; the retry in the build step covers a
+    # transient repository failure.
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+      GRADLE_OPTS: >-
+        -Dorg.gradle.internal.repository.max.retries=5
+        -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,8 +93,19 @@ jobs:
             -dname 'CN=SMS APK check' \
             -storepass:env ANDROID_KEYSTORE_PASSWORD -keypass:env ANDROID_KEY_PASSWORD
           output="$RUNNER_TEMP/israeli-bank-importer.sms.apk"
-          node scripts/build-sms-apk.mjs --self-reference \
-            --out "$output"
+          # The script restores package.json and removes the generated project
+          # on every exit, so a retry starts from a clean tree.
+          for attempt in 1 2 3; do
+            if node scripts/build-sms-apk.mjs --self-reference --out "$output"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::The SMS APK build failed after 3 attempts."
+              exit 1
+            fi
+            echo "SMS APK build attempt $attempt failed; retrying in 20s."
+            sleep 20
+          done
 
           versions=node_modules/react-native/gradle/libs.versions.toml
           build_tools=$(sed -n -E 's/^buildTools[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$versions")
@@ -156,6 +176,11 @@ jobs:
     name: Native module tests (JVM)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home
+      GRADLE_OPTS: >-
+        -Dorg.gradle.internal.repository.max.retries=5
+        -Dorg.gradle.internal.repository.initial.backoff=2000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -167,4 +192,16 @@ jobs:
         run: npx expo prebuild --platform android --clean --no-install
       - name: Run the otp-sms-consent JVM tests
         working-directory: android
-        run: ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if ./gradlew :otp-sms-consent:testReleaseUnitTest --no-daemon --console=plain; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Gradle failed after 3 attempts."
+              exit 1
+            fi
+            echo "Gradle attempt $attempt failed; retrying in 20s."
+            sleep 20
+          done

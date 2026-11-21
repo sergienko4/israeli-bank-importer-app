@@ -145,7 +145,9 @@ export function Button({
           <ActivityIndicator color={palette.fg} />
         ) : (
           <View style={styles.content}>
-            {icon ? <Ionicons name={icon} size={dims.iconSize} color={palette.fg} /> : null}
+            {icon ? (
+              <Ionicons name={icon} size={dims.iconSize} color={palette.fg} accessible={false} />
+            ) : null}
             <Text style={[styles.label, { color: palette.fg, fontSize: dims.fontSize }]}>
               {title}
             </Text>

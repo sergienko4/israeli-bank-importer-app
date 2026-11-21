@@ -320,7 +320,12 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
               }}
               right={
                 selected ? (
-                  <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={theme.colors.primary}
+                    accessible={false}
+                  />
                 ) : (
                   <View style={[styles.dot, { borderColor: theme.colors.borderStrong }]} />
                 )

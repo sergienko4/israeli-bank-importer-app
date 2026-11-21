@@ -6,7 +6,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
-import { Button, Card } from '../components/ui';
+import { Button, Card, SectionLabel } from '../components/ui';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { useTheme } from '../theme/ThemeContext';
@@ -48,11 +48,7 @@ export function BanksTargetsEditor({
 
   return (
     <View style={styles.targets}>
-      <Text
-        style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}
-      >
-        TARGETS
-      </Text>
+      <SectionLabel style={styles.sectionLabel}>TARGETS</SectionLabel>
       {targets.map((target, index) => (
         <Card key={`target-${String(index)}`} elevation={0} style={styles.targetCard}>
           <View style={styles.targetHeader}>
@@ -96,7 +92,7 @@ export function BanksTargetsEditor({
 
 const styles = StyleSheet.create({
   targets: { marginTop: 20, gap: 12 },
-  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginBottom: 8, marginLeft: 4 },
   targetCard: { gap: 4, backgroundColor: 'transparent' },
   targetHeader: {
     flexDirection: 'row',

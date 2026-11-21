@@ -3,9 +3,19 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import type { ReactElement } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
-import { AppHeader, Card, Divider, EmptyState, Entrance, ListRow, Screen } from '../components/ui';
+import {
+  AppHeader,
+  Card,
+  Divider,
+  EmptyState,
+  Entrance,
+  ListRow,
+  Screen,
+  SectionLabel,
+} from '../components/ui';
+import { targetsLabel } from '../lib/bankDrafts';
 import { useTheme } from '../theme/ThemeContext';
 import { type BankConfig, targetsOf } from './BanksScreenModel';
 
@@ -47,26 +57,18 @@ export function BanksListView({
         </Entrance>
       ) : (
         <>
-          <Text
-            style={[
-              theme.typography.caption,
-              styles.sectionLabel,
-              { color: theme.colors.textSubtle },
-            ]}
-          >
-            YOUR BANKS
-          </Text>
+          <SectionLabel style={styles.sectionLabel}>YOUR BANKS</SectionLabel>
           <Card padded={false} style={styles.menu}>
             {configuredIds.map((id, index) => (
               <Entrance key={id} index={index}>
                 <ListRow
                   icon="business"
                   title={nameOf(id)}
-                  subtitle={`${String(targetsOf(banks[id] ?? {}).length)} target(s)`}
+                  subtitle={targetsLabel(targetsOf(banks[id] ?? {}).length)}
                   onPress={() => {
                     onSelect(id);
                   }}
-                  right={
+                  trailing={
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Remove ${nameOf(id)}`}
@@ -75,7 +77,12 @@ export function BanksListView({
                       }}
                       style={styles.iconBtn}
                     >
-                      <Ionicons name="trash-outline" size={20} color={theme.colors.danger} />
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color={theme.colors.danger}
+                        accessible={false}
+                      />
                     </Pressable>
                   }
                 />
@@ -88,16 +95,7 @@ export function BanksListView({
 
       {catalog.length > 0 ? (
         <>
-          <Text
-            style={[
-              theme.typography.caption,
-              styles.sectionLabel,
-              styles.addLabel,
-              { color: theme.colors.textSubtle },
-            ]}
-          >
-            ADD A BANK
-          </Text>
+          <SectionLabel style={[styles.sectionLabel, styles.addLabel]}>ADD A BANK</SectionLabel>
           <Card padded={false} style={styles.menu}>
             {catalog.map((id, index) => (
               <Entrance key={id} index={index}>
@@ -121,7 +119,7 @@ export function BanksListView({
 const styles = StyleSheet.create({
   menu: { overflow: 'hidden' },
   indent: { marginLeft: 68 },
-  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginBottom: 8, marginLeft: 4 },
   addLabel: { marginTop: 20 },
   iconBtn: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
 });

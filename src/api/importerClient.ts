@@ -6,6 +6,7 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
+import { REQUEST_TIMEOUT_MS, RequestTimeoutError } from '../lib/requestTimeout';
 import {
   CONFIG_BODY,
   MANIFEST_BODY,
@@ -16,6 +17,12 @@ import {
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import { parsedBody } from './parseResponse';
+import {
+  markDeadline,
+  readJsonOrEmpty,
+  readJsonOrUndefined,
+  readWithinDeadline,
+} from './responseBody';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
 
@@ -64,17 +71,88 @@ export function normalizeBaseUrl(input: string): string {
  * Runs a request, replacing a transport failure with wording worth reading.
  *
  * A dropped connection arrives as whatever the platform calls it, and every
- * caller here puts a raised message straight in front of the user.
- * @param send - Performs the request.
+ * caller here puts a raised message straight in front of the user. A request
+ * that outlives its deadline keeps the deadline's own wording: "unreachable"
+ * would be a guess, while the deadline is a fact the user can act on. The
+ * request is aborted and awaited before the timeout is raised, so a queued
+ * write cannot overlap a request the server may still be processing.
+ * @param send - Performs the request with the abort signal.
  * @returns The response, when the importer answered at all.
- * @throws Error naming the importer as unreachable when it did not.
+ * @throws Error naming the importer as unreachable when it did not, or a
+ * {@link RequestTimeoutError} when it never answered in time.
  */
-async function reachable(send: () => Promise<Response>): Promise<Response> {
+async function reachable(send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
+  const controller = new AbortController();
+  const deadlineAt = Date.now() + REQUEST_TIMEOUT_MS;
+  const request = send(controller.signal);
+  const timedOut = { current: false };
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => {
+        timedOut.current = true;
+        controller.abort();
+        reject(new RequestTimeoutError());
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
+  });
   try {
-    return await send();
+    const res = await Promise.race([request, deadline]);
+    markDeadline(res, deadlineAt);
+    return res;
   } catch {
+    if (timedOut.current) {
+      // Aborting can reject the request before the deadline's rejection is
+      // observed. The flag keeps that race from masquerading as a transport
+      // failure, and the await makes sure no write is left in flight.
+      await request.catch(() => undefined);
+      throw new RequestTimeoutError();
+    }
     throw new Error(failureMessage('unreachable').text);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
+}
+
+/** One serialized write lane. */
+interface WriteQueue {
+  tail: Promise<unknown>;
+}
+
+/**
+ * Builds a write lane that starts settled.
+ * @returns The lane.
+ */
+function createWriteQueue(): WriteQueue {
+  return { tail: Promise.resolve() };
+}
+
+/** Writes that replace the importer config. */
+const configWrites = createWriteQueue();
+/** Device-token registration, independent of config saves. */
+const deviceWrites = createWriteQueue();
+
+/**
+ * Serializes mutating requests on one resource lane.
+ *
+ * A timeout only stops the caller from waiting; the server may still apply the
+ * write. Starting a second write to the same resource before the first has
+ * settled lets an older request overwrite a newer one, so that lane queues.
+ * Unrelated lanes stay separate: a config save must not block a device update.
+ * @param queue - The resource lane to join.
+ * @param operation - The write to run after the lane's current tail.
+ * @returns The write's result.
+ */
+function serializeWrite<T>(queue: WriteQueue, operation: () => Promise<T>): Promise<T> {
+  const result = queue.tail.then(operation, operation);
+  queue.tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
 /**
@@ -91,15 +169,16 @@ async function reachable(send: () => Promise<Response>): Promise<Response> {
  */
 export async function checkAuthorized(baseUrl: string, token: string): Promise<boolean> {
   const url = `${normalizeBaseUrl(baseUrl)}/auth/status`;
-  const res = await reachable(() =>
+  const res = await reachable((signal) =>
     fetch(url, {
       headers: { authorization: `Bearer ${token}` },
+      signal,
     }),
   );
   if (!res.ok) {
     return false;
   }
-  const authStatus: unknown = await res.json().catch(() => undefined);
+  const authStatus = await readJsonOrUndefined(res);
   return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
@@ -164,9 +243,9 @@ async function tryReauth(): Promise<Session | null> {
  * than expected still recovers without the caller handling it. The retry reuses
  * `init`, so a body must be a value that can be sent twice, such as a string.
  *
- * `signal` is excluded: {@link reachable} reads any rejection as an importer it
- * could not reach, which a cancelled request is not. Adding cancellation means
- * teaching that function to tell the two apart first.
+ * `signal` is excluded from `init` so this function can attach the deadline's
+ * own abort signal; the retry reuses `init`, and a body must therefore be a
+ * value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
@@ -180,9 +259,10 @@ async function authed(
   const send = async (active: Session): Promise<Response> => {
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
-    return reachable(() =>
+    return reachable((signal) =>
       fetch(url, {
         ...init,
+        signal,
         headers: {
           ...(init.headers as Record<string, string> | undefined),
           authorization: `Bearer ${active.token}`,
@@ -210,7 +290,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, MANIFEST_BODY);
+  return readWithinDeadline(res, () => parsedBody(res, MANIFEST_BODY));
 }
 
 /**
@@ -227,7 +307,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, CONFIG_BODY);
+  return readWithinDeadline(res, () => parsedBody(res, CONFIG_BODY));
 }
 
 /**
@@ -236,7 +316,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
  * @returns A failure SaveResult with the importer's message + errors when present.
  */
 async function toFailure(res: Response): Promise<SaveResult> {
-  const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
+  const data = await readJsonOrEmpty(res);
   return {
     ok: false,
     error: data.error ?? messageForStatus(res.status),
@@ -251,13 +331,15 @@ async function toFailure(res: Response): Promise<SaveResult> {
  * @param config - The config object to save.
  * @returns Success, or a failure carrying the importer's validation errors.
  */
-export async function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
-  const res = await authed(session, '/api/config', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(config),
+export function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
+  return serializeWrite(configWrites, async () => {
+    const res = await authed(session, '/api/config', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -266,9 +348,13 @@ export async function saveConfig(session: Session, config: ConfigObject): Promis
  * @param name - The bank id to remove.
  * @returns Success or a failure with validation errors.
  */
-export async function removeBank(session: Session, name: string): Promise<SaveResult> {
-  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  return res.ok ? { ok: true } : toFailure(res);
+export function removeBank(session: Session, name: string): Promise<SaveResult> {
+  return serializeWrite(configWrites, async () => {
+    const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**
@@ -285,7 +371,7 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const statusBody = await parsedBody(res, STATUS_BODY);
+  const statusBody = await readWithinDeadline(res, () => parsedBody(res, STATUS_BODY));
   return statusBody.runs;
 }
 
@@ -295,13 +381,15 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function registerDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function registerDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(deviceWrites, async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -310,13 +398,15 @@ export async function registerDevice(session: Session, token: string): Promise<S
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(deviceWrites, async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -330,7 +420,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, OTP_SETTINGS);
+  return readWithinDeadline(res, () => parsedBody(res, OTP_SETTINGS));
 }
 
 /**
@@ -339,13 +429,15 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @param channel - The channel to select (`telegram` or `app`).
  * @returns Success or a failure carrying the importer's error.
  */
-export async function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
-  const res = await authed(session, '/api/otp/settings', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ channel }),
+export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  return serializeWrite(configWrites, async () => {
+    const res = await authed(session, '/api/otp/settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -358,7 +450,7 @@ async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  const pendingBody = await readWithinDeadline(res, () => parsedBody(res, PENDING_OTP_BODY));
   return pendingBody.requests;
 }
 

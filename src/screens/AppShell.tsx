@@ -40,11 +40,16 @@ const ORDER: Tab[] = TABS.map((tab) => tab.key);
  */
 export function AppShell(): ReactElement {
   const theme = useTheme();
-  const { pending, dismiss } = useOtpWatcher();
+  const { pending, dismiss, autoSubmitted, markAutoSubmitted } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
   const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
   const prevIndex = useRef(0);
+  const depthRef = useRef(0);
+
+  useEffect(() => {
+    depthRef.current = depth;
+  }, [depth]);
 
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
@@ -52,7 +57,11 @@ export function AppShell(): ReactElement {
       if (data?.type === 'otp') {
         return;
       }
-      setDepth(0);
+      // Do not discard an open editor's draft from a background notification;
+      // the user finishes the save or backs out first.
+      if (depthRef.current > 0) {
+        return;
+      }
       setActive('status');
     });
     return () => {
@@ -99,8 +108,13 @@ export function AppShell(): ReactElement {
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
       {promptRequest ? (
         <OtpPrompt
+          key={promptRequest.id}
           request={promptRequest}
           visible={pending !== null}
+          autoSubmitUsed={autoSubmitted.has(promptRequest.id)}
+          onAutoSubmitUsed={() => {
+            markAutoSubmitted(promptRequest.id);
+          }}
           onSubmitted={dismiss}
           onDismiss={dismiss}
         />

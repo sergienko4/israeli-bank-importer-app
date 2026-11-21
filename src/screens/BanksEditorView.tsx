@@ -2,12 +2,20 @@
  * Selected-bank editor view for credentials, targets, and optional fields.
  */
 import type { ReactElement } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
-import { AppHeader, Banner, Button, Card, ListRow, Screen, Sheet } from '../components/ui';
-import { useTheme } from '../theme/ThemeContext';
+import {
+  AppHeader,
+  Banner,
+  Button,
+  Card,
+  ListRow,
+  Screen,
+  SectionLabel,
+  Sheet,
+} from '../components/ui';
 import { BanksTargetsEditor } from './BanksTargetsEditor';
 
 type BankConfig = Record<string, unknown>;
@@ -59,19 +67,20 @@ export function BanksEditorView({
   onCloseSheet,
   onAddField,
 }: Readonly<BanksEditorViewProps>): ReactElement {
-  const theme = useTheme();
-
   return (
     <Screen
-      header={<AppHeader title={bankName} subtitle="Credentials & targets" onBack={onBack} />}
+      header={
+        <AppHeader
+          title={bankName}
+          subtitle="Credentials & targets"
+          onBack={onBack}
+          backDisabled={saving}
+        />
+      }
       notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
       footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
     >
-      <Text
-        style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}
-      >
-        CREDENTIALS
-      </Text>
+      <SectionLabel style={styles.sectionLabel}>CREDENTIALS</SectionLabel>
       <Card>
         {presentFields.map((field) => {
           const isRequired = requiredKeys.has(field.key);
@@ -127,6 +136,6 @@ export function BanksEditorView({
 }
 
 const styles = StyleSheet.create({
-  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginBottom: 8, marginLeft: 4 },
   addField: { marginTop: 8 },
 });

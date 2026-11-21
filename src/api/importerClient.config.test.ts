@@ -5,6 +5,7 @@ import {
   removeBank,
   saveConfig,
   type Session,
+  submitOtp,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
@@ -93,6 +94,62 @@ describe('saveConfig', () => {
     const result = await saveConfig(session, { a: 1 });
     expect(result).toEqual({ ok: false, error: 'Invalid', errors: ['bad field'], status: 400 });
   });
+
+  it('does not start a second config write before the first settles', async () => {
+    const resolvers: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const first = saveConfig(session, { version: 1 });
+    const second = saveConfig(session, { version: 2 });
+    // The queue starts the first write on a later turn; a macrotask flushes
+    // every microtask the queue and the async client add.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(resolvers).toHaveLength(1);
+    resolvers[0](fakeResponse(200, { ok: true }));
+    await first;
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(resolvers).toHaveLength(2);
+    resolvers[1](fakeResponse(200, { ok: true }));
+    await second;
+  });
+});
+
+describe('write lanes', () => {
+  it('does not block an OTP submission behind a pending config save', async () => {
+    const requested: string[] = [];
+    const resolvers: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn((url: unknown) => {
+      requested.push(String(url));
+      return new Promise<Response>((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+
+    const save = saveConfig(session, { version: 1 });
+    const otp = submitOtp(session, 'req-1', '1234');
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(requested).toHaveLength(2);
+    expect(requested).toEqual(
+      expect.arrayContaining(['https://host:8080/api/config', 'https://host:8080/api/otp/req-1']),
+    );
+
+    resolvers[0](fakeResponse(200, { ok: true }));
+    resolvers[1](fakeResponse(200, { ok: true }));
+    await Promise.all([save, otp]);
+  });
 });
 
 describe('removeBank', () => {
@@ -107,6 +164,75 @@ describe('removeBank', () => {
     stubFetch(400, { error: 'nope' });
     const result = await removeBank(session, 'discount');
     expect(result).toEqual({ ok: false, error: 'nope', errors: undefined, status: 400 });
+  });
+});
+
+describe('a response body that never finishes', () => {
+  /**
+   * Builds a response whose headers arrive but whose body never resolves.
+   * @param ok - Whether the status is a success.
+   * @returns A Response-shaped stub.
+   */
+  function stalledBody(ok: boolean): Response {
+    return {
+      ok,
+      status: ok ? 200 : 400,
+      json: () => new Promise<unknown>(() => undefined),
+    } as unknown as Response;
+  }
+
+  it('bounds a load body instead of leaving the screen spinning', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(true)));
+      const result = getConfig(session);
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('bounds the failure body read on a rejected save', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(false)));
+      const result = saveConfig(session, { a: 1 });
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      await jest.advanceTimersByTimeAsync(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a body read inside the deadline the headers started', async () => {
+    jest.useFakeTimers();
+    try {
+      let respond: ((response: Response) => void) | undefined;
+      globalThis.fetch = jest.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const result = getConfig(session);
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      // Headers after ten seconds leave only five of the original fifteen.
+      await jest.advanceTimersByTimeAsync(10_000);
+      respond?.(stalledBody(true));
+      await jest.advanceTimersByTimeAsync(5_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

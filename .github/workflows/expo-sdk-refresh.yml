@@ -137,7 +137,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          branch="chore/expo-sdk-patch-${GITHUB_RUN_ID}"
+          # The attempt keeps a full "Re-run all jobs" from pushing a second
+          # commit onto the branch a failed attempt already pushed.
+          branch="chore/expo-sdk-patch-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch -c "$branch"

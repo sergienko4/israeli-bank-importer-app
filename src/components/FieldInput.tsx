@@ -4,55 +4,15 @@
  * {@link SectionForm}.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { type ReactElement, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import type { ReactElement } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
+import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
+import { TextControl } from './FieldTextControl';
 
-type ParsedNumberFieldText = { kind: 'valid'; value: number | undefined } | { kind: 'invalid' };
-
-/**
- * Parses numeric config input without allowing NaN or infinite values.
- * @param text - Raw text from the numeric input.
- * @returns A valid parsed value, undefined for empty input, or invalid.
- */
-export function parseNumberFieldText(text: string): ParsedNumberFieldText {
-  if (text.trim() === '') {
-    return { kind: 'valid', value: undefined };
-  }
-
-  const value = Number(text);
-  return Number.isFinite(value) ? { kind: 'valid', value } : { kind: 'invalid' };
-}
-
-function stringifyTextInputValue(value: unknown): string {
-  if (value === undefined || value === null) {
-    return '';
-  }
-
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return value.toString();
-  }
-
-  if (typeof value === 'symbol') {
-    return value.toString();
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => stringifyTextInputValue(item)).join(',');
-  }
-
-  if (value instanceof Date) {
-    return value.toString();
-  }
-
-  return Object.prototype.toString.call(value);
-}
+export { parseNumberFieldText } from './FieldTextControl';
 
 interface Props {
   field: FieldDef;
@@ -60,6 +20,24 @@ interface Props {
   onChange: (value: unknown) => void;
   /** When set, renders a remove control for this field (optional fields). */
   onRemove?: () => void;
+  /** Reports numeric validity to the editor that owns Save and Back. */
+  onValidityChange?: (key: string, valid: boolean) => void;
+  /** Stable key this field reports its validity under. */
+  validityKey?: string;
+}
+
+/**
+ * Picks a chip background that keeps the label legible while pressed.
+ * @param theme - The active theme.
+ * @param selected - Whether the chip is selected.
+ * @param pressed - Whether it is pressed.
+ * @returns The chip fill.
+ */
+function chipBackground(theme: Theme, selected: boolean, pressed: boolean): string {
+  if (!pressed) {
+    return selected ? theme.colors.primary : theme.colors.surface;
+  }
+  return selected ? theme.colors.primaryPressed : theme.colors.primarySoft;
 }
 
 /**
@@ -69,6 +47,7 @@ interface Props {
  */
 function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElement {
   const theme = useTheme();
+  const label = field.required ? `${field.label}, required` : field.label;
   return (
     <View style={styles.chips}>
       {(field.options ?? []).map((option) => {
@@ -77,15 +56,15 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
           <Pressable
             key={option}
             accessibilityRole="button"
-            accessibilityLabel={`${field.label}: ${option}`}
+            accessibilityLabel={`${label}: ${option}`}
+            accessibilityHint={field.help}
             accessibilityState={{ selected }}
             style={({ pressed }) => [
               styles.chip,
               {
                 borderRadius: theme.radius.pill,
-                borderColor: selected ? theme.colors.primary : theme.colors.border,
-                backgroundColor: selected ? theme.colors.primary : theme.colors.surface,
-                opacity: pressed ? 0.8 : 1,
+                borderColor: selected || pressed ? theme.colors.primary : theme.colors.borderStrong,
+                backgroundColor: chipBackground(theme, selected, pressed),
               },
             ]}
             onPress={() => {
@@ -109,62 +88,22 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
 }
 
 /**
- * Renders a themed text/number/secret input with a focus ring.
- * @param props - The field, current value, and change handler.
- * @returns The input element.
- */
-function TextControl({ field, value, onChange }: Readonly<Props>): ReactElement {
-  const theme = useTheme();
-  const [focused, setFocused] = useState(false);
-  const isNumber = field.kind === 'number';
-  return (
-    <TextInput
-      style={[
-        styles.input,
-        {
-          borderColor: focused ? theme.colors.primary : theme.colors.border,
-          borderWidth: focused ? 2 : 1,
-          backgroundColor: theme.colors.surface,
-          color: theme.colors.text,
-          borderRadius: theme.radius.md,
-        },
-      ]}
-      keyboardType={isNumber ? 'numeric' : 'default'}
-      secureTextEntry={field.kind === 'secret'}
-      accessibilityLabel={field.label}
-      autoCapitalize="none"
-      autoCorrect={false}
-      placeholderTextColor={theme.colors.textSubtle}
-      value={stringifyTextInputValue(value)}
-      onChangeText={(text) => {
-        if (!isNumber) {
-          onChange(text);
-          return;
-        }
-        const parsed = parseNumberFieldText(text);
-        if (parsed.kind === 'valid') {
-          onChange(parsed.value);
-        }
-      }}
-      onFocus={() => {
-        setFocused(true);
-      }}
-      onBlur={() => {
-        setFocused(false);
-      }}
-    />
-  );
-}
-
-/**
  * Renders a labelled config field with optional help text. Boolean fields
  * render as an inline label + switch row; everything else stacks label + input.
  * An optional remove control appears for user-added (optional) fields.
  * @param props - The field, current value, change handler, and optional remove.
  * @returns The field row.
  */
-export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>): ReactElement {
+export function FieldInput({
+  field,
+  value,
+  onChange,
+  onRemove,
+  onValidityChange,
+  validityKey,
+}: Readonly<Props>): ReactElement {
   const theme = useTheme();
+  const accessibleLabel = field.required ? `${field.label}, required` : field.label;
   const labelText = (
     <Text style={[styles.label, { color: theme.colors.text }]}>
       {field.label}
@@ -179,7 +118,7 @@ export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>
       onPress={onRemove}
       style={styles.remove}
     >
-      <Ionicons name="close-circle" size={18} color={theme.colors.textSubtle} />
+      <Ionicons name="close-circle" size={18} color={theme.colors.textSubtle} accessible={false} />
     </Pressable>
   ) : null;
 
@@ -195,20 +134,26 @@ export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>
         </View>
         <Pressable
           accessibilityRole="switch"
-          accessibilityLabel={field.label}
+          accessibilityLabel={accessibleLabel}
           accessibilityHint={field.help}
           accessibilityState={{ checked }}
           onPress={() => {
             onChange(!checked);
           }}
-          style={({ pressed }) => [styles.switchTarget, { opacity: pressed ? 0.85 : 1 }]}
+          style={({ pressed }) => [
+            styles.switchTarget,
+            pressed
+              ? { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.sm }
+              : null,
+          ]}
         >
           <View pointerEvents="none">
             <Switch
               accessible={false}
+              importantForAccessibility="no-hide-descendants"
               value={checked}
               trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
-              thumbColor="#FFFFFF"
+              thumbColor={theme.colors.surface}
             />
           </View>
         </Pressable>
@@ -226,7 +171,13 @@ export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>
       {field.kind === 'select' ? (
         <SelectControl field={field} value={value} onChange={onChange} />
       ) : (
-        <TextControl field={field} value={value} onChange={onChange} />
+        <TextControl
+          field={field}
+          value={value}
+          onChange={onChange}
+          onValidityChange={onValidityChange}
+          validityKey={validityKey}
+        />
       )}
       {field.help ? (
         <Text style={[styles.help, { color: theme.colors.textSubtle }]}>{field.help}</Text>
@@ -247,7 +198,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   help: { fontSize: 12, marginTop: 6 },
-  input: { minHeight: 44, padding: 12, fontSize: 16 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
     borderWidth: 1,

@@ -320,6 +320,7 @@ export default tseslint.config(
     files: [
       'src/components/ui/**/*.tsx',
       'src/components/FieldInput.tsx',
+      'src/components/FieldTextControl.tsx',
       'src/components/SectionForm.tsx',
     ],
     rules: {

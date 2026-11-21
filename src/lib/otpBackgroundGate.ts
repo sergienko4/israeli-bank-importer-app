@@ -97,6 +97,9 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  */
 export function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
   const { session, requestId, code, claim } = send;
+  // Take the same lane the foreground prompt uses before reading the switches:
+  // a send that waited behind another one must not act on the permission and
+  // pairing it observed before the wait.
   return withOtpLane(requestId, async () => {
     const started = await startIfAllowed(
       () => loadBackgroundCaptureAllowed().catch(() => false),

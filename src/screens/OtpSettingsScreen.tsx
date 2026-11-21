@@ -60,8 +60,8 @@ interface ChannelLoad {
 
 /** A finished channel read, tagged with the request that produced it. */
 interface ChannelResult {
-  /** The session the read was made for. */
-  readonly connection: Session | null;
+  /** The importer address the read was made for. */
+  readonly baseUrl: string;
   /** Which attempt this answers, so a retry supersedes the one before it. */
   readonly reloadKey: number;
   /** The channel the importer reported, or null when the read failed. */
@@ -197,22 +197,28 @@ function AutoSubmitCard(): ReactElement {
 function useOtpChannel(connection: Session | null): ChannelLoad {
   const [result, setResult] = useState<ChannelResult | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const connectionRef = useRef(connection);
   const current =
-    result !== null && result.connection === connection && result.reloadKey === reloadKey;
+    result !== null && result.baseUrl === connection?.baseUrl && result.reloadKey === reloadKey;
 
   useEffect(() => {
-    if (!connection) {
+    connectionRef.current = connection;
+  }, [connection]);
+
+  useEffect(() => {
+    const activeConnection = connectionRef.current;
+    if (!activeConnection) {
       return undefined;
     }
     let active = true;
     const run = async (): Promise<void> => {
       const done = (channel: OtpChannel | null, error: string | null): void => {
         if (active) {
-          setResult({ connection, reloadKey, channel, error });
+          setResult({ baseUrl: activeConnection.baseUrl, reloadKey, channel, error });
         }
       };
       try {
-        const settings = await getOtpSettings(connection);
+        const settings = await getOtpSettings(activeConnection);
         await cacheOtpChannel(settings.channel);
         done(settings.channel, null);
       } catch (e) {
@@ -223,10 +229,10 @@ function useOtpChannel(connection: Session | null): ChannelLoad {
     return () => {
       active = false;
     };
-  }, [connection, reloadKey]);
+  }, [connection?.baseUrl, reloadKey]);
 
   const setChannel = (next: OtpChannel | null): void => {
-    setResult({ connection, reloadKey, channel: next, error: null });
+    setResult({ baseUrl: connection?.baseUrl ?? '', reloadKey, channel: next, error: null });
   };
   const reload = (): void => {
     setReloadKey((key) => key + 1);
@@ -251,12 +257,16 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
   const { connection } = useAuth();
   const { channel, loading, error, setChannel, reload } = useOtpChannel(connection);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const choose = async (next: OtpChannel): Promise<void> => {
-    if (!connection || next === channel) {
+    if (!connection || savingRef.current || next === channel) {
       return;
     }
+    savingRef.current = true;
     const previous = channel;
+    setSaving(true);
     setChannel(next);
     setSaveError(null);
     try {
@@ -275,6 +285,9 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
       setChannel(previous);
       haptics.warning();
       setSaveError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -296,7 +309,12 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
   return (
     <Screen
       header={
-        <AppHeader title="OTP delivery" subtitle="How bank codes are collected" onBack={onBack} />
+        <AppHeader
+          title="OTP delivery"
+          subtitle="How bank codes are collected"
+          onBack={onBack}
+          backDisabled={saving}
+        />
       }
       notice={saveError ? <Banner messages={[saveError]} /> : undefined}
     >
@@ -313,14 +331,21 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
               title={choice.title}
               subtitle={choice.subtitle}
               accessibilityRole="radio"
-              accessibilityState={{ checked: selected, selected }}
+              accessibilityState={{ checked: selected, selected, disabled: saving }}
               accessibilityHint="Selects this OTP delivery method."
               onPress={() => {
-                void choose(choice.channel);
+                if (!saving) {
+                  void choose(choice.channel);
+                }
               }}
               right={
                 selected ? (
-                  <Ionicons name="checkmark-circle" size={22} color={theme.colors.primary} />
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={22}
+                    color={theme.colors.primary}
+                    accessible={false}
+                  />
                 ) : (
                   <View style={[styles.dot, { borderColor: theme.colors.borderStrong }]} />
                 )

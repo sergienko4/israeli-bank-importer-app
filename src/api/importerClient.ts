@@ -17,7 +17,12 @@ import {
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import { parsedBody } from './parseResponse';
-import { readJsonOrEmpty, readJsonOrUndefined, readWithinDeadline } from './responseBody';
+import {
+  markDeadline,
+  readJsonOrEmpty,
+  readJsonOrUndefined,
+  readWithinDeadline,
+} from './responseBody';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
 
@@ -78,18 +83,24 @@ export function normalizeBaseUrl(input: string): string {
  */
 async function reachable(send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
   const controller = new AbortController();
+  const deadlineAt = Date.now() + REQUEST_TIMEOUT_MS;
   const request = send(controller.signal);
   const timedOut = { current: false };
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => {
-      timedOut.current = true;
-      controller.abort();
-      reject(new RequestTimeoutError());
-    }, REQUEST_TIMEOUT_MS);
+    timeoutId = setTimeout(
+      () => {
+        timedOut.current = true;
+        controller.abort();
+        reject(new RequestTimeoutError());
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
   });
   try {
-    return await Promise.race([request, deadline]);
+    const res = await Promise.race([request, deadline]);
+    markDeadline(res, deadlineAt);
+    return res;
   } catch {
     if (timedOut.current) {
       // Aborting can reject the request before the deadline's rejection is
@@ -121,9 +132,7 @@ function createWriteQueue(): WriteQueue {
 
 /** Writes that replace the importer config. */
 const configWrites = createWriteQueue();
-/** OTP submissions, kept apart so a config save cannot delay a code. */
-const otpWrites = createWriteQueue();
-/** Device-token registration, independent of both. */
+/** Device-token registration, independent of config saves. */
 const deviceWrites = createWriteQueue();
 
 /**
@@ -132,8 +141,7 @@ const deviceWrites = createWriteQueue();
  * A timeout only stops the caller from waiting; the server may still apply the
  * write. Starting a second write to the same resource before the first has
  * settled lets an older request overwrite a newer one, so that lane queues.
- * Unrelated lanes stay separate: a full-config save must not block an OTP that
- * is about to expire.
+ * Unrelated lanes stay separate: a config save must not block a device update.
  * @param queue - The resource lane to join.
  * @param operation - The write to run after the lane's current tail.
  * @returns The write's result.
@@ -282,7 +290,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return readWithinDeadline(() => parsedBody(res, MANIFEST_BODY));
+  return readWithinDeadline(res, () => parsedBody(res, MANIFEST_BODY));
 }
 
 /**
@@ -299,7 +307,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return readWithinDeadline(() => parsedBody(res, CONFIG_BODY));
+  return readWithinDeadline(res, () => parsedBody(res, CONFIG_BODY));
 }
 
 /**
@@ -363,7 +371,7 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const statusBody = await readWithinDeadline(() => parsedBody(res, STATUS_BODY));
+  const statusBody = await readWithinDeadline(res, () => parsedBody(res, STATUS_BODY));
   return statusBody.runs;
 }
 
@@ -412,7 +420,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return readWithinDeadline(() => parsedBody(res, OTP_SETTINGS));
+  return readWithinDeadline(res, () => parsedBody(res, OTP_SETTINGS));
 }
 
 /**
@@ -442,7 +450,7 @@ async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const pendingBody = await readWithinDeadline(() => parsedBody(res, PENDING_OTP_BODY));
+  const pendingBody = await readWithinDeadline(res, () => parsedBody(res, PENDING_OTP_BODY));
   return pendingBody.requests;
 }
 
@@ -480,12 +488,10 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @param code - The OTP code entered by the user.
  * @returns Success or a failure carrying the importer's error.
  */
-export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  return serializeWrite(otpWrites, async () => {
-    const { path, init } = otpSubmission(id, code);
-    const res = await authed(session, path, init);
-    return res.ok ? { ok: true } : toFailure(res);
-  });
+export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  const { path, init } = otpSubmission(id, code);
+  const res = await authed(session, path, init);
+  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**

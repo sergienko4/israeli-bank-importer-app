@@ -6,17 +6,55 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
-import { Button, Card } from '../components/ui';
+import { Button, Card, SectionLabel } from '../components/ui';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
 import { useTheme } from '../theme/ThemeContext';
 
 type TargetConfig = Record<string, unknown>;
 
+/**
+ * Stable editor identities for target objects.
+ *
+ * The config array only holds plain values, so an index cannot identify a card:
+ * removing one would shift every later card and carry its draft along. The
+ * WeakMap gives each object an id that survives edits (which copy the id to the
+ * replacement object) and disappears with the object.
+ */
+const targetIds = new WeakMap<TargetConfig, string>();
+let nextTargetId = 0;
+
+/**
+ * Reads or assigns the stable id of one target object.
+ * @param target - The target being rendered.
+ * @returns Its editor identity.
+ */
+function targetId(target: TargetConfig): string {
+  const existing = targetIds.get(target);
+  if (existing !== undefined) {
+    return existing;
+  }
+  nextTargetId += 1;
+  const id = `target-${String(nextTargetId)}`;
+  targetIds.set(target, id);
+  return id;
+}
+
+/**
+ * Carries a target's identity across the copy made by an edit.
+ * @param from - The object being replaced.
+ * @param to - The replacement object.
+ */
+function inheritTargetId(from: TargetConfig, to: TargetConfig): void {
+  targetIds.set(to, targetId(from));
+}
+
 interface BanksTargetsEditorProps {
   fields: FieldDef[];
   targets: TargetConfig[];
   onChange: (targets: TargetConfig[]) => void;
+  /** Reports a target field's numeric validity to the editor. */
+  onValidityChange?: (key: string, valid: boolean) => void;
 }
 
 /**
@@ -28,12 +66,16 @@ export function BanksTargetsEditor({
   fields,
   targets,
   onChange,
+  onValidityChange,
 }: Readonly<BanksTargetsEditorProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
 
   const setField = (index: number, key: string, value: unknown): void => {
-    onChange(targets.map((target, i) => (i === index ? { ...target, [key]: value } : target)));
+    const current = targets[index];
+    const next = { ...current, [key]: value };
+    inheritTargetId(current, next);
+    onChange(targets.map((target, i) => (i === index ? next : target)));
   };
 
   const removeTarget = (index: number): void => {
@@ -48,13 +90,9 @@ export function BanksTargetsEditor({
 
   return (
     <View style={styles.targets}>
-      <Text
-        style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}
-      >
-        TARGETS
-      </Text>
+      <SectionLabel style={styles.sectionLabel}>TARGETS</SectionLabel>
       {targets.map((target, index) => (
-        <Card key={`target-${String(index)}`} elevation={0} style={styles.targetCard}>
+        <Card key={targetId(target)} elevation={0} style={styles.targetCard}>
           <View style={styles.targetHeader}>
             <Text style={[theme.typography.h3, { color: theme.colors.text }]}>
               Target {String(index + 1)}
@@ -78,6 +116,8 @@ export function BanksTargetsEditor({
               onChange={(value) => {
                 setField(index, field.key, value);
               }}
+              onValidityChange={onValidityChange}
+              validityKey={`targets.${targetId(target)}.${field.key}`}
             />
           ))}
         </Card>
@@ -96,7 +136,7 @@ export function BanksTargetsEditor({
 
 const styles = StyleSheet.create({
   targets: { marginTop: 20, gap: 12 },
-  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginBottom: 8, marginLeft: 4 },
   targetCard: { gap: 4, backgroundColor: 'transparent' },
   targetHeader: {
     flexDirection: 'row',

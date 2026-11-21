@@ -1,24 +1,21 @@
 /**
  * State model and pure helpers for the banks screen.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 
-import {
-  getConfig,
-  getManifest,
-  removeBank,
-  saveConfig,
-  type Session,
-} from '../api/importerClient';
+import { getConfig, getManifest, type Session } from '../api/importerClient';
 import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
-import { haptics } from '../lib/haptics';
+import { type BankConfig, banksOf } from '../lib/bankDrafts';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
+import { closeBanksEditor, removeBankWithGuards, saveBanksConfig } from './bankEditorActions';
 
 /** Editable bank configuration values keyed by manifest field id. */
-export type BankConfig = Record<string, unknown>;
+export type { BankConfig };
+/** Reads the banks map from a config object (re-exported for screen callers). */
+export { banksOf };
 
 /** Editable target configuration values keyed by manifest field id. */
 export type TargetConfig = Record<string, unknown>;
@@ -31,6 +28,7 @@ export interface BanksScreenModel {
   error: string | null;
   selected: string | null;
   saving: boolean;
+  removing: boolean;
   saveErrors: string[] | null;
   sheetOpen: boolean;
   reload: () => void;
@@ -50,21 +48,13 @@ export interface BanksScreenModel {
 interface BanksDataState {
   manifest: Manifest | null;
   config: ConfigObject;
+  baseline: ConfigObject | null;
   loading: boolean;
   error: string | null;
   setConfig: (config: ConfigObject | ((current: ConfigObject) => ConfigObject)) => void;
+  setBaseline: (config: ConfigObject) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
-}
-
-/**
- * Reads the banks map from a config object.
- * @param config - The full config.
- * @returns The banks keyed by id.
- */
-export function banksOf(config: ConfigObject): Record<string, BankConfig> {
-  const banks = config.banks;
-  return typeof banks === 'object' && banks !== null ? (banks as Record<string, BankConfig>) : {};
 }
 
 /**
@@ -133,23 +123,31 @@ function confirmBankRemoval(
 function useBanksData(connection: Session | null, reloadKey: number): BanksDataState {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
+  const [baseline, setBaseline] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const connectionRef = useRef(connection);
 
   useEffect(() => {
-    if (!connection) {
+    connectionRef.current = connection;
+  }, [connection]);
+
+  useEffect(() => {
+    const activeConnection = connectionRef.current;
+    if (!activeConnection) {
       return undefined;
     }
     let active = true;
     const run = async (): Promise<void> => {
       try {
         const [loadedManifest, loadedConfig] = await Promise.all([
-          getManifest(connection),
-          getConfig(connection),
+          getManifest(activeConnection),
+          getConfig(activeConnection),
         ]);
         if (active) {
           setManifest(loadedManifest);
           setConfig(loadedConfig);
+          setBaseline(loadedConfig);
         }
       } catch (e) {
         if (active) {
@@ -165,9 +163,19 @@ function useBanksData(connection: Session | null, reloadKey: number): BanksDataS
     return () => {
       active = false;
     };
-  }, [connection, reloadKey]);
+  }, [connection?.baseUrl, reloadKey]);
 
-  return { manifest, config, loading, error, setConfig, setError, setLoading };
+  return {
+    manifest,
+    config,
+    baseline,
+    loading,
+    error,
+    setConfig,
+    setBaseline,
+    setError,
+    setLoading,
+  };
 }
 
 /**
@@ -186,10 +194,18 @@ export function useBanksScreenModel(
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const saveInFlight = useRef(false);
+  const removingRef = useRef(false);
+  const configRef = useRef(data.config);
 
   useEffect(() => {
-    onDepthChange?.(selected ? 1 : 0);
-  }, [selected, onDepthChange]);
+    configRef.current = data.config;
+  }, [data.config]);
+
+  useEffect(() => {
+    onDepthChange?.(selected || removing ? 1 : 0);
+  }, [selected, removing, onDepthChange]);
 
   const reload = (): void => {
     data.setError(null);
@@ -214,65 +230,66 @@ export function useBanksScreenModel(
   };
 
   const startAdd = (id: string): void => {
+    if (removingRef.current) {
+      return;
+    }
     const required = data.manifest?.bankRequirements[id]?.required ?? [];
     setBank(id, templateBank(required));
     setSaveErrors(null);
     setSelected(id);
   };
 
-  const save = async (): Promise<void> => {
-    if (!connection) {
-      return;
-    }
-    setSaving(true);
-    setSaveErrors(null);
-    try {
-      const result = await saveConfig(connection, data.config);
-      if (result.ok) {
-        haptics.success();
-        setSelected(null);
-      } else {
-        haptics.warning();
-        setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
-      }
-    } catch {
-      haptics.warning();
-      setSaveErrors(['Save failed. Check your connection and try again.']);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const save = (): Promise<void> =>
+    saveBanksConfig({
+      connection,
+      config: data.config,
+      currentConfig: () => configRef.current,
+      saveInFlight,
+      removing: removingRef,
+      setSaving,
+      setSaveErrors,
+      setBaseline: data.setBaseline,
+      setSelected,
+    });
 
-  const doRemove = async (id: string): Promise<void> => {
-    if (!connection) {
-      return;
-    }
-    try {
-      const result = await removeBank(connection, id);
-      if (result.ok) {
-        haptics.success();
-        reload();
-      } else {
-        data.setError(result.error ?? 'Could not remove the bank.');
-      }
-    } catch {
-      data.setError('Could not remove the bank. Check your connection and try again.');
-    }
-  };
+  const doRemove = (id: string): Promise<void> =>
+    removeBankWithGuards({
+      connection,
+      id,
+      saveInFlight,
+      removing: removingRef,
+      setRemoving,
+      setSaveErrors,
+      onRemoved: reload,
+    });
 
   const nameOf = (id: string): string => data.manifest?.bankRequirements[id]?.displayName ?? id;
+
+  const closeSelected = (): void => {
+    closeBanksEditor({
+      selected,
+      baseline: data.baseline,
+      config: data.config,
+      saving: saveInFlight.current,
+      setConfig: data.setConfig,
+      setSaveErrors,
+      setSelected,
+    });
+  };
 
   return {
     ...data,
     selected,
     saving,
+    removing,
     saveErrors,
     sheetOpen,
     reload,
-    closeSelected: () => {
-      setSelected(null);
-    },
+    closeSelected,
     selectBank: (id) => {
+      if (removingRef.current) {
+        return;
+      }
       setSaveErrors(null);
       setSelected(id);
     },
@@ -282,6 +299,9 @@ export function useBanksScreenModel(
     startAdd,
     save,
     confirmRemove: (id) => {
+      if (removingRef.current) {
+        return;
+      }
       confirmBankRemoval(id, nameOf, doRemove);
     },
     nameOf,

@@ -19,7 +19,7 @@ export const OTP_DISMISS_SNOOZE_MS = 60_000;
 /** Keeps enough of the request alive to poll and type the code after a snooze. */
 export const OTP_DISMISS_RESUME_MARGIN_MS = 10_000;
 
-/** A short quiet period after a successful answer while the importer catches up. */
+/** A short quiet window after an answer, and for a dismissal near the deadline. */
 export const OTP_ANSWERED_QUIET_MS = 5_000;
 
 /**
@@ -27,7 +27,7 @@ export const OTP_ANSWERED_QUIET_MS = 5_000;
  *
  * A full-minute snooze on a request that expires sooner would hide it past its
  * deadline, so the snooze is capped to leave a margin for the next poll and for
- * typing the code. A request already inside that margin is available at once.
+ * typing the code. Inside that margin it stays quiet only until the deadline.
  * @param deadline - The request's deadline in epoch ms.
  * @param now - Current time in epoch ms (defaults to Date.now()).
  * @returns The time the snooze ends, never before `now`.

@@ -209,14 +209,16 @@ export function OtpPrompt({
     },
   });
 
+  const cancelCountdown = countdown.cancel;
+
   // A hidden prompt must not keep an armed countdown: it would resume and
   // send the old code when the same request reappears.
   useEffect(() => {
     if (!visible) {
       autoGuard.invalidate();
-      countdown.cancel();
+      cancelCountdown();
     }
-  }, [visible, autoGuard, countdown]);
+  }, [visible, autoGuard, cancelCountdown]);
 
   const handleChange = (text: string): void => {
     autoGuard.invalidate();

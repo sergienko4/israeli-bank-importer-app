@@ -257,16 +257,21 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
   const { connection } = useAuth();
   const { channel, loading, error, setChannel, reload } = useOtpChannel(connection);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const sequence = useRef(0);
 
   const choose = async (next: OtpChannel): Promise<void> => {
     if (!connection || next === channel) {
       return;
     }
+    const ticket = ++sequence.current;
     const previous = channel;
     setChannel(next);
     setSaveError(null);
     try {
       const result = await setOtpSettings(connection, next);
+      if (ticket !== sequence.current) {
+        return;
+      }
       if (result.ok) {
         // Moving off the app channel hides both switches, so this is what stops
         // the receiver: without it, capture would keep running unreachable.
@@ -278,6 +283,9 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
         setSaveError(result.error ?? 'Could not save the OTP setting.');
       }
     } catch (e) {
+      if (ticket !== sequence.current) {
+        return;
+      }
       setChannel(previous);
       haptics.warning();
       setSaveError(e instanceof Error ? e.message : 'Could not save the OTP setting.');

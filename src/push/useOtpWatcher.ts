@@ -197,18 +197,20 @@ interface SnapshotTargets {
  */
 function applySnapshot(requests: PendingOtpRequest[], targets: SnapshotTargets): void {
   const { pendingRef, snoozedUntil, missingPolls, setAutoSubmitted, setPending } = targets;
-  handleRequests(requests);
-  snoozedUntil.current = pruneSnoozed(snoozedUntil.current);
-  setAutoSubmitted((current) => {
-    const pruned = pruneUsed(current);
-    return pruned.size === current.size ? current : pruned;
-  });
+  const current = pendingRef.current;
   const next = selectPendingOtp(requests, snoozedUntil.current);
   const keep = keepThroughGap({
-    current: pendingRef.current,
+    current,
     requests,
     next,
     misses: missingPolls.current,
+  });
+  // Keep SMS capture open for the request shown through a transient gap.
+  handleRequests(keep && current ? [...requests, current] : requests);
+  snoozedUntil.current = pruneSnoozed(snoozedUntil.current);
+  setAutoSubmitted((markers) => {
+    const pruned = pruneUsed(markers);
+    return pruned.size === markers.size ? markers : pruned;
   });
   if (keep) {
     missingPolls.current += 1;

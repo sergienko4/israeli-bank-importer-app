@@ -291,7 +291,7 @@ export function OtpPrompt({
       />
       {error ? (
         <View style={styles.banner}>
-          <Banner messages={[error]} />
+          <Banner messages={[error]} announce={false} />
         </View>
       ) : null}
       {countdown.pending ? (

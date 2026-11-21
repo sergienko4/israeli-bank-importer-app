@@ -251,9 +251,14 @@ export function OtpPrompt({
 
   // The shell remounts this prompt per request, so there is no stale code to
   // clear here; opening the sheet only has to put the cursor in the field.
+  // `onShow` is the reliable moment: the effect below runs before the modal's
+  // contents have mounted on a recovered request.
+  const focusCode = (): void => {
+    codeRef.current?.focus();
+  };
   useEffect(() => {
     if (visible) {
-      codeRef.current?.focus();
+      focusCode();
     }
   }, [visible]);
 
@@ -311,7 +316,12 @@ export function OtpPrompt({
   };
 
   return (
-    <Sheet visible={visible} onClose={dismiss} title={`Enter OTP for ${request.bankId}`}>
+    <Sheet
+      visible={visible}
+      onClose={dismiss}
+      onShow={focusCode}
+      title={`Enter OTP for ${request.bankId}`}
+    >
       <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
         The importer is waiting for the bank one-time code delivered through the app OTP channel.
       </Text>

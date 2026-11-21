@@ -102,7 +102,7 @@ export function SkeletonList({
   label = 'Loading',
 }: Readonly<{ count?: number; label?: string }>): ReactElement {
   return (
-    <View accessibilityRole="progressbar" accessibilityLabel={label}>
+    <View accessible accessibilityRole="progressbar" accessibilityLabel={label}>
       <Card padded={false} style={styles.card}>
         {Array.from({ length: count }).map((_, index) => (
           <View key={`skeleton-${String(index)}`}>

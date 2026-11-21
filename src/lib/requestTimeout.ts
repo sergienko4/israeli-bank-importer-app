@@ -11,7 +11,7 @@
 import { failureMessage } from './errorMessages';
 
 /** How long an interactive request may take before the user is told it failed. */
-const REQUEST_TIMEOUT_MS = 15_000;
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 /** The message shown when the importer never answered. */
 export const REQUEST_TIMEOUT_MESSAGE = failureMessage('timed-out').text;

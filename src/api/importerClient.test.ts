@@ -124,14 +124,23 @@ describe('a connection that never opens', () => {
 describe('a request that never answers', () => {
   it('gives up at the deadline instead of spinning forever', async () => {
     jest.useFakeTimers();
+    let captured: AbortSignal | undefined;
     try {
-      globalThis.fetch = jest.fn(() => new Promise<Response>(() => undefined));
+      globalThis.fetch = jest.fn((_input: unknown, init?: RequestInit) => {
+        captured = init?.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new Error('aborted'));
+          });
+        });
+      });
       const result = checkAuthorized('https://host:8080', 'token');
       const assertion = expect(result).rejects.toThrow('took too long to answer');
 
-      jest.advanceTimersByTime(15_000);
+      await jest.advanceTimersByTimeAsync(15_000);
 
       await assertion;
+      expect(captured?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }

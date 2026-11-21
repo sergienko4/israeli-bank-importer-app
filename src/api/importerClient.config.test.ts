@@ -93,6 +93,34 @@ describe('saveConfig', () => {
     const result = await saveConfig(session, { a: 1 });
     expect(result).toEqual({ ok: false, error: 'Invalid', errors: ['bad field'], status: 400 });
   });
+
+  it('does not start a second config write before the first settles', async () => {
+    const resolvers: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+
+    const first = saveConfig(session, { version: 1 });
+    const second = saveConfig(session, { version: 2 });
+    // The queue starts the first write on a later turn; a macrotask flushes
+    // every microtask the queue and the async client add.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(resolvers).toHaveLength(1);
+    resolvers[0](fakeResponse(200, { ok: true }));
+    await first;
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(resolvers).toHaveLength(2);
+    resolvers[1](fakeResponse(200, { ok: true }));
+    await second;
+  });
 });
 
 describe('removeBank', () => {

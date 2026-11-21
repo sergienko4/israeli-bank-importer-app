@@ -2,7 +2,7 @@
  * Per-target bank editor rows for the bank configuration screen.
  */
 import type { ReactElement } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Keyboard, StyleSheet, Text, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
@@ -40,8 +40,13 @@ export function BanksTargetsEditor({
   };
 
   const removeTarget = (index: number): void => {
+    // Cards are keyed by index, so reindexing while a field is focused could
+    // carry its draft into the next target. Blur and let the revert land first.
+    Keyboard.dismiss();
     animateNextLayout(reduced);
-    onChange(targets.filter((_, i) => i !== index));
+    setTimeout(() => {
+      onChange(targets.filter((_, i) => i !== index));
+    }, 0);
   };
 
   const addTarget = (): void => {

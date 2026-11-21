@@ -10,7 +10,7 @@ import { useAuth } from '../auth/AuthContext';
 import { type BankConfig, banksOf } from '../lib/bankDrafts';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
-import { closeBanksEditor, removeBankFromImporter, saveBanksConfig } from './bankEditorActions';
+import { closeBanksEditor, removeBankWithGuards, saveBanksConfig } from './bankEditorActions';
 
 /** Editable bank configuration values keyed by manifest field id. */
 export type { BankConfig };
@@ -28,6 +28,7 @@ export interface BanksScreenModel {
   error: string | null;
   selected: string | null;
   saving: boolean;
+  removing: boolean;
   saveErrors: string[] | null;
   sheetOpen: boolean;
   reload: () => void;
@@ -193,6 +194,7 @@ export function useBanksScreenModel(
   const [saving, setSaving] = useState(false);
   const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const saveInFlight = useRef(false);
   const removingRef = useRef(false);
   const configRef = useRef(data.config);
@@ -202,8 +204,8 @@ export function useBanksScreenModel(
   }, [data.config]);
 
   useEffect(() => {
-    onDepthChange?.(selected ? 1 : 0);
-  }, [selected, onDepthChange]);
+    onDepthChange?.(selected || removing ? 1 : 0);
+  }, [selected, removing, onDepthChange]);
 
   const reload = (): void => {
     data.setError(null);
@@ -250,22 +252,16 @@ export function useBanksScreenModel(
       setSelected,
     });
 
-  const doRemove = async (id: string): Promise<void> => {
-    if (saveInFlight.current || removingRef.current) {
-      return;
-    }
-    removingRef.current = true;
-    try {
-      await removeBankFromImporter({
-        connection,
-        id,
-        onRemoved: reload,
-        onError: data.setError,
-      });
-    } finally {
-      removingRef.current = false;
-    }
-  };
+  const doRemove = (id: string): Promise<void> =>
+    removeBankWithGuards({
+      connection,
+      id,
+      saveInFlight,
+      removing: removingRef,
+      setRemoving,
+      setSaveErrors,
+      onRemoved: reload,
+    });
 
   const nameOf = (id: string): string => data.manifest?.bankRequirements[id]?.displayName ?? id;
 
@@ -285,6 +281,7 @@ export function useBanksScreenModel(
     ...data,
     selected,
     saving,
+    removing,
     saveErrors,
     sheetOpen,
     reload,
@@ -302,6 +299,9 @@ export function useBanksScreenModel(
     startAdd,
     save,
     confirmRemove: (id) => {
+      if (removingRef.current) {
+        return;
+      }
       confirmBankRemoval(id, nameOf, doRemove);
     },
     nameOf,

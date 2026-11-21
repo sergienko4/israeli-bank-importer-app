@@ -4,7 +4,7 @@
  * shown inline. Structured sections (banks, lists) are handled elsewhere.
  */
 import { type ReactElement, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, BackHandler } from 'react-native';
 
 import { getConfig, getManifest, type Session } from '../api/importerClient';
 import type { ConfigObject, Manifest, SectionDef } from '../api/manifest';
@@ -56,7 +56,18 @@ function ConfigSectionEditor({
   onSave,
   onChange,
 }: Readonly<ConfigSectionEditorProps>): ReactElement {
-  const invalidFields = useInvalidFields();
+  const { report, guard } = useInvalidFields();
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      guard(onBack);
+      return true;
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [guard, onBack]);
+
   return (
     <Screen
       header={
@@ -64,7 +75,7 @@ function ConfigSectionEditor({
           title={selected.label}
           subtitle="Edit fields and save"
           onBack={() => {
-            invalidFields.guard(onBack);
+            guard(onBack);
           }}
           backDisabled={saving}
         />
@@ -76,7 +87,7 @@ function ConfigSectionEditor({
           icon="checkmark"
           loading={saving}
           onPress={() => {
-            invalidFields.guard(onSave);
+            guard(onSave);
           }}
         />
       }
@@ -86,7 +97,7 @@ function ConfigSectionEditor({
           section={selected}
           config={config}
           onChange={onChange}
-          onValidityChange={invalidFields.report}
+          onValidityChange={report}
         />
       </Card>
     </Screen>

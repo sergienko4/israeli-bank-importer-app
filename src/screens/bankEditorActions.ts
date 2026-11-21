@@ -227,6 +227,55 @@ interface RemoveBankOptions {
  * Deletes a bank and reports the outcome to the screen.
  * @param options - The session, the bank id, and the result callbacks.
  */
+/** What removing a bank needs while it owns the screen. */
+export interface RemoveBankWithGuardsOptions {
+  /** The active session, or null when signed out. */
+  readonly connection: Session | null;
+  /** The bank id to remove. */
+  readonly id: string;
+  /** Guards against a save running underneath the delete. */
+  readonly saveInFlight: RefObject<boolean>;
+  /** Guards against a second delete. */
+  readonly removing: RefObject<boolean>;
+  /** Reports the delete-owned state for the spinner/notice. */
+  readonly setRemoving: (removing: boolean) => void;
+  /** Reports a delete failure without replacing the whole screen. */
+  readonly setSaveErrors: (errors: string[] | null) => void;
+  /** Reloads the list after success. */
+  readonly onRemoved: () => void;
+}
+
+/**
+ * Removes a bank while keeping save and delete from overlapping.
+ * @param options - The session, id, guards, and screen callbacks.
+ */
+export async function removeBankWithGuards(options: RemoveBankWithGuardsOptions): Promise<void> {
+  const { saveInFlight, removing, setRemoving, setSaveErrors } = options;
+  if (saveInFlight.current || removing.current) {
+    return;
+  }
+  removing.current = true;
+  setRemoving(true);
+  setSaveErrors(null);
+  try {
+    await removeBankFromImporter({
+      connection: options.connection,
+      id: options.id,
+      onRemoved: options.onRemoved,
+      onError: (message) => {
+        setSaveErrors([message]);
+      },
+    });
+  } finally {
+    removing.current = false;
+    setRemoving(false);
+  }
+}
+
+/**
+ * Removes one bank through the importer's DELETE endpoint.
+ * @param options - The session, bank id, and result callbacks.
+ */
 export async function removeBankFromImporter(options: RemoveBankOptions): Promise<void> {
   const { connection, id, onRemoved, onError } = options;
   if (!connection) {

@@ -1,8 +1,8 @@
 /**
  * Selected-bank editor view for credentials, targets, and optional fields.
  */
-import type { ReactElement } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { type ReactElement, useEffect } from 'react';
+import { BackHandler, ScrollView, StyleSheet } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
@@ -68,7 +68,18 @@ export function BanksEditorView({
   onCloseSheet,
   onAddField,
 }: Readonly<BanksEditorViewProps>): ReactElement {
-  const invalidFields = useInvalidFields();
+  const { report, guard } = useInvalidFields();
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      guard(onBack);
+      return true;
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [guard, onBack]);
+
   return (
     <Screen
       header={
@@ -76,7 +87,7 @@ export function BanksEditorView({
           title={bankName}
           subtitle="Credentials & targets"
           onBack={() => {
-            invalidFields.guard(onBack);
+            guard(onBack);
           }}
           backDisabled={saving}
         />
@@ -88,7 +99,7 @@ export function BanksEditorView({
           icon="checkmark"
           loading={saving}
           onPress={() => {
-            invalidFields.guard(onSave);
+            guard(onSave);
           }}
         />
       }
@@ -105,7 +116,7 @@ export function BanksEditorView({
               onChange={(value) => {
                 onFieldChange(field.key, value);
               }}
-              onValidityChange={invalidFields.report}
+              onValidityChange={report}
               validityKey={field.key}
               onRemove={
                 isRequired
@@ -133,7 +144,7 @@ export function BanksEditorView({
         fields={targetFields}
         targets={targets}
         onChange={onTargetsChange}
-        onValidityChange={invalidFields.report}
+        onValidityChange={report}
       />
 
       <Sheet visible={sheetOpen} onClose={onCloseSheet} title="Add a field">

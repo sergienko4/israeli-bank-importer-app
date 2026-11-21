@@ -6,7 +6,7 @@
  * layout and stays small enough to review on its own.
  */
 import { type ReactElement, useEffect, useState } from 'react';
-import { AccessibilityInfo, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { useAnnounceOnChange } from '../lib/useAnnounce';
@@ -21,12 +21,24 @@ type ParsedNumberFieldText = { kind: 'valid'; value: number | undefined } | { ki
  * @returns A valid parsed value, undefined for empty input, or invalid.
  */
 export function parseNumberFieldText(text: string): ParsedNumberFieldText {
-  if (text.trim() === '') {
+  const trimmed = text.trim();
+  if (trimmed === '') {
     return { kind: 'valid', value: undefined };
   }
 
-  // A comma-decimal keyboard produces "42,5"; treat it as the same number.
-  const value = Number(text.replace(',', '.'));
+  // A comma is a decimal separator for "42,5", but "1,000" is far more likely
+  // to be a grouped thousand. Never turn the latter into 1.0 by accident.
+  if (/,\d{3}$/.test(trimmed)) {
+    return { kind: 'invalid' };
+  }
+  const normalized = trimmed.replace(',', '.');
+  const unsigned =
+    normalized.startsWith('-') || normalized.startsWith('+') ? normalized.slice(1) : normalized;
+  const digits = unsigned.replace('.', '');
+  if (digits === '' || !/^\d+$/.test(digits)) {
+    return { kind: 'invalid' };
+  }
+  const value = Number(normalized);
   return Number.isFinite(value) ? { kind: 'valid', value } : { kind: 'invalid' };
 }
 
@@ -56,6 +68,18 @@ function stringifyTextInputValue(value: unknown): string {
   }
 
   return Object.prototype.toString.call(value);
+}
+
+/**
+ * Picks the soft keyboard for a field.
+ * @param isNumber - Whether the field holds a number.
+ * @returns The keyboard type.
+ */
+function keyboardFor(isNumber: boolean): 'default' | 'numeric' | 'numbers-and-punctuation' {
+  if (!isNumber) {
+    return 'default';
+  }
+  return Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric';
 }
 
 /** The inline message for a numeric field that cannot be parsed. */
@@ -151,7 +175,7 @@ export function TextControl({
             borderRadius: theme.radius.md,
           },
         ]}
-        keyboardType={isNumber ? 'decimal-pad' : 'default'}
+        keyboardType={keyboardFor(isNumber)}
         secureTextEntry={field.kind === 'secret'}
         accessibilityLabel={label}
         accessibilityHint={field.help}

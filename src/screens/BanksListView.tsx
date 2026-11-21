@@ -7,6 +7,7 @@ import { Pressable, StyleSheet } from 'react-native';
 
 import {
   AppHeader,
+  Banner,
   Card,
   Divider,
   EmptyState,
@@ -24,9 +25,24 @@ interface BanksListViewProps {
   configuredIds: string[];
   catalog: string[];
   nameOf: (id: string) => string;
+  saveErrors: string[] | null;
+  removing: boolean;
   onSelect: (id: string) => void;
   onStartAdd: (id: string) => void;
   onRemove: (id: string) => void;
+}
+
+/**
+ * Picks the list notice for a delete or a failed delete.
+ * @param removing - Whether a bank delete is in flight.
+ * @param saveErrors - Delete failures to show, or null.
+ * @returns The banner, or undefined when there is nothing to say.
+ */
+function listNotice(removing: boolean, saveErrors: string[] | null): ReactElement | undefined {
+  if (removing) {
+    return <Banner messages={['Removing the bank…']} tone="info" />;
+  }
+  return saveErrors?.length ? <Banner messages={saveErrors} /> : undefined;
 }
 
 /**
@@ -39,14 +55,17 @@ export function BanksListView({
   configuredIds,
   catalog,
   nameOf,
+  saveErrors,
+  removing,
   onSelect,
   onStartAdd,
   onRemove,
 }: Readonly<BanksListViewProps>): ReactElement {
   const theme = useTheme();
+  const notice = listNotice(removing, saveErrors);
 
   return (
-    <Screen header={<AppHeader title="Banks" />}>
+    <Screen header={<AppHeader title="Banks" />} notice={notice}>
       {configuredIds.length === 0 ? (
         <Entrance>
           <EmptyState

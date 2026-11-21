@@ -49,13 +49,16 @@ export function useInvalidFields(): InvalidFields {
     });
   }, []);
 
-  const guard = (action: () => void): void => {
-    if (keys.size > 0) {
-      Alert.alert('Check the highlighted field', 'Enter a valid number before saving.');
-      return;
-    }
-    action();
-  };
+  const guard = useCallback(
+    (action: () => void) => {
+      if (keys.size > 0) {
+        Alert.alert('Check the highlighted field', 'Enter a valid number before saving.');
+        return;
+      }
+      action();
+    },
+    [keys],
+  );
 
   return { report, guard };
 }

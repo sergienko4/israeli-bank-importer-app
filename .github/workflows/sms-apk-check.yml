@@ -12,6 +12,10 @@ name: SMS APK check
 #
 # Only the inputs of prebuild and Gradle trigger it. A JavaScript-only change
 # is already bundled for both platforms by ci.yml on every pull request.
+#
+# It is also callable: expo-sdk-refresh.yml calls it against the branch it just
+# pushed, because a pull request created with GITHUB_TOKEN starts no workflows,
+# so the native checks would otherwise never see an SDK refresh.
 
 on:
   pull_request:
@@ -31,12 +35,18 @@ on:
       - 'scripts/compare-apk-signatures.mjs'
       - '.github/actions/**'
       - '.github/workflows/sms-apk-check.yml'
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or branch to check.
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: sms-apk-check-${{ github.event.pull_request.number }}
+  group: sms-apk-check-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 # `shell: bash` adds `-o pipefail`, which the implicit default does not.
@@ -53,6 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-android-build
       - name: Build with a throwaway key
@@ -149,6 +160,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/setup-node
       - uses: ./.github/actions/setup-android-build
       - name: Generate the Android project

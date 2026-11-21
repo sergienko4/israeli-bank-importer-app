@@ -10,13 +10,14 @@ name: Expo SDK patch refresh
 # 14 and dropped zod 3) has no automated path and waits for a human to notice.
 #
 # This workflow closes that gap. It runs the same `npx expo install --fix` a
-# maintainer would, proves the result with the same gates CI runs, and opens a
-# pull request for review.
+# maintainer would, proves the result with every gate CI runs that needs no
+# secret, and opens a pull request for review. The native APK and JVM checks run
+# through sms-apk-check.yml against the pushed branch: a pull request created
+# with GITHUB_TOKEN starts no workflows, so without that call they would never
+# see an SDK refresh.
 #
-# It cannot rely on the `pull_request` CI gate: GitHub does not start workflows
-# for a pull request created with GITHUB_TOKEN. Every gate therefore runs in
-# this job before the pull request opens, and a human merges it after review.
-# Adding a PAT would remove that manual step; until then this is the trade.
+# Adding a PAT would let the normal pull-request workflows run and remove the
+# manual merge; until then this is the trade.
 #
 # A new SDK *major* is still a deliberate manual upgrade. This only follows the
 # patch line of the installed SDK.
@@ -41,10 +42,12 @@ jobs:
     # A fork has no write access and no reason to open this pull request.
     if: github.repository == 'sergienko4/israeli-bank-importer-app'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
-      pull-requests: write
+      pull-requests: read
+    outputs:
+      branch: ${{ steps.push.outputs.branch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,14 +85,17 @@ jobs:
       - name: Format the refreshed manifests
         if: steps.check.outputs.drift == 'true'
         run: npm run format
-      # Everything CI's `build` job would run, minus what needs secrets or EAS.
-      # A pull request from this workflow gets no required checks, so this is
-      # the only proof attached to it.
+      # Everything CI's `build` job runs except the coverage upload, which is
+      # not a gate, plus the dependency checks from the `licenses` job. Sonar
+      # needs secrets and stays in the pull-request run.
       - name: Verify the refresh
         if: steps.check.outputs.drift == 'true'
         run: |
           set -euo pipefail
           npm run format:check
+          npm run lint:actions
+          npm run lint:lockfile
+          npm run contract:check
           npm run lint
           npm run lint:md
           npm run typecheck
@@ -98,7 +104,16 @@ jobs:
           npm run check:bundle
           npm run check:manifest
           npm run check:release
+          npm run lint:licenses
           EXPO_OFFLINE=1 npx --no-install expo install --check
+      # The same pinned Doctor and environment setting as ci.yml. The offline
+      # version check above validates the declared pins; Doctor is what catches
+      # a missing native peer or a dependency that drifted off the SDK line.
+      - name: Expo Doctor
+        if: steps.check.outputs.drift == 'true'
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: true
+        run: npx --yes expo-doctor@1.20.1
       - name: Refuse a second refresh pull request
         id: open
         if: steps.check.outputs.drift == 'true'
@@ -115,10 +130,9 @@ jobs:
           else
             echo 'found=false' >> "$GITHUB_OUTPUT"
           fi
-      - name: Open the refresh pull request
+      - name: Push the refresh branch
+        id: push
         if: steps.check.outputs.drift == 'true' && steps.open.outputs.found == 'false'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           branch="chore/expo-sdk-patch-${GITHUB_RUN_ID}"
@@ -131,6 +145,7 @@ jobs:
           # with no manifest change is a no-op, not a failure.
           if git diff --cached --quiet; then
             echo 'No manifest change after the fix; nothing to open.'
+            echo 'branch=' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           unexpected="$(git status --porcelain | grep -vE '(package\.json|package-lock\.json)$' || true)"
@@ -144,9 +159,45 @@ jobs:
           # push explicitly instead of embedding the token in the remote.
           gh auth setup-git
           git push origin "$branch"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+  # The same APK build and JVM tests a package.json change gets on a pull
+  # request. The called workflow checks out the branch pushed above.
+  native:
+    name: Native checks on the refreshed branch
+    needs: refresh
+    if: needs.refresh.outputs.branch != ''
+    uses: ./.github/workflows/sms-apk-check.yml
+    with:
+      ref: ${{ needs.refresh.outputs.branch }}
+
+  open-pr:
+    name: Open the refresh pull request
+    needs: [refresh, native]
+    # A failed native check leaves the branch for inspection and opens nothing.
+    if: needs.refresh.outputs.branch != '' && needs.native.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Open the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ needs.refresh.outputs.branch }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --state open --json number,title \
+            --jq '.[] | select(.title | startswith("chore(deps): refresh Expo SDK 57 patch line")) | .number' \
+            | head -n 1)"
+          if [ -n "$existing" ]; then
+            echo "Pull request #$existing already exists; leaving it to review."
+            exit 0
+          fi
           gh pr create \
             --base main \
-            --head "$branch" \
+            --head "$BRANCH" \
             --title 'chore(deps): refresh Expo SDK 57 patch line' \
             --label dependencies \
             --label npm \
@@ -159,10 +210,12 @@ jobs:
           This pull request runs the same `npx expo install --fix` a
           maintainer would.
 
-          Verification: format, lint, markdown lint, typecheck, the full Jest
-          suite, the iOS + Android export, the bundle/manifest/release checks,
-          and an offline `expo install --check` all ran in the workflow that
-          opened this pull request.
+          Verification: format, action pins, lockfile hosts, the importer
+          contract, lint, markdown lint, typecheck, the full Jest suite, the
+          iOS + Android export, the bundle/manifest/release checks, license
+          compliance, Expo Doctor, an offline `expo install --check`, and the
+          SMS APK + JVM checks all ran in the workflow that opened this pull
+          request.
 
           Note: GitHub does not start CI for a pull request created with
           GITHUB_TOKEN, so the required checks will not run here. Review the

@@ -89,10 +89,26 @@ describe('saveConfig', () => {
     expect(calls[0].init?.method).toBe('PUT');
   });
 
+  it('treats blank failure fields as absent', async () => {
+    stubFetch(400, { error: '   ', errors: ['', '  '] });
+    const result = await saveConfig(session, { a: 1 });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toBeUndefined();
+    expect(typeof result.error).toBe('string');
+  });
+
   it('surfaces validation errors on 400', async () => {
     stubFetch(400, { error: 'Invalid', errors: ['bad field'] });
     const result = await saveConfig(session, { a: 1 });
     expect(result).toEqual({ ok: false, error: 'Invalid', errors: ['bad field'], status: 400 });
+  });
+
+  it('ignores failure fields with the wrong type', async () => {
+    stubFetch(400, { error: 42, errors: ['bad field', 7] });
+    const result = await saveConfig(session, { a: 1 });
+    expect(result.ok).toBe(false);
+    expect(result.error).not.toBe(42);
+    expect(result.errors).toEqual(['bad field']);
   });
 
   it('does not start a second config write before the first settles', async () => {
@@ -171,26 +187,41 @@ describe('a response body that never finishes', () => {
   /**
    * Builds a response whose headers arrive but whose body never resolves.
    * @param ok - Whether the status is a success.
+   * @param signal - The request signal, used to reject the body on abort.
    * @returns A Response-shaped stub.
    */
-  function stalledBody(ok: boolean): Response {
+  function stalledBody(ok: boolean, signal?: AbortSignal | null): Response {
     return {
       ok,
       status: ok ? 200 : 400,
-      json: () => new Promise<unknown>(() => undefined),
+      json: () =>
+        new Promise<unknown>((_resolve, reject) => {
+          signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('aborted'));
+            },
+            { once: true },
+          );
+        }),
     } as unknown as Response;
   }
 
   it('bounds a load body instead of leaving the screen spinning', async () => {
     jest.useFakeTimers();
     try {
-      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(true)));
+      let signal: AbortSignal | undefined;
+      globalThis.fetch = jest.fn((_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return Promise.resolve(stalledBody(true, signal));
+      }) as unknown as typeof fetch;
       const result = getConfig(session);
       const assertion = expect(result).rejects.toThrow('took too long to answer');
 
       await jest.advanceTimersByTimeAsync(15_000);
 
       await assertion;
+      expect(signal?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }

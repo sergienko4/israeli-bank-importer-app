@@ -25,6 +25,7 @@ import {
 } from './responseBody';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
+import { createWriteQueue, serializeWrite, withOtpLane } from './writeQueue';
 
 const HTTPS = 'https://';
 
@@ -99,7 +100,7 @@ async function reachable(send: (signal: AbortSignal) => Promise<Response>): Prom
   });
   try {
     const res = await Promise.race([request, deadline]);
-    markDeadline(res, deadlineAt);
+    markDeadline(res, deadlineAt, controller);
     return res;
   } catch {
     if (timedOut.current) {
@@ -115,44 +116,6 @@ async function reachable(send: (signal: AbortSignal) => Promise<Response>): Prom
       clearTimeout(timeoutId);
     }
   }
-}
-
-/** One serialized write lane. */
-interface WriteQueue {
-  tail: Promise<unknown>;
-}
-
-/**
- * Builds a write lane that starts settled.
- * @returns The lane.
- */
-function createWriteQueue(): WriteQueue {
-  return { tail: Promise.resolve() };
-}
-
-/** Writes that replace the importer config. */
-const configWrites = createWriteQueue();
-/** Device-token registration, independent of config saves. */
-const deviceWrites = createWriteQueue();
-
-/**
- * Serializes mutating requests on one resource lane.
- *
- * A timeout only stops the caller from waiting; the server may still apply the
- * write. Starting a second write to the same resource before the first has
- * settled lets an older request overwrite a newer one, so that lane queues.
- * Unrelated lanes stay separate: a config save must not block a device update.
- * @param queue - The resource lane to join.
- * @param operation - The write to run after the lane's current tail.
- * @returns The write's result.
- */
-function serializeWrite<T>(queue: WriteQueue, operation: () => Promise<T>): Promise<T> {
-  const result = queue.tail.then(operation, operation);
-  queue.tail = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
 }
 
 /**
@@ -226,12 +189,16 @@ export function setSessionGuard(guard: SessionGuard | null): void {
  * @returns A fresh session, or null when reauth is unavailable or fails.
  */
 async function tryReauth(): Promise<Session | null> {
-  if (!reauthHandler) {
+  const handler = reauthHandler;
+  if (!handler) {
     return null;
   }
-  inFlightReauth ??= reauthHandler().finally(() => {
-    inFlightReauth = null;
-  });
+  inFlightReauth ??= Promise.resolve()
+    .then(() => handler())
+    .catch(() => null)
+    .finally(() => {
+      inFlightReauth = null;
+    });
   return inFlightReauth;
 }
 
@@ -325,6 +292,10 @@ async function toFailure(res: Response): Promise<SaveResult> {
   };
 }
 
+/** Serializes config writes so an older save cannot overwrite a newer one. */
+const configWrites = createWriteQueue();
+/** Device-token registration, independent of config saves. */
+const deviceWrites = createWriteQueue();
 /**
  * Persists a full config via `PUT /api/config`, surfacing validation errors.
  * @param session - The active session.
@@ -430,6 +401,8 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @returns Success or a failure carrying the importer's error.
  */
 export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  // The channel is an importer setting and may live in the same document the
+  // config PUT replaces, so it shares that document's lane.
   return serializeWrite(configWrites, async () => {
     const res = await authed(session, '/api/otp/settings', {
       method: 'PUT',
@@ -488,10 +461,12 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @param code - The OTP code entered by the user.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  const { path, init } = otpSubmission(id, code);
-  const res = await authed(session, path, init);
-  return res.ok ? { ok: true } : toFailure(res);
+export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  return withOtpLane(id, async () => {
+    const { path, init } = otpSubmission(id, code);
+    const res = await authed(session, path, init);
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**
@@ -543,12 +518,14 @@ export async function getPendingOtpUnattended(session: Session): Promise<Pending
  * @returns Success or a failure carrying the importer's error.
  * @throws Error when the importer is unreachable or does not answer in time.
  */
-export async function submitOtpUnattended(
+export function submitOtpUnattended(
   session: Session,
   id: string,
   code: string,
 ): Promise<SaveResult> {
-  return unattended(session, otpSubmission(id, code), async (res) =>
-    res.ok ? { ok: true } : toFailure(res),
+  return withOtpLane(id, () =>
+    unattended(session, otpSubmission(id, code), async (res) =>
+      res.ok ? { ok: true } : toFailure(res),
+    ),
   );
 }

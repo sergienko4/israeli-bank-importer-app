@@ -5,14 +5,19 @@
  * upstream release drops that package, or moves it to another major line, the
  * entry stays in `package.json`, changes nothing and still reads as a live
  * security fix. This proves every override landed on a resolved version in the
- * lockfile, so a stale one fails here and gets removed.
+ * lockfile and, for a major-scoped key, that a parent still requests that
+ * major, so a stale one fails here and gets removed.
  */
 import manifest from '../../package.json';
 import lockfile from '../../package-lock.json';
 
-/** A lockfile `packages` entry; only the resolved version matters here. */
+/** A lockfile `packages` entry: the resolved version and the ranges it asks for. */
 interface LockEntry {
   readonly version?: string;
+  readonly dependencies?: Readonly<Record<string, string>>;
+  readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
 }
 
 /** The package an override key targets, optionally narrowed to one major line. */
@@ -131,6 +136,43 @@ function isTargeted(
 }
 
 /**
+ * Reads the ranges an entry requests for a package.
+ * @param entry - The lockfile entry.
+ * @param name - The package name.
+ * @returns Every range declared in dependencies, devDependencies, optionalDependencies, or peerDependencies.
+ */
+function dependencyRanges(entry: LockEntry, name: string): string[] {
+  const fields = [
+    entry.dependencies,
+    entry.devDependencies,
+    entry.optionalDependencies,
+    entry.peerDependencies,
+  ];
+  return fields.flatMap((deps) => {
+    const range = deps?.[name];
+    return range === undefined ? [] : [range];
+  });
+}
+
+/**
+ * Reads the major lines a range names.
+ *
+ * Splits on `||` first, then reads the first version in each clause. That
+ * covers the caret, tilde, and comparator forms npm records in the lockfile;
+ * `*` yields nothing because it names no major line to prove.
+ * @param range - A semver range such as `^10.2.6` or `^9 || ^10 || ^11`.
+ * @returns The major lines the range names.
+ */
+function requestedMajors(range: string): number[] {
+  const majors = range.split('||').flatMap((raw) => {
+    const clause = raw.trim().replace(/^(?:\^|~|>=|=)\s*/, '');
+    const match = /^(\d+)/.exec(clause);
+    return match === null ? [] : [Number(match[1])];
+  });
+  return [...new Set(majors)];
+}
+
+/**
  * Lists the overrides that no lockfile entry would be subject to.
  * @param overrides - The `overrides` map from `package.json`.
  * @param packages - The lockfile `packages` map.
@@ -140,7 +182,8 @@ function findInertOverrides(
   overrides: Readonly<Record<string, unknown>>,
   packages: Readonly<Record<string, LockEntry>>,
 ): string[] {
-  const installed = Object.entries(packages).flatMap(([path, entry]) => {
+  const entries = Object.entries(packages);
+  const installed = entries.flatMap(([path, entry]) => {
     const name = packageName(path);
     return name === undefined ? [] : [{ name, entry }];
   });
@@ -150,6 +193,19 @@ function findInertOverrides(
         throw new TypeError(`Override "${key}" is nested; only version ranges are checked`);
       }
       const target = parseOverrideKey(key);
+      const { major } = target;
+      if (major !== undefined) {
+        const requested = entries.some(
+          ([path, entry]) =>
+            packageName(path) !== target.name &&
+            dependencyRanges(entry, target.name).some((range) =>
+              requestedMajors(range).includes(major),
+            ),
+        );
+        if (!requested) {
+          return true;
+        }
+      }
       return !installed.some((candidate) => isTargeted(target, value, candidate));
     })
     .map(([key]) => key);
@@ -168,21 +224,58 @@ describe('findInertOverrides', () => {
     expect(findInertOverrides({ postcss: '^8.5.18' }, packages)).toEqual([]);
   });
 
-  it('accepts a major-scoped override for a nested package on that line', () => {
+  it('accepts a major-scoped override while a parent still requests that major', () => {
     const packages = {
+      'node_modules/parent': {
+        version: '1.0.0',
+        dependencies: { 'brace-expansion': '^5.0.0' },
+      },
       'node_modules/brace-expansion': { version: '1.1.21' },
       'node_modules/glob/node_modules/brace-expansion': { version: '5.0.12' },
     };
     expect(findInertOverrides({ 'brace-expansion@5': '^5.0.8' }, packages)).toEqual([]);
   });
 
+  it('flags a major-scoped override after every parent moved off that major', () => {
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^11.0.5' } },
+      'node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
+  });
+
+  it('accepts a parent range that still names the old major among several', () => {
+    const packages = {
+      'node_modules/parent': {
+        version: '1.0.0',
+        dependencies: { minimatch: '^9.0.3 || ^10.1.2 || ^11.0.1' },
+      },
+      'node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
+  });
+
+  it('counts a dependency of the root package as a consumer', () => {
+    const packages = {
+      '': { version: '1.0.0', devDependencies: { minimatch: '^10.2.6' } },
+      'node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
+  });
+
   it('accepts a cross-major override once the replacement is in the lock', () => {
-    const packages = { 'node_modules/minimatch': { version: '11.0.9' } };
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/minimatch': { version: '11.0.9' },
+    };
     expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
   });
 
   it('flags a cross-major override whose replacement did not land', () => {
-    const packages = { 'node_modules/minimatch': { version: '11.0.8' } };
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/minimatch': { version: '11.0.8' },
+    };
     expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
   });
 
@@ -202,7 +295,10 @@ describe('findInertOverrides', () => {
   });
 
   it('flags a major-scoped override when no entry is on that line', () => {
-    const packages = { 'node_modules/brace-expansion': { version: '1.1.21' } };
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { 'brace-expansion': '^2.1.2' } },
+      'node_modules/brace-expansion': { version: '1.1.21' },
+    };
     expect(findInertOverrides({ 'brace-expansion@2': '^2.1.2' }, packages)).toEqual([
       'brace-expansion@2',
     ]);
@@ -222,7 +318,10 @@ describe('findInertOverrides', () => {
   });
 
   it('reads a scoped package name apart from its major version', () => {
-    const packages = { 'node_modules/@scope/pkg': { version: '2.3.4' } };
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { '@scope/pkg': '^2.3.0' } },
+      'node_modules/@scope/pkg': { version: '2.3.4' },
+    };
     expect(findInertOverrides({ '@scope/pkg@2': '^2.3.0' }, packages)).toEqual([]);
     expect(findInertOverrides({ '@scope/pkg@3': '^3.0.0' }, packages)).toEqual(['@scope/pkg@3']);
   });
@@ -242,7 +341,10 @@ describe('findInertOverrides', () => {
   });
 
   it('throws when a major-scoped override meets an entry with no resolved version', () => {
-    const packages = { 'node_modules/brace-expansion': {} };
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { 'brace-expansion': '^1.1.0' } },
+      'node_modules/brace-expansion': {},
+    };
     expect(() => findInertOverrides({ 'brace-expansion@1': '^1.1.16' }, packages)).toThrow(
       'brace-expansion has no resolved version',
     );

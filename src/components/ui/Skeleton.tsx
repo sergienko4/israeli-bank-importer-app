@@ -94,19 +94,24 @@ export function SkeletonRow(): ReactElement {
 
 /**
  * Renders a card of skeleton rows for a loading list.
- * @param props - How many rows to render. Default 4.
+ * @param props - How many rows to render, and what the loading state is called.
  * @returns The skeleton list element.
  */
-export function SkeletonList({ count = 4 }: Readonly<{ count?: number }>): ReactElement {
+export function SkeletonList({
+  count = 4,
+  label = 'Loading',
+}: Readonly<{ count?: number; label?: string }>): ReactElement {
   return (
-    <Card padded={false} style={styles.card}>
-      {Array.from({ length: count }).map((_, index) => (
-        <View key={`skeleton-${String(index)}`}>
-          <SkeletonRow />
-          {index < count - 1 ? <Divider style={styles.indent} /> : null}
-        </View>
-      ))}
-    </Card>
+    <View accessible accessibilityRole="progressbar" accessibilityLabel={label}>
+      <Card padded={false} style={styles.card}>
+        {Array.from({ length: count }).map((_, index) => (
+          <View key={`skeleton-${String(index)}`}>
+            <SkeletonRow />
+            {index < count - 1 ? <Divider style={styles.indent} /> : null}
+          </View>
+        ))}
+      </Card>
+    </View>
   );
 }
 

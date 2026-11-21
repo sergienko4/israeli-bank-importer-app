@@ -9,6 +9,7 @@ import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { haptics } from '../../lib/haptics';
 import { usePressScale } from '../../lib/usePressScale';
+import type { Theme } from '../../theme/ThemeContext';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface ListRowProps {
@@ -24,6 +25,8 @@ interface ListRowProps {
   onPress?: () => void;
   /** Trailing content (overrides the default chevron). */
   right?: ReactNode;
+  /** Content after the pressable area, so a control can own its own tap target. */
+  trailing?: ReactNode;
   /** Tint the row for destructive intent. */
   danger?: boolean;
   /** Accessible state for selectable rows. */
@@ -68,7 +71,7 @@ function RowIcon({
   return (
     <View style={[styles.bubble, { backgroundColor: bubbleBg, borderRadius: radius }]}>
       {emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
-      {!emoji && icon ? <Ionicons name={icon} size={20} color={tint} /> : null}
+      {!emoji && icon ? <Ionicons name={icon} size={20} color={tint} accessible={false} /> : null}
     </View>
   );
 }
@@ -79,9 +82,7 @@ function RowTexts({ title, subtitle, danger }: Readonly<RowTextsProps>): ReactEl
 
   return (
     <View style={styles.texts}>
-      <Text style={[theme.typography.h3, { color: titleColor }]} numberOfLines={1}>
-        {title}
-      </Text>
+      <Text style={[theme.typography.h3, { color: titleColor }]}>{title}</Text>
       {subtitle ? (
         <Text style={[theme.typography.small, { color: theme.colors.textMuted }]} numberOfLines={2}>
           {subtitle}
@@ -97,10 +98,58 @@ function RowTrailing({ right, onPress, color }: Readonly<RowTrailingProps>): Rea
   }
 
   if (onPress) {
-    return <Ionicons name="chevron-forward" size={20} color={color} />;
+    return <Ionicons name="chevron-forward" size={20} color={color} accessible={false} />;
   }
 
   return null;
+}
+
+/**
+ * Resolves the row's icon tint and bubble fill.
+ * @param theme - The active theme.
+ * @param danger - Whether the row is destructive.
+ * @returns The tint and bubble colours.
+ */
+function rowTone(theme: Theme, danger: boolean): { tint: string; bubbleBg: string } {
+  return danger
+    ? { tint: theme.colors.danger, bubbleBg: theme.colors.dangerSoft }
+    : { tint: theme.colors.primary, bubbleBg: theme.colors.primarySoft };
+}
+
+/**
+ * Builds the row's accessible name.
+ * @param title - The primary text.
+ * @param subtitle - Optional secondary text.
+ * @returns The combined name.
+ */
+function rowName(title: string, subtitle?: string): string {
+  return subtitle ? `${title}, ${subtitle}` : title;
+}
+
+/**
+ * Reports whether a slot has content.
+ * @param value - The slot value.
+ * @returns True when it is neither undefined nor null.
+ */
+function hasContent(value: ReactNode): boolean {
+  return value !== undefined && value !== null && value !== false && value !== '';
+}
+
+/**
+ * Builds the pressable row's padding.
+ * @param theme - The active theme.
+ * @param hasTrailing - Whether a trailing control follows.
+ * @returns The padding style.
+ */
+function rowPadding(
+  theme: Theme,
+  hasTrailing: boolean,
+): { paddingVertical: number; paddingLeft: number; paddingRight: number } {
+  return {
+    paddingVertical: theme.spacing.md,
+    paddingLeft: theme.spacing.lg,
+    paddingRight: hasTrailing ? theme.spacing.sm : theme.spacing.lg,
+  };
 }
 
 /**
@@ -115,6 +164,7 @@ export function ListRow({
   emoji,
   onPress,
   right,
+  trailing,
   danger = false,
   accessibilityState,
   accessibilityRole = 'button',
@@ -122,9 +172,9 @@ export function ListRow({
 }: Readonly<ListRowProps>): ReactElement {
   const theme = useTheme();
   const press = usePressScale(0.98);
-  const tint = danger ? theme.colors.danger : theme.colors.primary;
-  const bubbleBg = danger ? theme.colors.dangerSoft : theme.colors.primarySoft;
-  const accessibleName = subtitle ? `${title}, ${subtitle}` : title;
+  const { tint, bubbleBg } = rowTone(theme, danger);
+  const accessibleName = rowName(title, subtitle);
+  const hasTrailing = hasContent(trailing);
 
   const content = (
     <>
@@ -141,7 +191,12 @@ export function ListRow({
   };
 
   if (!onPress) {
-    return <View style={[styles.row, rowStyle]}>{content}</View>;
+    return (
+      <View style={[styles.row, rowStyle]}>
+        {content}
+        {trailing}
+      </View>
+    );
   }
 
   const pressIn = (): void => {
@@ -149,8 +204,15 @@ export function ListRow({
     press.onPressIn();
   };
 
+  const pressablePadding = rowPadding(theme, hasTrailing);
+
   return (
-    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
+    <Animated.View
+      style={[
+        styles.shell,
+        { backgroundColor: theme.colors.surface, transform: [{ scale: press.scale }] },
+      ]}
+    >
       <Pressable
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibleName}
@@ -159,16 +221,23 @@ export function ListRow({
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={press.onPressOut}
-        style={({ pressed }) => [styles.row, rowStyle, { opacity: pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [
+          styles.pressable,
+          pressablePadding,
+          { backgroundColor: pressed ? theme.colors.surfaceAlt : theme.colors.surface },
+        ]}
       >
         {content}
       </Pressable>
+      {hasTrailing ? <View style={{ paddingRight: theme.spacing.lg }}>{trailing}</View> : null}
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  shell: { flexDirection: 'row', alignItems: 'center' },
+  pressable: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   bubble: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 20 },
   texts: { flex: 1 },

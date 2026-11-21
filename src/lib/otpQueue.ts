@@ -36,6 +36,15 @@ export function selectPendingOtp(
 }
 
 /**
+ * Returns the ids the importer still reports.
+ * @param requests - The latest pending requests.
+ * @returns The live request ids.
+ */
+function pendingIds(requests: readonly PendingOtpRequest[]): Set<string> {
+  return new Set(requests.map((request) => request.id));
+}
+
+/**
  * Drops snooze entries for requests the importer no longer reports.
  *
  * Without this the map grows for the life of the connection and a request id
@@ -49,6 +58,23 @@ export function pruneSnoozed(
   snoozedUntil: ReadonlyMap<string, number>,
   requests: readonly PendingOtpRequest[],
 ): Map<string, number> {
-  const pending = new Set(requests.map((request) => request.id));
+  const pending = pendingIds(requests);
   return new Map([...snoozedUntil].filter(([id]) => pending.has(id)));
+}
+
+/**
+ * Drops auto-submit markers for requests the importer no longer reports.
+ *
+ * A request that has ended no longer needs its one-shot guard, and keeping it
+ * would suppress the attempt for a future request that reuses the id.
+ * @param used - Request ids that already armed an automatic submission.
+ * @param requests - The pending requests from the latest poll.
+ * @returns A set containing only ids that are still pending.
+ */
+export function pruneUsed(
+  used: ReadonlySet<string>,
+  requests: readonly PendingOtpRequest[],
+): Set<string> {
+  const pending = pendingIds(requests);
+  return new Set([...used].filter((id) => pending.has(id)));
 }

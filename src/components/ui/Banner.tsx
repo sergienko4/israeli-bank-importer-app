@@ -35,12 +35,14 @@ interface BannerProps {
   /** Optional recovery action, rendered as a button inside the banner. */
   action?: BannerAction;
   /**
-   * Whether a screen reader announces the messages. Default `true`.
+   * Text to announce instead of the messages, or `null` to suppress the
+   * announcement.
    *
-   * Set `false` when another element already announces the same text, such as
-   * the field whose validation error this banner repeats.
+   * Defaults to the messages themselves. Set `null` when another element
+   * already announces the same text, such as the field whose validation error
+   * this banner repeats.
    */
-  announce?: boolean;
+  announcement?: string | null;
 }
 
 /**
@@ -70,19 +72,22 @@ export function resolveBannerToneStyle(
  * Picks the text a banner announces, if any.
  *
  * Info banners are silent because they repeat content the user is already
- * reading, and a caller can silence a banner that repeats another element's
- * announcement.
+ * reading. A caller can override the text or suppress the announcement when
+ * another element already says it, such as the field whose error the banner
+ * repeats.
  * @param messages - The banner's lines.
  * @param tone - The banner tone.
- * @param announce - Whether the caller allows an announcement.
+ * @param announcement - Text to announce instead, or null to suppress it.
  * @returns The text to announce, or null for no announcement.
  */
 export function bannerAnnouncement(
   messages: string[],
   tone: BannerTone,
-  announce: boolean,
+  announcement: string | null | undefined,
 ): string | null {
-  return announce && tone !== 'info' && messages.length > 0 ? messages.join('. ') : null;
+  if (tone === 'info' || messages.length === 0 || announcement === null) return null;
+  if (typeof announcement === 'string') return announcement;
+  return messages.join('. ');
 }
 
 /**
@@ -94,11 +99,11 @@ export function Banner({
   messages,
   tone = 'danger',
   action,
-  announce = true,
+  announcement,
 }: Readonly<BannerProps>): ReactElement | null {
   const theme = useTheme();
   const pop = useMountPop();
-  useAnnounceOnChange(bannerAnnouncement(messages, tone, announce));
+  useAnnounceOnChange(bannerAnnouncement(messages, tone, announcement));
   if (messages.length === 0) {
     return null;
   }

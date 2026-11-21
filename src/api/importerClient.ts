@@ -528,9 +528,7 @@ export function submitOtpUnattended(
   id: string,
   code: string,
 ): Promise<SaveResult> {
-  return withOtpLane(id, () =>
-    unattended(session, otpSubmission(id, code), async (res) =>
-      res.ok ? { ok: true } : toFailure(res),
-    ),
+  return unattended(session, otpSubmission(id, code), async (res) =>
+    res.ok ? { ok: true } : toFailure(res),
   );
 }

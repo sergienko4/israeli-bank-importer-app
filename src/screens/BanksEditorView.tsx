@@ -117,6 +117,7 @@ export function BanksEditorView({
               }}
               onValidityChange={report}
               validityKey={field.key}
+              disabled={saving}
               onRemove={
                 isRequired
                   ? undefined
@@ -144,6 +145,7 @@ export function BanksEditorView({
         targets={targets}
         onChange={onTargetsChange}
         onValidityChange={report}
+        disabled={saving}
       />
 
       <Sheet visible={sheetOpen} onClose={onCloseSheet} title="Add a field">

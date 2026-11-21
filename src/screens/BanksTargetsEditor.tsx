@@ -55,6 +55,8 @@ interface BanksTargetsEditorProps {
   onChange: (targets: TargetConfig[]) => void;
   /** Reports a target field's numeric validity to the editor. */
   onValidityChange?: (key: string, valid: boolean) => void;
+  /** Whether a save owns the screen and fields must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -67,6 +69,7 @@ export function BanksTargetsEditor({
   targets,
   onChange,
   onValidityChange,
+  disabled = false,
 }: Readonly<BanksTargetsEditorProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
@@ -118,6 +121,7 @@ export function BanksTargetsEditor({
               }}
               onValidityChange={onValidityChange}
               validityKey={`targets.${targetId(target)}.${field.key}`}
+              disabled={disabled}
             />
           ))}
         </Card>

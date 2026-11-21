@@ -24,6 +24,8 @@ interface Props {
   onValidityChange?: (key: string, valid: boolean) => void;
   /** Stable key this field reports its validity under. */
   validityKey?: string;
+  /** Whether a save owns the screen and the field must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -45,7 +47,7 @@ function chipBackground(theme: Theme, selected: boolean, pressed: boolean): stri
  * @param props - The field, current value, and change handler.
  * @returns The select control.
  */
-function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElement {
+function SelectControl({ field, value, onChange, disabled }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const label = field.required ? `${field.label}, required` : field.label;
   return (
@@ -58,7 +60,7 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
             accessibilityRole="button"
             accessibilityLabel={`${label}: ${option}`}
             accessibilityHint={field.help}
-            accessibilityState={{ selected }}
+            accessibilityState={{ selected, disabled }}
             style={({ pressed }) => [
               styles.chip,
               {
@@ -67,6 +69,7 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
                 backgroundColor: chipBackground(theme, selected, pressed),
               },
             ]}
+            disabled={disabled}
             onPress={() => {
               onChange(option);
             }}
@@ -101,6 +104,7 @@ export function FieldInput({
   onRemove,
   onValidityChange,
   validityKey,
+  disabled = false,
 }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const accessibleLabel = field.required ? `${field.label}, required` : field.label;
@@ -136,7 +140,8 @@ export function FieldInput({
           accessibilityRole="switch"
           accessibilityLabel={accessibleLabel}
           accessibilityHint={field.help}
-          accessibilityState={{ checked }}
+          accessibilityState={{ checked, disabled }}
+          disabled={disabled}
           onPress={() => {
             onChange(!checked);
           }}
@@ -151,6 +156,7 @@ export function FieldInput({
             <Switch
               accessible={false}
               importantForAccessibility="no-hide-descendants"
+              disabled={disabled}
               value={checked}
               trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
               thumbColor={theme.colors.surface}
@@ -169,7 +175,7 @@ export function FieldInput({
         {removeBtn}
       </View>
       {field.kind === 'select' ? (
-        <SelectControl field={field} value={value} onChange={onChange} />
+        <SelectControl field={field} value={value} onChange={onChange} disabled={disabled} />
       ) : (
         <TextControl
           field={field}
@@ -177,6 +183,7 @@ export function FieldInput({
           onChange={onChange}
           onValidityChange={onValidityChange}
           validityKey={validityKey}
+          disabled={disabled}
         />
       )}
       {field.help ? (

@@ -97,6 +97,7 @@ function ConfigSectionEditor({
           config={config}
           onChange={onChange}
           onValidityChange={report}
+          disabled={saving}
         />
       </Card>
     </Screen>

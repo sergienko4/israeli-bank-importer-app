@@ -116,6 +116,8 @@ interface TextControlProps {
   onValidityChange?: (key: string, valid: boolean) => void;
   /** Stable key this field reports its validity under. */
   validityKey?: string;
+  /** Whether a save owns the screen and the input must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -129,6 +131,7 @@ export function TextControl({
   onChange,
   onValidityChange,
   validityKey,
+  disabled = false,
 }: Readonly<TextControlProps>): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
@@ -187,6 +190,8 @@ export function TextControl({
         ]}
         keyboardType={keyboardFor(isNumber)}
         secureTextEntry={field.kind === 'secret'}
+        editable={!disabled}
+        accessibilityState={{ disabled }}
         accessibilityLabel={label}
         accessibilityHint={field.help}
         autoCapitalize="none"

@@ -21,6 +21,8 @@ interface ListFieldProps {
   field: FieldDef;
   value: unknown;
   onChange: (value: unknown) => void;
+  /** Whether a save owns the screen and the list must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -28,7 +30,12 @@ interface ListFieldProps {
  * @param props - The list field, its value, and a change handler.
  * @returns The list editor.
  */
-function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactElement {
+function ListField({
+  field,
+  value,
+  onChange,
+  disabled = false,
+}: Readonly<ListFieldProps>): ReactElement {
   const theme = useTheme();
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const items = Array.isArray(value) ? (value as unknown[]) : [];
@@ -70,6 +77,8 @@ function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactE
               },
             ]}
             autoCapitalize="none"
+            editable={!disabled}
+            accessibilityState={{ disabled }}
             placeholderTextColor={theme.colors.textSubtle}
             value={entry}
             onChangeText={(text) => {
@@ -88,6 +97,7 @@ function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactE
             size="sm"
             icon="trash-outline"
             fullWidth={false}
+            disabled={disabled}
             onPress={() => {
               onChange(strings.filter((_, i) => i !== index));
             }}
@@ -100,6 +110,7 @@ function ListField({ field, value, onChange }: Readonly<ListFieldProps>): ReactE
         size="sm"
         icon="add"
         fullWidth={false}
+        disabled={disabled}
         onPress={() => {
           onChange([...strings, '']);
         }}
@@ -116,6 +127,8 @@ interface FieldsProps {
   onChange: ChangeAt;
   /** Reports a numeric field's validity under its full config path. */
   onValidityChange?: (key: string, valid: boolean) => void;
+  /** Whether a save owns the screen and fields must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -129,6 +142,7 @@ function Fields({
   config,
   onChange,
   onValidityChange,
+  disabled = false,
 }: Readonly<FieldsProps>): ReactElement {
   const theme = useTheme();
   const parent = (getAtPath(config, basePath) ?? {}) as Record<string, unknown>;
@@ -157,6 +171,7 @@ function Fields({
                 config={config}
                 onChange={onChange}
                 onValidityChange={onValidityChange}
+                disabled={disabled}
               />
             </View>
           );
@@ -170,6 +185,7 @@ function Fields({
               onChange={(next) => {
                 onChange(path, next);
               }}
+              disabled={disabled}
             />
           );
         }
@@ -183,6 +199,7 @@ function Fields({
             }}
             onValidityChange={onValidityChange}
             validityKey={path.join('.')}
+            disabled={disabled}
           />
         );
       })}
@@ -196,6 +213,8 @@ interface SectionFormProps {
   onChange: ChangeAt;
   /** Reports a numeric field's validity under its full config path. */
   onValidityChange?: (key: string, valid: boolean) => void;
+  /** Whether a save owns the screen and fields must not change. */
+  disabled?: boolean;
 }
 
 /**
@@ -208,6 +227,7 @@ export function SectionForm({
   config,
   onChange,
   onValidityChange,
+  disabled = false,
 }: Readonly<SectionFormProps>): ReactElement {
   const theme = useTheme();
   if (section.kind !== 'object') {
@@ -224,6 +244,7 @@ export function SectionForm({
       config={config}
       onChange={onChange}
       onValidityChange={onValidityChange}
+      disabled={disabled}
     />
   );
 }

@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ReactElement } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
+import { useAnnounceOnChange } from '../../lib/useAnnounce';
 import { useTheme } from '../../theme/ThemeContext';
 import { Button } from './Button';
 
@@ -46,15 +47,16 @@ interface ErrorViewProps {
  */
 export function ErrorView({ message, onRetry }: Readonly<ErrorViewProps>): ReactElement {
   const theme = useTheme();
+  useAnnounceOnChange(message);
   return (
-    <View style={styles.center} accessibilityRole="alert" accessibilityLiveRegion="polite">
+    <View style={styles.center}>
       <View
         style={[
           styles.bubble,
           { backgroundColor: theme.colors.dangerSoft, borderRadius: theme.radius.pill },
         ]}
       >
-        <Ionicons name="warning-outline" size={28} color={theme.colors.danger} />
+        <Ionicons name="warning-outline" size={28} color={theme.colors.danger} accessible={false} />
       </View>
       <Text style={[theme.typography.body, styles.message, { color: theme.colors.text }]}>
         {message}

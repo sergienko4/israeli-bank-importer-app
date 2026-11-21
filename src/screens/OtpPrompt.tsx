@@ -23,12 +23,12 @@
  * reduced-motion branch: there is no motion to reduce.
  */
 import { type ReactElement, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
 import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
-import { Banner, Button, Sheet, TextField } from '../components/ui';
+import { Button, Sheet, TextField } from '../components/ui';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
@@ -172,32 +172,32 @@ interface Props {
   onDismiss: () => void;
 }
 
+/** The submit state and controls the prompt renders. */
+interface OtpSubmission {
+  /** Whether a code is on its way to the importer. */
+  readonly submitting: boolean;
+  /** Why the last submission failed, or null. */
+  readonly error: string | null;
+  /** Clears the failure as the user edits. */
+  readonly setError: (error: string | null) => void;
+  /** Validates and sends one code. */
+  readonly submit: (candidate: string) => Promise<void>;
+}
+
 /**
- * Renders the OTP entry sheet.
- * @param props - The request plus submit/dismiss callbacks.
- * @returns The OTP prompt element.
+ * Owns the one network write the prompt performs.
+ *
+ * The countdown and the button can both reach `submit` in the same tick, and a
+ * state flag does not become true until React re-renders. A ref closes that
+ * gap, which is worth a bank attempt.
+ * @param requestId - The pending request being answered.
+ * @param onSubmitted - Called after the importer accepts a code.
+ * @returns The submit state and controls.
  */
-export function OtpPrompt({
-  request,
-  visible,
-  onSubmitted,
-  onDismiss,
-}: Readonly<Props>): ReactElement {
-  const theme = useTheme();
+function useOtpSubmission(requestId: string, onSubmitted: () => void): OtpSubmission {
   const { connection } = useAuth();
-  const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const autoEnabled = useAutoSubmitPreference(visible);
-
-  // Holds the request this prompt has already armed for. Because it is never
-  // cleared for the same id, a rejected automatic code cannot re-arm: the user
-  // finishes that request by hand.
-  const autoUsedForRequest = useRef<string | null>(null);
-
-  // The countdown and the button can both reach `submit` in the same tick, and
-  // `submitting` does not become true until React re-renders. A ref closes that
-  // gap, which is worth a bank attempt.
   const inFlight = useRef(false);
 
   const submit = async (candidate: string): Promise<void> => {
@@ -217,7 +217,7 @@ export function OtpPrompt({
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
-    const failure = await sendCode(connection, request.id, trimmed);
+    const failure = await sendCode(connection, requestId, trimmed);
     inFlight.current = false;
     setSubmitting(false);
     if (failure !== null) {
@@ -226,9 +226,41 @@ export function OtpPrompt({
       return;
     }
     haptics.success();
-    setCode('');
     onSubmitted();
   };
+
+  return { submitting, error, setError, submit };
+}
+
+/**
+ * Renders the OTP entry sheet.
+ * @param props - The request plus submit/dismiss callbacks.
+ * @returns The OTP prompt element.
+ */
+export function OtpPrompt({
+  request,
+  visible,
+  onSubmitted,
+  onDismiss,
+}: Readonly<Props>): ReactElement {
+  const theme = useTheme();
+  const [code, setCode] = useState('');
+  const { submitting, error, setError, submit } = useOtpSubmission(request.id, onSubmitted);
+  const autoEnabled = useAutoSubmitPreference(visible);
+  const codeRef = useRef<{ focus: () => void } | null>(null);
+
+  // The shell remounts this prompt per request, so there is no stale code to
+  // clear here; opening the sheet only has to put the cursor in the field.
+  useEffect(() => {
+    if (visible) {
+      codeRef.current?.focus();
+    }
+  }, [visible]);
+
+  // Holds the request this prompt has already armed for. Because it is never
+  // cleared for the same id, a rejected automatic code cannot re-arm: the user
+  // finishes that request by hand.
+  const autoUsedForRequest = useRef<string | null>(null);
 
   const countdown = useAutoSubmitCountdown({
     requestId: request.id,
@@ -254,6 +286,11 @@ export function OtpPrompt({
     if (arm) {
       autoUsedForRequest.current = request.id;
       countdown.arm(next);
+      AccessibilityInfo.announceForAccessibility(
+        `Sending the code automatically in ${String(
+          AUTO_SUBMIT_DELAY_SECONDS,
+        )} seconds. Press Cancel auto-send to stop.`,
+      );
     }
   };
 
@@ -288,21 +325,16 @@ export function OtpPrompt({
         textContentType="oneTimeCode"
         icon="keypad-outline"
         error={error}
+        onInputReady={(input) => {
+          codeRef.current = input;
+        }}
       />
-      {error ? (
-        <View style={styles.banner}>
-          <Banner messages={[error]} />
-        </View>
-      ) : null}
       {countdown.pending ? (
         <View>
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}
-          >
+          <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
             {`Sending this code automatically in ${String(countdown.secondsLeft)}s.`}
           </Text>
-          <Button title="Cancel" icon="close" variant="secondary" onPress={cancelAuto} />
+          <Button title="Cancel auto-send" icon="close" variant="secondary" onPress={cancelAuto} />
         </View>
       ) : (
         <Button
@@ -320,5 +352,4 @@ export function OtpPrompt({
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12 },
-  banner: { marginBottom: 12 },
 });

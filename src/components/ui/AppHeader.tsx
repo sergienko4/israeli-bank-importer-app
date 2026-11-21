@@ -51,14 +51,22 @@ export function AppHeader({
           hitSlop={8}
           style={({ pressed }) => [
             styles.back,
-            { backgroundColor: theme.colors.surfaceAlt, opacity: pressed ? 0.7 : 1 },
+            {
+              backgroundColor: theme.colors.surfaceAlt,
+              borderRadius: theme.radius.sm,
+              opacity: pressed ? 0.7 : 1,
+            },
           ]}
         >
-          <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
+          <Ionicons name="chevron-back" size={22} color={theme.colors.text} accessible={false} />
         </Pressable>
       ) : null}
       <View style={styles.titles}>
-        <Text style={[theme.typography.h2, { color: theme.colors.text }]} numberOfLines={1}>
+        <Text
+          accessibilityRole="header"
+          style={[theme.typography.h2, { color: theme.colors.text }]}
+          numberOfLines={1}
+        >
           {title}
         </Text>
         {subtitle ? (
@@ -77,6 +85,6 @@ export function AppHeader({
 
 const styles = StyleSheet.create({
   root: { flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1 },
-  back: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  back: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   titles: { flex: 1 },
 });

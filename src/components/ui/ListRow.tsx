@@ -24,6 +24,8 @@ interface ListRowProps {
   onPress?: () => void;
   /** Trailing content (overrides the default chevron). */
   right?: ReactNode;
+  /** Content after the pressable area, so a control can own its own tap target. */
+  trailing?: ReactNode;
   /** Tint the row for destructive intent. */
   danger?: boolean;
   /** Accessible state for selectable rows. */
@@ -68,7 +70,7 @@ function RowIcon({
   return (
     <View style={[styles.bubble, { backgroundColor: bubbleBg, borderRadius: radius }]}>
       {emoji ? <Text style={styles.emoji}>{emoji}</Text> : null}
-      {!emoji && icon ? <Ionicons name={icon} size={20} color={tint} /> : null}
+      {!emoji && icon ? <Ionicons name={icon} size={20} color={tint} accessible={false} /> : null}
     </View>
   );
 }
@@ -97,7 +99,7 @@ function RowTrailing({ right, onPress, color }: Readonly<RowTrailingProps>): Rea
   }
 
   if (onPress) {
-    return <Ionicons name="chevron-forward" size={20} color={color} />;
+    return <Ionicons name="chevron-forward" size={20} color={color} accessible={false} />;
   }
 
   return null;
@@ -115,6 +117,7 @@ export function ListRow({
   emoji,
   onPress,
   right,
+  trailing,
   danger = false,
   accessibilityState,
   accessibilityRole = 'button',
@@ -141,7 +144,12 @@ export function ListRow({
   };
 
   if (!onPress) {
-    return <View style={[styles.row, rowStyle]}>{content}</View>;
+    return (
+      <View style={[styles.row, rowStyle]}>
+        {content}
+        {trailing}
+      </View>
+    );
   }
 
   const pressIn = (): void => {
@@ -150,7 +158,7 @@ export function ListRow({
   };
 
   return (
-    <Animated.View style={{ transform: [{ scale: press.scale }] }}>
+    <Animated.View style={[styles.shell, rowStyle, { transform: [{ scale: press.scale }] }]}>
       <Pressable
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibleName}
@@ -159,16 +167,19 @@ export function ListRow({
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={press.onPressOut}
-        style={({ pressed }) => [styles.row, rowStyle, { opacity: pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [styles.pressable, { opacity: pressed ? 0.85 : 1 }]}
       >
         {content}
       </Pressable>
+      {trailing}
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  shell: { flexDirection: 'row', alignItems: 'center' },
+  pressable: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   bubble: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 20 },
   texts: { flex: 1 },

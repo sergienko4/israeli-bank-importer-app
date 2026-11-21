@@ -66,7 +66,7 @@ export function TopBanner({
             { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.pill },
           ]}
         >
-          <Ionicons name={icon} size={16} color={theme.colors.primary} />
+          <Ionicons name={icon} size={16} color={theme.colors.primary} accessible={false} />
         </View>
         <View style={styles.text}>
           <Text

@@ -3,10 +3,10 @@
  * section, edit its fields, and save. Validation errors from the importer are
  * shown inline. Structured sections (banks, lists) are handled elsewhere.
  */
-import { type ReactElement, useCallback, useEffect, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { type ReactElement, useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text } from 'react-native';
 
-import { getConfig, getManifest, saveConfig } from '../api/importerClient';
+import { getConfig, getManifest, saveConfig, type Session } from '../api/importerClient';
 import type { ConfigObject, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
 import { SectionForm } from '../components/SectionForm';
@@ -21,10 +21,13 @@ import {
   ListRow,
   Loader,
   Screen,
+  SectionLabel,
 } from '../components/ui';
 import { setAtPath } from '../config/formState';
 import { editableSections } from '../config/sections';
+import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
+import { hasUnsavedChanges } from '../lib/unsavedChanges';
 import { useTheme } from '../theme/ThemeContext';
 import { OtpSettingsScreen } from './OtpSettingsScreen';
 
@@ -121,11 +124,7 @@ function ConfigSectionList({
         ))}
       </Card>
 
-      <Text
-        style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}
-      >
-        DEVICE
-      </Text>
+      <SectionLabel style={styles.sectionLabel}>DEVICE</SectionLabel>
       <Card padded={false} style={styles.menu}>
         <ListRow
           icon="key-outline"
@@ -142,20 +141,25 @@ function ConfigSectionList({
 }
 
 /**
- * Renders the config editor screen.
- * @param props - Optional drill-down depth reporter for the tab shell.
- * @returns The config editor element.
+ * Loads the manifest and config, keeping the loaded copy as the draft baseline.
+ * @param connection - The active importer session.
+ * @returns The loaded data, the draft setters, and a retry.
  */
-export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
-  const { connection } = useAuth();
+function useConfigData(connection: Session | null): {
+  manifest: Manifest | null;
+  config: ConfigObject;
+  baseline: ConfigObject | null;
+  loading: boolean;
+  error: string | null;
+  setConfig: (config: ConfigObject | ((current: ConfigObject) => ConfigObject)) => void;
+  setBaseline: (config: ConfigObject) => void;
+  reload: () => void;
+} {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
+  const [baseline, setBaseline] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<SectionDef | null>(null);
-  const [showOtp, setShowOtp] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -172,6 +176,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
         if (active) {
           setManifest(loadedManifest);
           setConfig(loadedConfig);
+          setBaseline(loadedConfig);
         }
       } catch (e) {
         if (active) {
@@ -195,13 +200,30 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     setReloadKey((key) => key + 1);
   };
 
+  return { manifest, config, baseline, loading, error, setConfig, setBaseline, reload };
+}
+
+/**
+ * Renders the config editor screen.
+ * @param props - Optional drill-down depth reporter for the tab shell.
+ * @returns The config editor element.
+ */
+export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
+  const { connection } = useAuth();
+  const { manifest, config, baseline, loading, error, setConfig, setBaseline, reload } =
+    useConfigData(connection);
+  const [selected, setSelected] = useState<SectionDef | null>(null);
+  const [showOtp, setShowOtp] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveErrors, setSaveErrors] = useState<string[] | null>(null);
+
   useEffect(() => {
     onDepthChange?.(selected || showOtp ? 1 : 0);
   }, [selected, showOtp, onDepthChange]);
 
-  const update = useCallback((path: string[], value: unknown) => {
+  const update = (path: string[], value: unknown): void => {
     setConfig((current) => setAtPath(current, path, value));
-  }, []);
+  };
 
   const save = async (): Promise<void> => {
     if (!connection) {
@@ -209,21 +231,47 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     }
     setSaving(true);
     setSaveErrors(null);
-    const result = await saveConfig(connection, config);
-    setSaving(false);
-    if (result.ok) {
-      haptics.success();
-      setSelected(null);
-    } else {
+    try {
+      const result = await saveConfig(connection, config);
+      if (result.ok) {
+        haptics.success();
+        setBaseline(config);
+        setSelected(null);
+      } else {
+        haptics.warning();
+        setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
+      }
+    } catch (error: unknown) {
       haptics.warning();
-      setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
+      setSaveErrors([
+        reportedOrFallback(
+          error instanceof Error ? error.message : undefined,
+          'Save failed. Check your connection and try again.',
+        ),
+      ]);
+    } finally {
+      setSaving(false);
     }
   };
   const closeOtp = (): void => {
     setShowOtp(false);
   };
-  const closeSelected = (): void => {
+  const discardSelected = (): void => {
+    if (baseline !== null) {
+      setConfig(baseline);
+    }
+    setSaveErrors(null);
     setSelected(null);
+  };
+  const closeSelected = (): void => {
+    if (baseline !== null && hasUnsavedChanges(baseline, config)) {
+      Alert.alert('Discard changes?', 'Your edits to this section have not been saved.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: discardSelected },
+      ]);
+      return;
+    }
+    discardSelected();
   };
   const submitSave = (): void => {
     void save();
@@ -271,7 +319,7 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12, marginLeft: 4 },
-  sectionLabel: { letterSpacing: 0.6, marginTop: 20, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginTop: 20, marginBottom: 8, marginLeft: 4 },
   menu: { overflow: 'hidden' },
   indent: { marginLeft: 68 },
 });

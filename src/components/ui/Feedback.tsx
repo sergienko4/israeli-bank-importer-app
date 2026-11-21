@@ -54,7 +54,7 @@ export function ErrorView({ message, onRetry }: Readonly<ErrorViewProps>): React
           { backgroundColor: theme.colors.dangerSoft, borderRadius: theme.radius.pill },
         ]}
       >
-        <Ionicons name="warning-outline" size={28} color={theme.colors.danger} />
+        <Ionicons name="warning-outline" size={28} color={theme.colors.danger} accessible={false} />
       </View>
       <Text style={[theme.typography.body, styles.message, { color: theme.colors.text }]}>
         {message}

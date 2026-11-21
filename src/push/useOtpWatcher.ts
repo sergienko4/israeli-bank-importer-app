@@ -2,7 +2,9 @@
  * Watches for pending app-OTP requests while connected: polls the importer on
  * an interval and refreshes immediately when an OTP push arrives, surfacing the
  * next request the user should answer. Polling means a missed push still shows
- * the prompt. Dismissed requests are suppressed for the session.
+ * the prompt. A dismissed request snoozes for a minute rather than disappearing
+ * for the session, so an accidental dismissal is recoverable while the code is
+ * still valid.
  */
 import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -14,7 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { refreshOtpChannel } from '../lib/otpChannelSync';
 import { TASK_BUDGET_MS } from '../lib/otpDeadline';
-import { selectPendingOtp } from '../lib/otpQueue';
+import { OTP_DISMISS_SNOOZE_MS, pruneSnoozed, selectPendingOtp } from '../lib/otpQueue';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
@@ -65,7 +67,7 @@ function handleRequests(requests: PendingOtpRequest[]): void {
 export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: () => void } {
   const { connection } = useAuth();
   const [pending, setPending] = useState<PendingOtpRequest | null>(null);
-  const dismissed = useRef<Set<string>>(new Set());
+  const snoozedUntil = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!connection) {
@@ -83,7 +85,8 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
         return;
       }
       handleRequests(requests);
-      setPending(selectPendingOtp(requests, dismissed.current));
+      snoozedUntil.current = pruneSnoozed(snoozedUntil.current, requests);
+      setPending(selectPendingOtp(requests, snoozedUntil.current));
     });
     void poll();
     const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
@@ -101,7 +104,7 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
   const dismiss = useCallback(() => {
     setPending((current) => {
       if (current) {
-        dismissed.current.add(current.id);
+        snoozedUntil.current.set(current.id, Date.now() + OTP_DISMISS_SNOOZE_MS);
       }
       return null;
     });

@@ -230,13 +230,18 @@ describe('a response body that never finishes', () => {
   it('bounds the failure body read on a rejected save', async () => {
     jest.useFakeTimers();
     try {
-      globalThis.fetch = jest.fn(() => Promise.resolve(stalledBody(false)));
+      let signal: AbortSignal | undefined;
+      globalThis.fetch = jest.fn((_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return Promise.resolve(stalledBody(false, signal));
+      }) as unknown as typeof fetch;
       const result = saveConfig(session, { a: 1 });
       const assertion = expect(result).rejects.toThrow('took too long to answer');
 
       await jest.advanceTimersByTimeAsync(15_000);
 
       await assertion;
+      expect(signal?.aborted).toBe(true);
     } finally {
       jest.useRealTimers();
     }

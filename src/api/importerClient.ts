@@ -75,8 +75,9 @@ export function normalizeBaseUrl(input: string): string {
  * caller here puts a raised message straight in front of the user. A request
  * that outlives its deadline keeps the deadline's own wording: "unreachable"
  * would be a guess, while the deadline is a fact the user can act on. The
- * request is aborted and awaited before the timeout is raised, so a queued
- * write cannot overlap a request the server may still be processing.
+ * request is aborted and awaited briefly before the timeout is raised. A
+ * transport that ignores its abort cannot hold the lane forever, though only
+ * the importer can guarantee ordering once a timed-out write is still running.
  * @param send - Performs the request with the abort signal.
  * @returns The response, when the importer answered at all.
  * @throws Error naming the importer as unreachable when it did not, or a
@@ -241,7 +242,7 @@ async function authed(
       }),
     );
   };
-  const current = sessionGuard ? await sessionGuard(session) : session;
+  const current = sessionGuard ? await sessionGuard(session).catch(() => session) : session;
   const res = await send(current);
   if (res.status !== 401) {
     return res;

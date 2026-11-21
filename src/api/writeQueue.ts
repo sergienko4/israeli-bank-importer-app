@@ -4,8 +4,9 @@
  * A timeout only stops the caller from waiting; the server may still apply the
  * write. Starting a second write to the same resource before the first has
  * settled lets an older request overwrite a newer one, so same-resource writes
- * queue. Unrelated lanes stay separate so one slow resource cannot block
- * another.
+ * queue while the client sees them. A timed-out write that the server still
+ * applies needs versioning on the importer; the lane cannot order that.
+ * Unrelated lanes stay separate so one slow resource cannot block another.
  */
 
 /** One serialized write lane. */

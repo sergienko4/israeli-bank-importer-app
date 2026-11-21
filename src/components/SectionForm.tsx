@@ -114,6 +114,8 @@ interface FieldsProps {
   basePath: string[];
   config: ConfigObject;
   onChange: ChangeAt;
+  /** Reports a numeric field's validity under its full config path. */
+  onValidityChange?: (key: string, valid: boolean) => void;
 }
 
 /**
@@ -121,7 +123,13 @@ interface FieldsProps {
  * @param props - The fields, their base path, the config, and a change handler.
  * @returns The rendered fields.
  */
-function Fields({ fields, basePath, config, onChange }: Readonly<FieldsProps>): ReactElement {
+function Fields({
+  fields,
+  basePath,
+  config,
+  onChange,
+  onValidityChange,
+}: Readonly<FieldsProps>): ReactElement {
   const theme = useTheme();
   const parent = (getAtPath(config, basePath) ?? {}) as Record<string, unknown>;
   return (
@@ -148,6 +156,7 @@ function Fields({ fields, basePath, config, onChange }: Readonly<FieldsProps>): 
                 basePath={path}
                 config={config}
                 onChange={onChange}
+                onValidityChange={onValidityChange}
               />
             </View>
           );
@@ -172,6 +181,8 @@ function Fields({ fields, basePath, config, onChange }: Readonly<FieldsProps>): 
             onChange={(next) => {
               onChange(path, next);
             }}
+            onValidityChange={onValidityChange}
+            validityKey={path.join('.')}
           />
         );
       })}
@@ -183,6 +194,8 @@ interface SectionFormProps {
   section: SectionDef;
   config: ConfigObject;
   onChange: ChangeAt;
+  /** Reports a numeric field's validity under its full config path. */
+  onValidityChange?: (key: string, valid: boolean) => void;
 }
 
 /**
@@ -194,6 +207,7 @@ export function SectionForm({
   section,
   config,
   onChange,
+  onValidityChange,
 }: Readonly<SectionFormProps>): ReactElement {
   const theme = useTheme();
   if (section.kind !== 'object') {
@@ -209,6 +223,7 @@ export function SectionForm({
       basePath={[section.key]}
       config={config}
       onChange={onChange}
+      onValidityChange={onValidityChange}
     />
   );
 }

@@ -16,6 +16,7 @@ import {
   SectionLabel,
   Sheet,
 } from '../components/ui';
+import { useInvalidFields } from '../lib/useInvalidFields';
 import { BanksTargetsEditor } from './BanksTargetsEditor';
 
 type BankConfig = Record<string, unknown>;
@@ -67,18 +68,30 @@ export function BanksEditorView({
   onCloseSheet,
   onAddField,
 }: Readonly<BanksEditorViewProps>): ReactElement {
+  const invalidFields = useInvalidFields();
   return (
     <Screen
       header={
         <AppHeader
           title={bankName}
           subtitle="Credentials & targets"
-          onBack={onBack}
+          onBack={() => {
+            invalidFields.guard(onBack);
+          }}
           backDisabled={saving}
         />
       }
       notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
-      footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
+      footer={
+        <Button
+          title="Save changes"
+          icon="checkmark"
+          loading={saving}
+          onPress={() => {
+            invalidFields.guard(onSave);
+          }}
+        />
+      }
     >
       <SectionLabel style={styles.sectionLabel}>CREDENTIALS</SectionLabel>
       <Card>
@@ -92,6 +105,8 @@ export function BanksEditorView({
               onChange={(value) => {
                 onFieldChange(field.key, value);
               }}
+              onValidityChange={invalidFields.report}
+              validityKey={field.key}
               onRemove={
                 isRequired
                   ? undefined
@@ -114,7 +129,12 @@ export function BanksEditorView({
           />
         ) : null}
       </Card>
-      <BanksTargetsEditor fields={targetFields} targets={targets} onChange={onTargetsChange} />
+      <BanksTargetsEditor
+        fields={targetFields}
+        targets={targets}
+        onChange={onTargetsChange}
+        onValidityChange={invalidFields.report}
+      />
 
       <Sheet visible={sheetOpen} onClose={onCloseSheet} title="Add a field">
         <ScrollView>

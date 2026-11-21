@@ -77,6 +77,22 @@ describe('discardBankDraft', () => {
     expect(discardBankDraft(baseline, draft, 'leumi')).toBe(draft);
   });
 
+  it('restores a bank named __proto__ without replacing the prototype', () => {
+    const baseline = JSON.parse('{"banks":{"__proto__":{"username":"saved"}}}') as {
+      banks: Record<string, { username: string }>;
+    };
+    const draft = JSON.parse('{"banks":{"__proto__":{"username":"edited"}}}') as {
+      banks: Record<string, { username: string }>;
+    };
+
+    const restored = discardBankDraft(baseline, draft, '__proto__');
+    const banks = restored.banks as Record<string, { username: string }>;
+
+    expect(Object.getPrototypeOf(banks)).toBe(Object.prototype);
+    expect(Object.hasOwn(banks, '__proto__')).toBe(true);
+    expect(banks.__proto__).toEqual({ username: 'saved' });
+  });
+
   it('adds the banks container when the draft had none', () => {
     const baseline = { banks: { leumi: { username: 'saved' } } };
 

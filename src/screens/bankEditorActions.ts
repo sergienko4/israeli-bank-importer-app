@@ -3,11 +3,13 @@
  * the delete endpoint. Kept out of the state hook so each has one reason to
  * change and the hook stays within the project's function-size cap.
  */
+import type { RefObject } from 'react';
 import { Alert } from 'react-native';
 
-import { removeBank, type Session } from '../api/importerClient';
-import type { ConfigObject } from '../api/manifest';
+import { removeBank, saveConfig, type Session } from '../api/importerClient';
+import type { ConfigObject, SaveResult } from '../api/manifest';
 import { banksOf, discardBankDraft, isNewBankDraft } from '../lib/bankDrafts';
+import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { hasUnsavedChanges } from '../lib/unsavedChanges';
 
@@ -74,6 +76,139 @@ export function closeBankEditor(options: CloseBankEditorOptions): void {
     return;
   }
   finish();
+}
+
+/**
+ * Sends the banks config and applies the result.
+ * @param options - The session, submitted draft, and hook callbacks.
+ */
+export async function saveBanksConfig(options: SaveBanksOptions): Promise<void> {
+  const { connection, config, currentConfig, saveInFlight, removing } = options;
+  if (!canSave(connection, saveInFlight, removing)) {
+    return;
+  }
+  saveInFlight.current = true;
+  options.setSaving(true);
+  options.setSaveErrors(null);
+  try {
+    const result = await saveConfig(connection, config);
+    if (!result.ok) {
+      haptics.warning();
+      options.setSaveErrors(errorsFor(result));
+      return;
+    }
+    haptics.success();
+    options.setBaseline(config);
+    if (hasUnsavedChanges(config, currentConfig())) {
+      options.setSaveErrors(['Saved, but newer edits are still here. Save again.']);
+      return;
+    }
+    options.setSelected(null);
+  } catch (error: unknown) {
+    haptics.warning();
+    options.setSaveErrors(saveFailure(error));
+  } finally {
+    saveInFlight.current = false;
+    options.setSaving(false);
+  }
+}
+
+/** What a banks save needs from the hook. */
+export interface SaveBanksOptions {
+  /** The active session, or null when signed out. */
+  readonly connection: Session | null;
+  /** The draft snapshot to send. */
+  readonly config: ConfigObject;
+  /** Reads the latest draft after the request settles. */
+  readonly currentConfig: () => ConfigObject;
+  /** Guards against a second save in the same tick. */
+  readonly saveInFlight: RefObject<boolean>;
+  /** Guards against a delete and a save overlapping. */
+  readonly removing: RefObject<boolean>;
+  /** Reports the spinner state. */
+  readonly setSaving: (saving: boolean) => void;
+  /** Reports validation errors. */
+  readonly setSaveErrors: (errors: string[] | null) => void;
+  /** Replaces the saved baseline after success. */
+  readonly setBaseline: (config: ConfigObject) => void;
+  /** Closes the editor. */
+  readonly setSelected: (id: string | null) => void;
+}
+
+/**
+ * Reports whether a save may start.
+ * @param connection - The active session.
+ * @param saveInFlight - The save guard.
+ * @param removing - The delete guard.
+ * @returns True when neither another save nor a delete owns the screen.
+ */
+function canSave(
+  connection: Session | null,
+  saveInFlight: RefObject<boolean>,
+  removing: RefObject<boolean>,
+): connection is Session {
+  return connection !== null && !saveInFlight.current && !removing.current;
+}
+
+/**
+ * Derives the error lines from a failed save.
+ * @param result - The importer's response.
+ * @returns A non-empty list of messages.
+ */
+function errorsFor(result: SaveResult): string[] {
+  return result.errors?.length ? result.errors : [result.error ?? 'Save failed.'];
+}
+
+/**
+ * Builds the message for a save that never reached a verdict.
+ * @param error - The caught error value.
+ * @returns One user-facing line.
+ */
+function saveFailure(error: unknown): string[] {
+  return [
+    reportedOrFallback(
+      error instanceof Error ? error.message : undefined,
+      'Save failed. Check your connection and try again.',
+    ),
+  ];
+}
+
+/**
+ * Closes the banks editor through the same confirmation path as the model.
+ * @param options - The selected id, saved and draft configs, and callbacks.
+ */
+export function closeBanksEditor(options: CloseBanksEditorOptions): void {
+  closeBankEditor({
+    selected: options.selected,
+    baseline: options.baseline,
+    config: options.config,
+    saving: options.saving,
+    setConfig: options.setConfig,
+    clearErrors: () => {
+      options.setSaveErrors(null);
+    },
+    close: () => {
+      options.setSelected(null);
+    },
+  });
+}
+
+/** What closing the banks editor needs from the hook. */
+export interface CloseBanksEditorOptions {
+  /** The bank being edited. */
+  readonly selected: string | null;
+  /** The config as loaded from the importer. */
+  readonly baseline: ConfigObject | null;
+  /** The config currently being edited. */
+  readonly config: ConfigObject;
+  /** Whether a save is in flight. */
+  readonly saving: boolean;
+  /** Replaces the draft config. */
+  readonly setConfig: (config: ConfigObject) => void;
+  /** Clears the previous validation message. */
+  readonly setSaveErrors: (errors: string[] | null) => void;
+  /** Returns to the bank list. */
+  readonly setSelected: (id: string | null) => void;
 }
 
 /** What deleting a bank needs to report back to the screen. */

@@ -17,6 +17,8 @@ interface BanksTargetsEditorProps {
   fields: FieldDef[];
   targets: TargetConfig[];
   onChange: (targets: TargetConfig[]) => void;
+  /** Reports a target field's numeric validity to the editor. */
+  onValidityChange?: (key: string, valid: boolean) => void;
 }
 
 /**
@@ -28,6 +30,7 @@ export function BanksTargetsEditor({
   fields,
   targets,
   onChange,
+  onValidityChange,
 }: Readonly<BanksTargetsEditorProps>): ReactElement {
   const theme = useTheme();
   const reduced = useReducedMotion();
@@ -74,6 +77,8 @@ export function BanksTargetsEditor({
               onChange={(value) => {
                 setField(index, field.key, value);
               }}
+              onValidityChange={onValidityChange}
+              validityKey={`targets.${String(index)}.${field.key}`}
             />
           ))}
         </Card>

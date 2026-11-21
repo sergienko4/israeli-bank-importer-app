@@ -59,7 +59,14 @@ export function discardBankDraft(
   }
   const nextBanks = Object.fromEntries(Object.entries(draftBanks).filter(([key]) => key !== id));
   if (Object.hasOwn(savedBanks, id)) {
-    nextBanks[id] = savedBanks[id];
+    // A data property, not an assignment: an importer may legitimately name a
+    // bank "__proto__", and assigning that key would replace the prototype.
+    Object.defineProperty(nextBanks, id, {
+      value: savedBanks[id],
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
   }
   return { ...draft, banks: nextBanks };
 }

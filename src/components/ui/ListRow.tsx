@@ -157,8 +157,20 @@ export function ListRow({
     press.onPressIn();
   };
 
+  const hasTrailing = trailing !== undefined && trailing !== null;
+  const pressablePadding = {
+    paddingVertical: theme.spacing.md,
+    paddingLeft: theme.spacing.lg,
+    paddingRight: hasTrailing ? theme.spacing.sm : theme.spacing.lg,
+  };
+
   return (
-    <Animated.View style={[styles.shell, rowStyle, { transform: [{ scale: press.scale }] }]}>
+    <Animated.View
+      style={[
+        styles.shell,
+        { backgroundColor: theme.colors.surface, transform: [{ scale: press.scale }] },
+      ]}
+    >
       <Pressable
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibleName}
@@ -167,11 +179,15 @@ export function ListRow({
         onPress={onPress}
         onPressIn={pressIn}
         onPressOut={press.onPressOut}
-        style={({ pressed }) => [styles.pressable, { opacity: pressed ? 0.85 : 1 }]}
+        style={({ pressed }) => [
+          styles.pressable,
+          pressablePadding,
+          { opacity: pressed ? 0.85 : 1 },
+        ]}
       >
         {content}
       </Pressable>
-      {trailing}
+      {hasTrailing ? <View style={{ paddingRight: theme.spacing.lg }}>{trailing}</View> : null}
     </Animated.View>
   );
 }

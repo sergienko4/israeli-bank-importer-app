@@ -6,7 +6,7 @@
  * layout and stays small enough to review on its own.
  */
 import { type ReactElement, useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { useAnnounceOnChange } from '../lib/useAnnounce';
@@ -28,7 +28,7 @@ export function parseNumberFieldText(text: string): ParsedNumberFieldText {
 
   // A comma is a decimal separator for "42,5", but "1,000" is far more likely
   // to be a grouped thousand. Never turn the latter into 1.0 by accident.
-  if (/,\d{3}$/.test(trimmed)) {
+  if (!/^[+-]?0,\d{3}$/.test(trimmed) && /,\d{3}$/.test(trimmed)) {
     return { kind: 'invalid' };
   }
   const normalized = trimmed.replace(',', '.');
@@ -86,6 +86,15 @@ function keyboardFor(isNumber: boolean): 'default' | 'numeric' | 'numbers-and-pu
 const NUMBER_ERROR = 'Enter a number, like 42.5.';
 
 /**
+ * Reports whether the text is only a sign or decimal separator so far.
+ * @param text - The current draft.
+ * @returns True while the user is still typing the number.
+ */
+function isPrefix(text: string): boolean {
+  return text !== '' && /^[+-]?\.?$/.test(text);
+}
+
+/**
  * Picks the input's border for its current state.
  * @param theme - The active theme.
  * @param invalid - Whether the draft cannot be parsed.
@@ -127,7 +136,8 @@ export function TextControl({
   const [invalid, setInvalid] = useState(false);
   const isNumber = field.kind === 'number';
   const label = field.required ? `${field.label}, required` : field.label;
-  useAnnounceOnChange(invalid ? NUMBER_ERROR : null);
+  const showError = invalid && !isPrefix(draft);
+  useAnnounceOnChange(showError ? NUMBER_ERROR : null);
   // While blurred, the committed value wins, so a parent reset or a list
   // reorder cannot leave another field's text in the input.
   const text = focused || invalid ? draft : stringifyTextInputValue(value);
@@ -186,25 +196,15 @@ export function TextControl({
         onChangeText={handleChange}
         onFocus={() => {
           setFocused(true);
-          setDraft(stringifyTextInputValue(value));
-          setInvalid(false);
-          report(true);
+          if (!invalid) {
+            setDraft(stringifyTextInputValue(value));
+          }
         }}
         onBlur={() => {
           setFocused(false);
-          if (invalid) {
-            // Invalid text never becomes a hidden draft: show the committed
-            // value again and say so, so Back/Save cannot silently keep it.
-            setDraft(stringifyTextInputValue(value));
-            setInvalid(false);
-            report(true);
-            AccessibilityInfo.announceForAccessibility(
-              'Invalid number. The previous value was kept.',
-            );
-          }
         }}
       />
-      {invalid ? (
+      {showError ? (
         <Text style={[styles.fieldError, { color: theme.colors.danger }]}>{NUMBER_ERROR}</Text>
       ) : null}
     </View>

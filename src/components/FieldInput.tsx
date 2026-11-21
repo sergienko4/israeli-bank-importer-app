@@ -140,7 +140,12 @@ export function FieldInput({
           onPress={() => {
             onChange(!checked);
           }}
-          style={({ pressed }) => [styles.switchTarget, { opacity: pressed ? 0.85 : 1 }]}
+          style={({ pressed }) => [
+            styles.switchTarget,
+            pressed
+              ? { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.sm }
+              : null,
+          ]}
         >
           <View pointerEvents="none">
             <Switch

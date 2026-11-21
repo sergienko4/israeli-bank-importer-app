@@ -24,12 +24,12 @@ export function useInvalidFields(): InvalidFields {
   const [keys, setKeys] = useState<ReadonlySet<string>>(new Set());
   const mounted = useRef(true);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
       mounted.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const report = useCallback((key: string, valid: boolean) => {
     if (!mounted.current) {

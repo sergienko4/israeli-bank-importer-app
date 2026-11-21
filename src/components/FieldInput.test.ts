@@ -12,6 +12,7 @@ describe('parseNumberFieldText', () => {
   it('accepts a comma decimal separator', () => {
     expect(parseNumberFieldText('42,5')).toEqual({ kind: 'valid', value: 42.5 });
     expect(parseNumberFieldText('12,34')).toEqual({ kind: 'valid', value: 12.34 });
+    expect(parseNumberFieldText('0,125')).toEqual({ kind: 'valid', value: 0.125 });
   });
 
   it('does not read a grouped thousand as a decimal', () => {

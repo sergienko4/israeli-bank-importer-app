@@ -106,27 +106,46 @@ async function reachable(send: (signal: AbortSignal) => Promise<Response>): Prom
   }
 }
 
+/** One serialized write lane. */
+interface WriteQueue {
+  tail: Promise<unknown>;
+}
+
 /**
- * Serializes mutating requests.
+ * Builds a write lane that starts settled.
+ * @returns The lane.
+ */
+function createWriteQueue(): WriteQueue {
+  return { tail: Promise.resolve() };
+}
+
+/** Writes that replace the importer config. */
+const configWrites = createWriteQueue();
+/** OTP submissions, kept apart so a config save cannot delay a code. */
+const otpWrites = createWriteQueue();
+/** Device-token registration, independent of both. */
+const deviceWrites = createWriteQueue();
+
+/**
+ * Serializes mutating requests on one resource lane.
  *
  * A timeout only stops the caller from waiting; the server may still apply the
- * write. Starting a second full-config save before the first has settled lets
- * an older PUT overwrite a newer one, so every mutation waits for the previous
- * one to settle, whether it succeeded or failed.
- * @param operation - The write to run after the current tail.
+ * write. Starting a second write to the same resource before the first has
+ * settled lets an older request overwrite a newer one, so that lane queues.
+ * Unrelated lanes stay separate: a full-config save must not block an OTP that
+ * is about to expire.
+ * @param queue - The resource lane to join.
+ * @param operation - The write to run after the lane's current tail.
  * @returns The write's result.
  */
-function serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
-  const result = writeTail.then(operation, operation);
-  writeTail = result.then(
+function serializeWrite<T>(queue: WriteQueue, operation: () => Promise<T>): Promise<T> {
+  const result = queue.tail.then(operation, operation);
+  queue.tail = result.then(
     () => undefined,
     () => undefined,
   );
   return result;
 }
-
-/** The tail of the mutation queue; starts settled. */
-let writeTail: Promise<unknown> = Promise.resolve();
 
 /**
  * Reports whether a bearer token is currently authorized via `GET /auth/status`.
@@ -305,7 +324,7 @@ async function toFailure(res: Response): Promise<SaveResult> {
  * @returns Success, or a failure carrying the importer's validation errors.
  */
 export function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(configWrites, async () => {
     const res = await authed(session, '/api/config', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -322,7 +341,7 @@ export function saveConfig(session: Session, config: ConfigObject): Promise<Save
  * @returns Success or a failure with validation errors.
  */
 export function removeBank(session: Session, name: string): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(configWrites, async () => {
     const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     });
@@ -355,7 +374,7 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
  * @returns Success or a failure carrying the importer's error.
  */
 export function registerDevice(session: Session, token: string): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(deviceWrites, async () => {
     const res = await authed(session, '/api/devices', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -372,7 +391,7 @@ export function registerDevice(session: Session, token: string): Promise<SaveRes
  * @returns Success or a failure carrying the importer's error.
  */
 export function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(deviceWrites, async () => {
     const res = await authed(session, '/api/devices', {
       method: 'DELETE',
       headers: { 'content-type': 'application/json' },
@@ -403,7 +422,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @returns Success or a failure carrying the importer's error.
  */
 export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(configWrites, async () => {
     const res = await authed(session, '/api/otp/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
@@ -462,7 +481,7 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @returns Success or a failure carrying the importer's error.
  */
 export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  return serializeWrite(async () => {
+  return serializeWrite(otpWrites, async () => {
     const { path, init } = otpSubmission(id, code);
     const res = await authed(session, path, init);
     return res.ok ? { ok: true } : toFailure(res);

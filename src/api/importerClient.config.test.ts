@@ -5,6 +5,7 @@ import {
   removeBank,
   saveConfig,
   type Session,
+  submitOtp,
 } from './importerClient';
 
 const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
@@ -120,6 +121,31 @@ describe('saveConfig', () => {
     expect(resolvers).toHaveLength(2);
     resolvers[1](fakeResponse(200, { ok: true }));
     await second;
+  });
+});
+
+describe('write lanes', () => {
+  it('does not block an OTP submission behind a pending config save', async () => {
+    const requested: string[] = [];
+    const resolvers: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn((url: unknown) => {
+      requested.push(String(url));
+      return new Promise<Response>((resolve) => {
+        resolvers.push(resolve);
+      });
+    });
+
+    const save = saveConfig(session, { version: 1 });
+    const otp = submitOtp(session, 'req-1', '1234');
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(requested).toEqual(['https://host:8080/api/config', 'https://host:8080/api/otp/req-1']);
+
+    resolvers[0](fakeResponse(200, { ok: true }));
+    resolvers[1](fakeResponse(200, { ok: true }));
+    await Promise.all([save, otp]);
   });
 });
 

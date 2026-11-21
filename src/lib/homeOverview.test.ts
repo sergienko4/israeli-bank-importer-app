@@ -1,5 +1,11 @@
 import type { RunEntry } from '../api/status';
-import { banksConfigured, latestRun, relativeTime, successRateLabel } from './homeOverview';
+import {
+  banksConfigured,
+  latestRun,
+  relativeTime,
+  runSummary,
+  successRateLabel,
+} from './homeOverview';
 
 function run(timestamp: string): RunEntry {
   return {
@@ -61,6 +67,12 @@ describe('relativeTime', () => {
   });
 });
 
+describe('runSummary', () => {
+  it('formats the bank and transaction counts', () => {
+    expect(runSummary(run('2026-07-01T10:00:00Z'))).toBe('2/2 banks · 10 txns');
+  });
+});
+
 describe('successRateLabel', () => {
   // The importer reports the rate out of 100. Scaling it again turned a
   // flawless import into "10000%" on the screen the user opens first.
@@ -71,6 +83,12 @@ describe('successRateLabel', () => {
     [66.6666, '67%'],
   ])('renders a rate of %s as %s', (successRate, label) => {
     expect(successRateLabel({ ...run('2026-07-01T10:00:00Z'), successRate })).toBe(label);
+  });
+
+  it('says there were no banks instead of reporting a rate', () => {
+    expect(
+      successRateLabel({ ...run('2026-07-01T10:00:00Z'), totalBanks: 0, successRate: 100 }),
+    ).toBe('No banks');
   });
 
   it('never multiplies the rate a second time', () => {

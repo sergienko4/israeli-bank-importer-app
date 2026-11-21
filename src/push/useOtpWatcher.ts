@@ -17,7 +17,7 @@ import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { refreshOtpChannel } from '../lib/otpChannelSync';
 import { TASK_BUDGET_MS } from '../lib/otpDeadline';
-import { OTP_DISMISS_SNOOZE_MS, pruneSnoozed, pruneUsed, selectPendingOtp } from '../lib/otpQueue';
+import { pruneSnoozed, pruneUsed, selectPendingOtp, snoozeUntil } from '../lib/otpQueue';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
@@ -112,17 +112,23 @@ function startOtpPolling(
 
 /**
  * Snoozes the current request and clears the prompt.
+ *
+ * The optional id makes a late callback harmless: a submit for request A that
+ * settles after B has been shown must not dismiss B.
  * @param setPending - The pending-request setter.
  * @param snoozedUntil - The per-request snooze map.
+ * @param requestId - The request the caller is dismissing, when known.
  */
 function dismissCurrent(
   setPending: Dispatch<SetStateAction<PendingOtpRequest | null>>,
   snoozedUntil: RefObject<Map<string, number>>,
+  requestId?: string,
 ): void {
   setPending((current) => {
-    if (current) {
-      snoozedUntil.current.set(current.id, Date.now() + OTP_DISMISS_SNOOZE_MS);
+    if (current === null || (requestId !== undefined && current.id !== requestId)) {
+      return current;
     }
+    snoozedUntil.current.set(current.id, snoozeUntil(current.deadline));
     return null;
   });
 }
@@ -151,7 +157,7 @@ function markUsed(
  */
 export function useOtpWatcher(): {
   pending: PendingOtpRequest | null;
-  dismiss: () => void;
+  dismiss: (requestId?: string) => void;
   autoSubmitted: ReadonlySet<string>;
   markAutoSubmitted: (id: string) => void;
 } {
@@ -177,8 +183,8 @@ export function useOtpWatcher(): {
     });
   }, [connection]);
 
-  const dismiss = useCallback(() => {
-    dismissCurrent(setPending, snoozedUntil);
+  const dismiss = useCallback((requestId?: string) => {
+    dismissCurrent(setPending, snoozedUntil, requestId);
   }, []);
 
   const markAutoSubmitted = useCallback((id: string) => {

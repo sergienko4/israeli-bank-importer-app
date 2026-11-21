@@ -171,9 +171,9 @@ interface Props {
   /** Marks the request as having used its automatic attempt. */
   onAutoSubmitUsed: () => void;
   /** Called after a successful submit. */
-  onSubmitted: () => void;
+  onSubmitted: (requestId: string) => void;
   /** Called when the user dismisses without submitting. */
-  onDismiss: () => void;
+  onDismiss: (requestId: string) => void;
 }
 
 /** The submit state and controls the prompt renders. */
@@ -198,7 +198,10 @@ interface OtpSubmission {
  * @param onSubmitted - Called after the importer accepts a code.
  * @returns The submit state and controls.
  */
-function useOtpSubmission(requestId: string, onSubmitted: () => void): OtpSubmission {
+function useOtpSubmission(
+  requestId: string,
+  onSubmitted: (requestId: string) => void,
+): OtpSubmission {
   const { connection } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -230,7 +233,7 @@ function useOtpSubmission(requestId: string, onSubmitted: () => void): OtpSubmis
       return;
     }
     haptics.success();
-    onSubmitted();
+    onSubmitted(requestId);
   };
 
   return { submitting, error, setError, submit };
@@ -323,7 +326,7 @@ export function OtpPrompt({
   // the countdown would resume if the same request's sheet were reopened.
   const dismiss = (): void => {
     countdown.cancel();
-    onDismiss();
+    onDismiss(request.id);
   };
 
   return (

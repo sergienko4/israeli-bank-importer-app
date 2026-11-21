@@ -16,7 +16,7 @@ import {
   SectionLabel,
   Sheet,
 } from '../components/ui';
-import { useInvalidFields } from '../lib/useInvalidFields';
+import { useGuardedBack, useInvalidFields } from '../lib/useInvalidFields';
 import { BanksTargetsEditor } from './BanksTargetsEditor';
 
 type BankConfig = Record<string, unknown>;
@@ -68,17 +68,18 @@ export function BanksEditorView({
   onCloseSheet,
   onAddField,
 }: Readonly<BanksEditorViewProps>): ReactElement {
-  const { report, guard } = useInvalidFields();
+  const { invalid, report, guard } = useInvalidFields();
+  const back = useGuardedBack(invalid, onBack);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      guard(onBack);
+      back();
       return true;
     });
     return () => {
       sub.remove();
     };
-  }, [guard, onBack]);
+  }, [back]);
 
   return (
     <Screen
@@ -86,9 +87,7 @@ export function BanksEditorView({
         <AppHeader
           title={bankName}
           subtitle="Credentials & targets"
-          onBack={() => {
-            guard(onBack);
-          }}
+          onBack={back}
           backDisabled={saving}
         />
       }

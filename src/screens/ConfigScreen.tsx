@@ -14,7 +14,7 @@ import { AppHeader, Banner, Button, Card, ErrorView, Loader, Screen } from '../c
 import { setAtPath } from '../config/formState';
 import { editableSections } from '../config/sections';
 import { hasUnsavedChanges } from '../lib/unsavedChanges';
-import { useInvalidFields } from '../lib/useInvalidFields';
+import { useGuardedBack, useInvalidFields } from '../lib/useInvalidFields';
 import { saveConfigSection } from './configSave';
 import { ConfigSectionList } from './ConfigSectionList';
 import { OtpSettingsScreen } from './OtpSettingsScreen';
@@ -56,17 +56,18 @@ function ConfigSectionEditor({
   onSave,
   onChange,
 }: Readonly<ConfigSectionEditorProps>): ReactElement {
-  const { report, guard } = useInvalidFields();
+  const { invalid, report, guard } = useInvalidFields();
+  const back = useGuardedBack(invalid, onBack);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      guard(onBack);
+      back();
       return true;
     });
     return () => {
       sub.remove();
     };
-  }, [guard, onBack]);
+  }, [back]);
 
   return (
     <Screen
@@ -74,9 +75,7 @@ function ConfigSectionEditor({
         <AppHeader
           title={selected.label}
           subtitle="Edit fields and save"
-          onBack={() => {
-            guard(onBack);
-          }}
+          onBack={back}
           backDisabled={saving}
         />
       }

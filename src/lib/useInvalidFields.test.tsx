@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { StrictMode } from 'react';
 import { Alert } from 'react-native';
 
-import { useInvalidFields } from './useInvalidFields';
+import { useGuardedBack, useInvalidFields } from './useInvalidFields';
 
 describe('useInvalidFields', () => {
   beforeEach(() => {
@@ -52,6 +52,29 @@ describe('useInvalidFields', () => {
     });
 
     expect(result.current.guard).toBeDefined();
+  });
+
+  it('asks before discarding an invalid draft on Back', async () => {
+    const onBack = jest.fn();
+    const { result } = await renderHook(() => useGuardedBack(true, onBack));
+
+    await act(() => {
+      result.current();
+    });
+
+    expect(onBack).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalled();
+  });
+
+  it('goes straight back when no field is invalid', async () => {
+    const onBack = jest.fn();
+    const { result } = await renderHook(() => useGuardedBack(false, onBack));
+
+    await act(() => {
+      result.current();
+    });
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it('still guards after a StrictMode remount', async () => {

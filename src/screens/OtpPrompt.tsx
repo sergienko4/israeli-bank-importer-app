@@ -29,6 +29,11 @@ import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { Button, Sheet, TextField } from '../components/ui';
+import {
+  type AutoSubmitAttempt,
+  createAutoSubmitAttempt,
+  submitIfCurrent,
+} from '../lib/autoSubmitAttempt';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
@@ -239,6 +244,47 @@ function useOtpSubmission(
   return { submitting, error, setError, submit };
 }
 
+/** The refs and invalidation shared by manual and automatic submission. */
+interface AutoSubmitGuard {
+  /** Reports whether this request already armed. */
+  isUsed: () => boolean;
+  /** Records that this request used its attempt. */
+  markUsed: () => void;
+  /** Returns the current attempt tracker. */
+  currentAttempt: () => AutoSubmitAttempt;
+  /** Invalidates a pending automatic attempt. */
+  invalidate: () => void;
+}
+
+/**
+ * Keeps the one-shot guard and the auto-send generation across renders.
+ * @param autoSubmitUsed - Whether the parent already recorded an attempt.
+ * @returns The guard reads and controls.
+ */
+function useAutoSubmitGuard(autoSubmitUsed: boolean): AutoSubmitGuard {
+  const used = useRef(autoSubmitUsed);
+  const attempt = useRef(createAutoSubmitAttempt());
+  useEffect(() => {
+    used.current = autoSubmitUsed;
+  }, [autoSubmitUsed]);
+  useEffect(
+    () => () => {
+      attempt.current.invalidate();
+    },
+    [],
+  );
+  return {
+    isUsed: () => used.current,
+    markUsed: () => {
+      used.current = true;
+    },
+    currentAttempt: () => attempt.current,
+    invalidate: () => {
+      attempt.current.invalidate();
+    },
+  };
+}
+
 /**
  * Renders the OTP entry sheet.
  * @param props - The request plus submit/dismiss callbacks.
@@ -258,12 +304,8 @@ export function OtpPrompt({
   const autoEnabled = useAutoSubmitPreference(visible);
   const codeRef = useRef<{ focus: () => void } | null>(null);
   // The parent owns the one-shot guard so it survives this prompt's per-request
-  // remount. The ref keeps the same-tick check synchronous; the effect syncs a
-  // marker that arrives after the first render.
-  const autoUsed = useRef(autoSubmitUsed);
-  useEffect(() => {
-    autoUsed.current = autoSubmitUsed;
-  }, [autoSubmitUsed]);
+  // remount; the guard hook keeps the same-tick check and the attempt token.
+  const autoGuard = useAutoSubmitGuard(autoSubmitUsed);
 
   // The shell remounts this prompt per request, so there is no stale code to
   // clear here; opening the sheet only has to put the cursor in the field.
@@ -284,17 +326,22 @@ export function OtpPrompt({
     requestId: request.id,
     visible,
     onFire: (value: string): void => {
+      const attempt = autoGuard.currentAttempt();
       // Re-read at fire time: the user may have turned auto-submit off while
-      // the countdown was running. A failed read stays on the safe side.
-      void (async () => {
-        if (await loadOtpAutoSubmit()) {
-          await submit(value);
-        }
-      })();
+      // the countdown was running. The generation check stops a code that was
+      // already in the read from leaving after an edit, cancel, or dismiss.
+      void submitIfCurrent({
+        attempt,
+        token: attempt.token,
+        readPreference: loadOtpAutoSubmit,
+        send: submit,
+        code: value,
+      });
     },
   });
 
   const handleChange = (text: string): void => {
+    autoGuard.invalidate();
     const next = normalizeOtpCodeInput(text);
     const previous = code;
     setCode(next);
@@ -303,12 +350,12 @@ export function OtpPrompt({
     countdown.cancel();
     const arm = shouldArmAutoSubmit({
       enabled: autoEnabled,
-      alreadyArmed: autoUsed.current,
+      alreadyArmed: autoGuard.isUsed(),
       previous,
       next,
     });
     if (arm) {
-      autoUsed.current = true;
+      autoGuard.markUsed();
       onAutoSubmitUsed();
       countdown.arm(next);
       AccessibilityInfo.announceForAccessibility(
@@ -320,6 +367,7 @@ export function OtpPrompt({
   };
 
   const cancelAuto = (): void => {
+    autoGuard.invalidate();
     countdown.cancel();
     haptics.warning();
   };
@@ -331,8 +379,13 @@ export function OtpPrompt({
   // Dismissing is a refusal, so it must also drop an armed code: without this
   // the countdown would resume if the same request's sheet were reopened.
   const dismiss = (): void => {
+    autoGuard.invalidate();
     countdown.cancel();
     onDismiss(request.id);
+  };
+  const submitManually = (candidate: string): void => {
+    autoGuard.invalidate();
+    void submit(candidate);
   };
 
   return (
@@ -372,7 +425,7 @@ export function OtpPrompt({
           icon="checkmark"
           loading={submitting}
           onPress={() => {
-            void submit(code);
+            submitManually(code);
           }}
         />
       )}

@@ -1,13 +1,22 @@
 /**
  * Selected-bank editor view for credentials, targets, and optional fields.
  */
-import type { ReactElement } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { type ReactElement, useEffect } from 'react';
+import { BackHandler, ScrollView, StyleSheet } from 'react-native';
 
 import type { FieldDef } from '../api/manifest';
 import { FieldInput } from '../components/FieldInput';
-import { AppHeader, Banner, Button, Card, ListRow, Screen, Sheet } from '../components/ui';
-import { useTheme } from '../theme/ThemeContext';
+import {
+  AppHeader,
+  Banner,
+  Button,
+  Card,
+  ListRow,
+  Screen,
+  SectionLabel,
+  Sheet,
+} from '../components/ui';
+import { useGuardedBack, useInvalidFields } from '../lib/useInvalidFields';
 import { BanksTargetsEditor } from './BanksTargetsEditor';
 
 type BankConfig = Record<string, unknown>;
@@ -59,19 +68,42 @@ export function BanksEditorView({
   onCloseSheet,
   onAddField,
 }: Readonly<BanksEditorViewProps>): ReactElement {
-  const theme = useTheme();
+  const { invalid, report, guard } = useInvalidFields();
+  const back = useGuardedBack(invalid, onBack);
+
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      back();
+      return true;
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [back]);
 
   return (
     <Screen
-      header={<AppHeader title={bankName} subtitle="Credentials & targets" onBack={onBack} />}
+      header={
+        <AppHeader
+          title={bankName}
+          subtitle="Credentials & targets"
+          onBack={back}
+          backDisabled={saving}
+        />
+      }
       notice={saveErrors?.length ? <Banner messages={saveErrors} /> : undefined}
-      footer={<Button title="Save changes" icon="checkmark" loading={saving} onPress={onSave} />}
+      footer={
+        <Button
+          title="Save changes"
+          icon="checkmark"
+          loading={saving}
+          onPress={() => {
+            guard(onSave);
+          }}
+        />
+      }
     >
-      <Text
-        style={[theme.typography.caption, styles.sectionLabel, { color: theme.colors.textSubtle }]}
-      >
-        CREDENTIALS
-      </Text>
+      <SectionLabel style={styles.sectionLabel}>CREDENTIALS</SectionLabel>
       <Card>
         {presentFields.map((field) => {
           const isRequired = requiredKeys.has(field.key);
@@ -83,6 +115,8 @@ export function BanksEditorView({
               onChange={(value) => {
                 onFieldChange(field.key, value);
               }}
+              onValidityChange={report}
+              validityKey={field.key}
               onRemove={
                 isRequired
                   ? undefined
@@ -105,7 +139,12 @@ export function BanksEditorView({
           />
         ) : null}
       </Card>
-      <BanksTargetsEditor fields={targetFields} targets={targets} onChange={onTargetsChange} />
+      <BanksTargetsEditor
+        fields={targetFields}
+        targets={targets}
+        onChange={onTargetsChange}
+        onValidityChange={report}
+      />
 
       <Sheet visible={sheetOpen} onClose={onCloseSheet} title="Add a field">
         <ScrollView>
@@ -127,6 +166,6 @@ export function BanksEditorView({
 }
 
 const styles = StyleSheet.create({
-  sectionLabel: { letterSpacing: 0.6, marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { marginBottom: 8, marginLeft: 4 },
   addField: { marginTop: 8 },
 });

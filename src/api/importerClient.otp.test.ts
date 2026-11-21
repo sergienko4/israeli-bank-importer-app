@@ -1,6 +1,5 @@
 import {
   getOtpSettings,
-  getPendingOtp,
   getPendingOtpUnattended,
   type Session,
   setOtpSettings,
@@ -9,6 +8,7 @@ import {
   submitOtp,
   submitOtpUnattended,
 } from './importerClient';
+import { getPendingOtp } from './otpPending';
 import { NO_RESPONSE } from './timedFetch';
 
 const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
@@ -118,8 +118,8 @@ describe('getPendingOtp', () => {
 describe('submitOtp', () => {
   it('POSTs the code to /api/otp/:id', async () => {
     stubFetch(200, { ok: true });
-    const result = await submitOtp(session, 'r1', '123456');
-    expect(result.ok).toBe(true);
+    const result = await submitOtp({ session, id: 'r1', code: '123456' });
+    expect(result?.ok).toBe(true);
     expect(calls[0].url).toBe('https://host:8080/api/otp/r1');
     expect(calls[0].method).toBe('POST');
     expect(calls[0].body).toContain('123456');
@@ -127,12 +127,26 @@ describe('submitOtp', () => {
 
   it('reports a failure body', async () => {
     stubFetch(404, { error: 'gone' });
-    await expect(submitOtp(session, 'r1', '123456')).resolves.toEqual({
+    await expect(submitOtp({ session, id: 'r1', code: '123456' })).resolves.toEqual({
       ok: false,
       error: 'gone',
       errors: undefined,
       status: 404,
     });
+  });
+
+  it('does not POST when the before-send gate is withdrawn', async () => {
+    stubFetch(200, { ok: true });
+
+    const result = await submitOtp({
+      session,
+      id: 'r1',
+      code: '123456',
+      beforeSend: () => Promise.resolve(false),
+    });
+
+    expect(result).toBeNull();
+    expect(calls).toHaveLength(0);
   });
 
   it('does not start a second submission for the same request before it settles', async () => {
@@ -145,8 +159,8 @@ describe('submitOtp', () => {
       });
     }) as unknown as typeof fetch;
 
-    const first = submitOtp(session, 'r1', '111111');
-    const second = submitOtp(session, 'r1', '222222');
+    const first = submitOtp({ session, id: 'r1', code: '111111' });
+    const second = submitOtp({ session, id: 'r1', code: '222222' });
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 0);
     });

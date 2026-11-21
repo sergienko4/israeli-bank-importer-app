@@ -18,8 +18,8 @@ import {
 } from 'react';
 
 import type { Session } from '../api/importerClient';
-import { getPendingOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
+import { getPendingOtp } from '../api/otpPending';
 import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { refreshOtpChannel } from '../lib/otpChannelSync';
@@ -37,6 +37,8 @@ import { withRequestTimeout } from '../lib/requestTimeout';
 const POLL_INTERVAL_MS = 5000;
 /** A hung poll must not latch the loop shut forever. */
 const POLL_TIMEOUT_MS = POLL_INTERVAL_MS * 4;
+/** How often the channel is reconciled even when no prompt appears. */
+const CHANNEL_REFRESH_MS = 5 * 60_000;
 
 /**
  * Builds the poll that reads the importer's outstanding requests.
@@ -78,18 +80,31 @@ function handleRequests(requests: PendingOtpRequest[]): void {
 }
 
 /**
- * Reconciles the OTP channel once when a poll loop starts.
+ * Builds a bounded channel reconciliation for the poll loop.
  *
- * The channel can be changed from the importer's own UI, and off the app
- * channel the switches that would close capture are hidden, so this is the
- * only thing that reconciles it.
+ * The channel can change from the importer's own UI, and off the app channel
+ * the switches that would close capture are hidden, so polls reconcile it
+ * every few minutes and retry on the next poll after a failed read.
  * @param getConnection - Reads the current session.
+ * @returns A function that refreshes when due.
  */
-function refreshChannelOnce(getConnection: () => Session | null): void {
-  const first = getConnection();
-  if (first) {
-    void refreshOtpChannel(first);
-  }
+function createChannelRefresh(getConnection: () => Session | null): () => void {
+  let nextAt = 0;
+  let inFlight = false;
+  return () => {
+    const connection = getConnection();
+    if (!connection || inFlight || Date.now() < nextAt) {
+      return;
+    }
+    inFlight = true;
+    nextAt = Date.now() + CHANNEL_REFRESH_MS;
+    void refreshOtpChannel(connection).then((confirmed) => {
+      if (!confirmed) {
+        nextAt = 0;
+      }
+      inFlight = false;
+    });
+  };
 }
 
 /**
@@ -123,13 +138,15 @@ function startOtpPolling(
 ): () => void {
   let active = true;
   let pollToken = 0;
-  refreshChannelOnce(getConnection);
+  const refreshChannel = createChannelRefresh(getConnection);
+  refreshChannel();
   let polling = false;
   const poll = async (): Promise<void> => {
     const connection = polling ? null : getConnection();
     if (!connection) {
       return;
     }
+    refreshChannel();
     polling = true;
     const token = ++pollToken;
     const work = runPoll(connection, (requests) => {
@@ -309,8 +326,9 @@ function useOtpDismissals(
         return;
       }
       // Record the snooze for the named request even if a newer one is on
-      // screen: a late dismissal must not be lost, and it must not hide B.
-      snoozedUntil.current.set(id, snoozeUntil(requestDeadline));
+      // screen: a late dismissal must not shorten an answer's quiet window.
+      const quietUntil = snoozeUntil(requestDeadline);
+      snoozedUntil.current.set(id, Math.max(snoozedUntil.current.get(id) ?? 0, quietUntil));
       if (current?.id === id) {
         pendingRef.current = null;
         setPending(null);

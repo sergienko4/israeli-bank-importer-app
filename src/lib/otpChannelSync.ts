@@ -38,15 +38,16 @@ export async function cacheOtpChannel(channel: OtpChannel): Promise<void> {
  * Re-reads the importer's OTP channel and re-syncs the native capture flag.
  *
  * @param session - The active importer session.
- * @returns Nothing; failures are absorbed and reported to nobody by design.
+ * @returns True when the read confirmed the channel, false when it failed.
  */
-export async function refreshOtpChannel(session: Session): Promise<void> {
+export async function refreshOtpChannel(session: Session): Promise<boolean> {
   try {
     const settings = await getOtpSettings(session);
     await cacheOtpChannel(settings.channel);
-    return;
+    return true;
   } catch {
     // Unreachable importer: keep the last known channel and re-sync from it.
   }
   await applyStashGate();
+  return false;
 }

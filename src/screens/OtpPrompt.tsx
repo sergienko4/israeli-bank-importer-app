@@ -28,8 +28,8 @@ import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
-import { Banner, Button, Sheet, TextField } from '../components/ui';
-import { submitIfCurrent } from '../lib/autoSubmitAttempt';
+import { Button, Sheet, TextField } from '../components/ui';
+import { type AutoSubmitAttempt, submitIfCurrent } from '../lib/autoSubmitAttempt';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
@@ -42,20 +42,43 @@ import { useTheme } from '../theme/ThemeContext';
 
 const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
 
+/** What one foreground send produced. */
+type SendOutcome = { kind: 'sent' } | { kind: 'failed'; message: string } | { kind: 'cancelled' };
+
+/** One foreground send. */
+interface SendCodeRequest {
+  /** The active importer session. */
+  readonly session: Session;
+  /** The pending request being answered. */
+  readonly requestId: string;
+  /** The normalised code to send. */
+  readonly code: string;
+  /** Re-checks intent after the lane and session renewal. */
+  readonly beforeSend?: () => Promise<boolean>;
+}
+
 /**
  * Sends a code to the importer and flattens every outcome to one value.
- * @param session - The active importer session.
- * @param requestId - The pending request being answered.
- * @param code - The normalised code to send.
- * @returns Null when the importer accepted the code, else the message to show.
+ * @param request - The session, request id, code, and before-send gate.
+ * @returns Whether the code left, failed with a message, or was cancelled.
  */
-async function sendCode(session: Session, requestId: string, code: string): Promise<string | null> {
+async function sendCode({
+  session,
+  requestId,
+  code,
+  beforeSend,
+}: SendCodeRequest): Promise<SendOutcome> {
   try {
-    const result = await submitOtp(session, requestId, code);
-    return result.ok ? null : reportedOrFallback(result.error, CODE_REJECTED);
+    const result = await submitOtp({ session, id: requestId, code, beforeSend });
+    if (result === null) {
+      return { kind: 'cancelled' };
+    }
+    return result.ok
+      ? { kind: 'sent' }
+      : { kind: 'failed', message: reportedOrFallback(result.error, CODE_REJECTED) };
   } catch (error: unknown) {
     const reported = error instanceof Error ? error.message : undefined;
-    return reportedOrFallback(reported, CODE_REJECTED);
+    return { kind: 'failed', message: reportedOrFallback(reported, CODE_REJECTED) };
   }
 }
 
@@ -90,6 +113,16 @@ function useAutoSubmitPreference(visible: boolean): boolean {
   return enabled;
 }
 
+/**
+ * Builds the before-send gate used after every automatic-send wait.
+ * @param attempt - The attempt generation captured at fire time.
+ * @param token - The generation that must still be current.
+ * @returns A gate that re-reads the opt-in and checks the generation.
+ */
+function autoSendGate(attempt: AutoSubmitAttempt, token: number): () => Promise<boolean> {
+  return async () => (await loadOtpAutoSubmit().catch(() => false)) && attempt.isCurrent(token);
+}
+
 interface Props {
   /** The pending request to answer. */
   request: PendingOtpRequest;
@@ -113,8 +146,8 @@ interface OtpSubmission {
   readonly error: string | null;
   /** Clears the failure as the user edits. */
   readonly setError: (error: string | null) => void;
-  /** Validates and sends one code. */
-  readonly submit: (candidate: string) => Promise<void>;
+  /** Validates and sends one code, optionally re-checking intent at send time. */
+  readonly submit: (candidate: string, beforeSend?: () => Promise<boolean>) => Promise<void>;
 }
 
 /**
@@ -136,7 +169,7 @@ function useOtpSubmission(
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  const submit = async (candidate: string): Promise<void> => {
+  const submit = async (candidate: string, beforeSend?: () => Promise<boolean>): Promise<void> => {
     if (inFlight.current) {
       return;
     }
@@ -153,12 +186,15 @@ function useOtpSubmission(
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
-    const failure = await sendCode(connection, requestId, trimmed);
+    const outcome = await sendCode({ session: connection, requestId, code: trimmed, beforeSend });
     inFlight.current = false;
     setSubmitting(false);
-    if (failure !== null) {
+    if (outcome.kind === 'cancelled') {
+      return;
+    }
+    if (outcome.kind === 'failed') {
       haptics.warning();
-      setError(failure);
+      setError(outcome.message);
       return;
     }
     haptics.success();
@@ -196,14 +232,13 @@ export function OtpPrompt({
     visible,
     onFire: (value: string): void => {
       const attempt = autoGuard.currentAttempt();
-      // Re-read at fire time: the user may have turned auto-submit off while
-      // the countdown was running. The generation check stops a code that was
-      // already in the read from leaving after an edit, cancel, or dismiss.
+      // Re-read after every wait: the user may have turned auto-submit off,
+      // edited, or dismissed while the lane or session guard was busy.
       void submitIfCurrent({
         attempt,
         token: attempt.token,
         readPreference: loadOtpAutoSubmit,
-        send: submit,
+        send: (candidate) => submit(candidate, autoSendGate(attempt, attempt.token)),
         code: value,
       });
     },
@@ -294,11 +329,6 @@ export function OtpPrompt({
           codeRef.current = input;
         }}
       />
-      {error ? (
-        <View style={styles.banner}>
-          <Banner messages={[error]} announcement={null} />
-        </View>
-      ) : null}
       {countdown.pending ? (
         <View>
           <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
@@ -322,5 +352,4 @@ export function OtpPrompt({
 
 const styles = StyleSheet.create({
   hint: { marginBottom: 12 },
-  banner: { marginBottom: 12 },
 });

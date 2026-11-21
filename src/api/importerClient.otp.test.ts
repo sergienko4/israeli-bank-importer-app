@@ -134,6 +134,34 @@ describe('submitOtp', () => {
       status: 404,
     });
   });
+
+  it('does not start a second submission for the same request before it settles', async () => {
+    calls = [];
+    const resolvers: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method });
+      return new Promise<Response>((resolve) => {
+        resolvers.push(resolve);
+      });
+    }) as unknown as typeof fetch;
+
+    const first = submitOtp(session, 'r1', '111111');
+    const second = submitOtp(session, 'r1', '222222');
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(calls).toHaveLength(1);
+
+    resolvers[0](fakeResponse(200, { ok: true }));
+    await expect(first).resolves.toEqual({ ok: true });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(calls).toHaveLength(2);
+
+    resolvers[1](fakeResponse(200, { ok: true }));
+    await expect(second).resolves.toEqual({ ok: true });
+  });
 });
 
 describe('unattended OTP calls', () => {

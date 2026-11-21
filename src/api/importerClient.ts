@@ -6,6 +6,7 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
+import { REQUEST_TIMEOUT_MS, RequestTimeoutError, withRequestTimeout } from '../lib/requestTimeout';
 import {
   CONFIG_BODY,
   MANIFEST_BODY,
@@ -16,8 +17,15 @@ import {
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import { parsedBody } from './parseResponse';
+import {
+  markDeadline,
+  readJsonOrEmpty,
+  readJsonOrUndefined,
+  readWithinDeadline,
+} from './responseBody';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
+import { createWriteQueue, serializeWrite, withOtpLane } from './writeQueue';
 
 const HTTPS = 'https://';
 
@@ -64,16 +72,54 @@ export function normalizeBaseUrl(input: string): string {
  * Runs a request, replacing a transport failure with wording worth reading.
  *
  * A dropped connection arrives as whatever the platform calls it, and every
- * caller here puts a raised message straight in front of the user.
- * @param send - Performs the request.
+ * caller here puts a raised message straight in front of the user. A request
+ * that outlives its deadline keeps the deadline's own wording: "unreachable"
+ * would be a guess, while the deadline is a fact the user can act on. The
+ * request is aborted and awaited briefly before the timeout is raised. A
+ * transport that ignores its abort cannot hold the lane forever, though only
+ * the importer can guarantee ordering once a timed-out write is still running.
+ * @param send - Performs the request with the abort signal.
  * @returns The response, when the importer answered at all.
- * @throws Error naming the importer as unreachable when it did not.
+ * @throws Error naming the importer as unreachable when it did not, or a
+ * {@link RequestTimeoutError} when it never answered in time.
  */
-async function reachable(send: () => Promise<Response>): Promise<Response> {
+async function reachable(send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
+  const controller = new AbortController();
+  const deadlineAt = Date.now() + REQUEST_TIMEOUT_MS;
+  const request = send(controller.signal);
+  const timedOut = { current: false };
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(
+      () => {
+        timedOut.current = true;
+        controller.abort();
+        reject(new RequestTimeoutError());
+      },
+      Math.max(0, deadlineAt - Date.now()),
+    );
+  });
   try {
-    return await send();
+    const res = await Promise.race([request, deadline]);
+    markDeadline(res, deadlineAt, controller);
+    return res;
   } catch {
+    if (timedOut.current) {
+      // Aborting can reject the request before the deadline's rejection is
+      // observed. The flag keeps that race from masquerading as a transport
+      // failure. Wait briefly for the abort to settle, but never on a
+      // transport that ignores it: that would hold the caller past its budget.
+      await withRequestTimeout(
+        request.catch(() => undefined),
+        1_000,
+      ).catch(() => undefined);
+      throw new RequestTimeoutError();
+    }
     throw new Error(failureMessage('unreachable').text);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -91,15 +137,16 @@ async function reachable(send: () => Promise<Response>): Promise<Response> {
  */
 export async function checkAuthorized(baseUrl: string, token: string): Promise<boolean> {
   const url = `${normalizeBaseUrl(baseUrl)}/auth/status`;
-  const res = await reachable(() =>
+  const res = await reachable((signal) =>
     fetch(url, {
       headers: { authorization: `Bearer ${token}` },
+      signal,
     }),
   );
   if (!res.ok) {
     return false;
   }
-  const authStatus: unknown = await res.json().catch(() => undefined);
+  const authStatus = await readJsonOrUndefined(res);
   return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
@@ -147,12 +194,16 @@ export function setSessionGuard(guard: SessionGuard | null): void {
  * @returns A fresh session, or null when reauth is unavailable or fails.
  */
 async function tryReauth(): Promise<Session | null> {
-  if (!reauthHandler) {
+  const handler = reauthHandler;
+  if (!handler) {
     return null;
   }
-  inFlightReauth ??= reauthHandler().finally(() => {
-    inFlightReauth = null;
-  });
+  inFlightReauth ??= Promise.resolve()
+    .then(() => handler())
+    .catch(() => null)
+    .finally(() => {
+      inFlightReauth = null;
+    });
   return inFlightReauth;
 }
 
@@ -164,9 +215,9 @@ async function tryReauth(): Promise<Session | null> {
  * than expected still recovers without the caller handling it. The retry reuses
  * `init`, so a body must be a value that can be sent twice, such as a string.
  *
- * `signal` is excluded: {@link reachable} reads any rejection as an importer it
- * could not reach, which a cancelled request is not. Adding cancellation means
- * teaching that function to tell the two apart first.
+ * `signal` is excluded from `init` so this function can attach the deadline's
+ * own abort signal; the retry reuses `init`, and a body must therefore be a
+ * value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
@@ -180,9 +231,10 @@ async function authed(
   const send = async (active: Session): Promise<Response> => {
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
-    return reachable(() =>
+    return reachable((signal) =>
       fetch(url, {
         ...init,
+        signal,
         headers: {
           ...(init.headers as Record<string, string> | undefined),
           authorization: `Bearer ${active.token}`,
@@ -190,7 +242,7 @@ async function authed(
       }),
     );
   };
-  const current = sessionGuard ? await sessionGuard(session) : session;
+  const current = sessionGuard ? await sessionGuard(session).catch(() => session) : session;
   const res = await send(current);
   if (res.status !== 401) {
     return res;
@@ -210,7 +262,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, MANIFEST_BODY);
+  return readWithinDeadline(res, () => parsedBody(res, MANIFEST_BODY));
 }
 
 /**
@@ -227,7 +279,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, CONFIG_BODY);
+  return readWithinDeadline(res, () => parsedBody(res, CONFIG_BODY));
 }
 
 /**
@@ -236,7 +288,7 @@ export async function getConfig(session: Session): Promise<ConfigObject> {
  * @returns A failure SaveResult with the importer's message + errors when present.
  */
 async function toFailure(res: Response): Promise<SaveResult> {
-  const data = (await res.json().catch(() => ({}))) as { error?: string; errors?: string[] };
+  const data = await readJsonOrEmpty(res);
   return {
     ok: false,
     error: data.error ?? messageForStatus(res.status),
@@ -245,19 +297,27 @@ async function toFailure(res: Response): Promise<SaveResult> {
   };
 }
 
+/** Serializes config writes so an older save cannot overwrite a newer one. */
+const configWrites = createWriteQueue();
+/** Device-token registration, independent of config saves. */
+const deviceWrites = createWriteQueue();
+/** OTP delivery settings, a separate resource from the config document. */
+const otpSettingsWrites = createWriteQueue();
 /**
  * Persists a full config via `PUT /api/config`, surfacing validation errors.
  * @param session - The active session.
  * @param config - The config object to save.
  * @returns Success, or a failure carrying the importer's validation errors.
  */
-export async function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
-  const res = await authed(session, '/api/config', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(config),
+export function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
+  return serializeWrite(configWrites, async () => {
+    const res = await authed(session, '/api/config', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -266,9 +326,13 @@ export async function saveConfig(session: Session, config: ConfigObject): Promis
  * @param name - The bank id to remove.
  * @returns Success or a failure with validation errors.
  */
-export async function removeBank(session: Session, name: string): Promise<SaveResult> {
-  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  return res.ok ? { ok: true } : toFailure(res);
+export function removeBank(session: Session, name: string): Promise<SaveResult> {
+  return serializeWrite(configWrites, async () => {
+    const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**
@@ -285,7 +349,7 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const statusBody = await parsedBody(res, STATUS_BODY);
+  const statusBody = await readWithinDeadline(res, () => parsedBody(res, STATUS_BODY));
   return statusBody.runs;
 }
 
@@ -295,13 +359,15 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function registerDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function registerDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(deviceWrites, async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -310,13 +376,15 @@ export async function registerDevice(session: Session, token: string): Promise<S
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(deviceWrites, async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -330,7 +398,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  return parsedBody(res, OTP_SETTINGS);
+  return readWithinDeadline(res, () => parsedBody(res, OTP_SETTINGS));
 }
 
 /**
@@ -339,13 +407,15 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @param channel - The channel to select (`telegram` or `app`).
  * @returns Success or a failure carrying the importer's error.
  */
-export async function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
-  const res = await authed(session, '/api/otp/settings', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ channel }),
+export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  return serializeWrite(otpSettingsWrites, async () => {
+    const res = await authed(session, '/api/otp/settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -358,7 +428,7 @@ async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
-  const pendingBody = await parsedBody(res, PENDING_OTP_BODY);
+  const pendingBody = await readWithinDeadline(res, () => parsedBody(res, PENDING_OTP_BODY));
   return pendingBody.requests;
 }
 
@@ -396,10 +466,12 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @param code - The OTP code entered by the user.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  const { path, init } = otpSubmission(id, code);
-  const res = await authed(session, path, init);
-  return res.ok ? { ok: true } : toFailure(res);
+export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  return withOtpLane(id, async () => {
+    const { path, init } = otpSubmission(id, code);
+    const res = await authed(session, path, init);
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**
@@ -451,7 +523,7 @@ export async function getPendingOtpUnattended(session: Session): Promise<Pending
  * @returns Success or a failure carrying the importer's error.
  * @throws Error when the importer is unreachable or does not answer in time.
  */
-export async function submitOtpUnattended(
+export function submitOtpUnattended(
   session: Session,
   id: string,
   code: string,

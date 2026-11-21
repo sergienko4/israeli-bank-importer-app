@@ -83,7 +83,7 @@ function SelectControl({ field, value, onChange }: Readonly<Props>): ReactElemen
               styles.chip,
               {
                 borderRadius: theme.radius.pill,
-                borderColor: selected ? theme.colors.primary : theme.colors.border,
+                borderColor: selected ? theme.colors.primary : theme.colors.borderStrong,
                 backgroundColor: selected ? theme.colors.primary : theme.colors.surface,
                 opacity: pressed ? 0.8 : 1,
               },
@@ -122,7 +122,7 @@ function TextControl({ field, value, onChange }: Readonly<Props>): ReactElement 
       style={[
         styles.input,
         {
-          borderColor: focused ? theme.colors.primary : theme.colors.border,
+          borderColor: focused ? theme.colors.primary : theme.colors.borderStrong,
           borderWidth: focused ? 2 : 1,
           backgroundColor: theme.colors.surface,
           color: theme.colors.text,
@@ -132,6 +132,7 @@ function TextControl({ field, value, onChange }: Readonly<Props>): ReactElement 
       keyboardType={isNumber ? 'numeric' : 'default'}
       secureTextEntry={field.kind === 'secret'}
       accessibilityLabel={field.label}
+      accessibilityHint={field.help}
       autoCapitalize="none"
       autoCorrect={false}
       placeholderTextColor={theme.colors.textSubtle}
@@ -179,7 +180,7 @@ export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>
       onPress={onRemove}
       style={styles.remove}
     >
-      <Ionicons name="close-circle" size={18} color={theme.colors.textSubtle} />
+      <Ionicons name="close-circle" size={18} color={theme.colors.textSubtle} accessible={false} />
     </Pressable>
   ) : null;
 
@@ -206,9 +207,10 @@ export function FieldInput({ field, value, onChange, onRemove }: Readonly<Props>
           <View pointerEvents="none">
             <Switch
               accessible={false}
+              importantForAccessibility="no-hide-descendants"
               value={checked}
               trackColor={{ true: theme.colors.primary, false: theme.colors.borderStrong }}
-              thumbColor="#FFFFFF"
+              thumbColor={theme.colors.surface}
             />
           </View>
         </Pressable>

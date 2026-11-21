@@ -6,6 +6,7 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
+import { isRequestTimeout, withRequestTimeout } from '../lib/requestTimeout';
 import {
   CONFIG_BODY,
   MANIFEST_BODY,
@@ -64,15 +65,21 @@ export function normalizeBaseUrl(input: string): string {
  * Runs a request, replacing a transport failure with wording worth reading.
  *
  * A dropped connection arrives as whatever the platform calls it, and every
- * caller here puts a raised message straight in front of the user.
+ * caller here puts a raised message straight in front of the user. A request
+ * that outlives its deadline keeps the deadline's own wording: "unreachable"
+ * would be a guess, while the deadline is a fact the user can act on.
  * @param send - Performs the request.
  * @returns The response, when the importer answered at all.
- * @throws Error naming the importer as unreachable when it did not.
+ * @throws Error naming the importer as unreachable when it did not, or a
+ * {@link RequestTimeoutError} when it never answered in time.
  */
 async function reachable(send: () => Promise<Response>): Promise<Response> {
   try {
-    return await send();
-  } catch {
+    return await withRequestTimeout(send());
+  } catch (error) {
+    if (isRequestTimeout(error)) {
+      throw error;
+    }
     throw new Error(failureMessage('unreachable').text);
   }
 }

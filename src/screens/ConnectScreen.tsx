@@ -54,7 +54,7 @@ export function ConnectScreen(): ReactElement {
             theme.shadow(2),
           ]}
         >
-          <Ionicons name="wallet" size={32} color={theme.colors.onPrimary} />
+          <Ionicons name="wallet" size={32} color={theme.colors.onPrimary} accessible={false} />
         </View>
         <Text style={[theme.typography.display, { color: theme.colors.text }]}>Bank Importer</Text>
         <Text style={[theme.typography.body, styles.tagline, { color: theme.colors.textMuted }]}>
@@ -92,7 +92,12 @@ export function ConnectScreen(): ReactElement {
       </Card>
 
       <View style={styles.hint}>
-        <Ionicons name="shield-checkmark-outline" size={15} color={theme.colors.textSubtle} />
+        <Ionicons
+          name="shield-checkmark-outline"
+          size={15}
+          color={theme.colors.textSubtle}
+          accessible={false}
+        />
         <Text style={[theme.typography.small, styles.hintText, { color: theme.colors.textSubtle }]}>
           Reachable over your private network (e.g. Tailscale).
         </Text>
@@ -107,14 +112,6 @@ const styles = StyleSheet.create({
   logo: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   tagline: { textAlign: 'center', maxWidth: 300 },
   card: { gap: 16 },
-  toggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    minHeight: 44,
-  },
-  toggleText: { flex: 1, gap: 2 },
   submit: { marginTop: 4 },
   hint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintText: { textAlign: 'center' },

@@ -91,7 +91,13 @@ export function Banner({
         },
       ]}
     >
-      <Ionicons name={style.icon} size={18} color={style.fg} style={styles.icon} />
+      <Ionicons
+        name={style.icon}
+        size={18}
+        color={style.fg}
+        style={styles.icon}
+        accessible={false}
+      />
       <View style={styles.messages}>
         {messages.map((message, index) => (
           <Text

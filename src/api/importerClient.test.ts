@@ -120,3 +120,20 @@ describe('a connection that never opens', () => {
     );
   });
 });
+
+describe('a request that never answers', () => {
+  it('gives up at the deadline instead of spinning forever', async () => {
+    jest.useFakeTimers();
+    try {
+      globalThis.fetch = jest.fn(() => new Promise<Response>(() => undefined));
+      const result = checkAuthorized('https://host:8080', 'token');
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      jest.advanceTimersByTime(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

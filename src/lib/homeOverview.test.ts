@@ -1,5 +1,11 @@
 import type { RunEntry } from '../api/status';
-import { banksConfigured, latestRun, relativeTime, successRateLabel } from './homeOverview';
+import {
+  banksConfigured,
+  latestRun,
+  relativeTime,
+  runSummary,
+  successRateLabel,
+} from './homeOverview';
 
 function run(timestamp: string): RunEntry {
   return {
@@ -58,6 +64,12 @@ describe('relativeTime', () => {
 
   it('returns the raw value for an unparseable timestamp', () => {
     expect(relativeTime('not-a-date', now)).toBe('not-a-date');
+  });
+});
+
+describe('runSummary', () => {
+  it('formats the bank and transaction counts', () => {
+    expect(runSummary(run('2026-07-01T10:00:00Z'))).toBe('2/2 banks · 10 txns');
   });
 });
 

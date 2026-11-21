@@ -99,6 +99,7 @@ export function AppShell(): ReactElement {
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
       {promptRequest ? (
         <OtpPrompt
+          key={promptRequest.id}
           request={promptRequest}
           visible={pending !== null}
           onSubmitted={dismiss}

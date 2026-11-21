@@ -36,6 +36,8 @@ interface TextFieldProps {
   autoComplete?: NonNullable<TextInputProps['autoComplete']>;
   /** iOS content type for autofill (e.g. `password`, `URL`). */
   textContentType?: NonNullable<TextInputProps['textContentType']>;
+  /** Receives the underlying input so a sheet can focus it when it opens. */
+  onInputReady?: (input: { focus: () => void } | null) => void;
 }
 
 interface FieldLabelProps {
@@ -70,7 +72,7 @@ function resolveBorderColor(
     return theme.colors.primary;
   }
 
-  return theme.colors.border;
+  return theme.colors.borderStrong;
 }
 
 function FieldLabel({ label }: Readonly<FieldLabelProps>): ReactElement | null {
@@ -92,7 +94,15 @@ function LeadingIcon({ icon }: Readonly<LeadingIconProps>): ReactElement | null 
     return null;
   }
 
-  return <Ionicons name={icon} size={18} color={theme.colors.textSubtle} style={styles.leading} />;
+  return (
+    <Ionicons
+      name={icon}
+      size={18}
+      color={theme.colors.textSubtle}
+      style={styles.leading}
+      accessible={false}
+    />
+  );
 }
 
 function SecureRevealButton({
@@ -116,6 +126,7 @@ function SecureRevealButton({
         name={revealed ? 'eye-off-outline' : 'eye-outline'}
         size={20}
         color={theme.colors.textSubtle}
+        accessible={false}
       />
     </Pressable>
   );
@@ -166,6 +177,7 @@ export function TextField({
   autoCapitalize = 'none',
   autoComplete,
   textContentType,
+  onInputReady,
 }: Readonly<TextFieldProps>): ReactElement {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
@@ -193,6 +205,9 @@ export function TextField({
       >
         <LeadingIcon icon={icon} />
         <TextInput
+          ref={(input) => {
+            onInputReady?.(input);
+          }}
           style={[styles.input, { color: theme.colors.text }]}
           value={value}
           onChangeText={onChangeText}
@@ -200,6 +215,7 @@ export function TextField({
           placeholderTextColor={theme.colors.textSubtle}
           secureTextEntry={secure && !revealed}
           accessibilityLabel={label ?? placeholder}
+          accessibilityHint={help}
           keyboardType={keyboardType}
           autoCapitalize={autoCapitalize}
           autoComplete={autoComplete}

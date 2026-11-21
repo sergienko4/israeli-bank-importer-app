@@ -4,21 +4,20 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
-import {
-  getConfig,
-  getManifest,
-  removeBank,
-  saveConfig,
-  type Session,
-} from '../api/importerClient';
+import { getConfig, getManifest, saveConfig, type Session } from '../api/importerClient';
 import type { ConfigObject, FieldDef, Manifest, SectionDef } from '../api/manifest';
 import { useAuth } from '../auth/AuthContext';
+import { type BankConfig, banksOf } from '../lib/bankDrafts';
+import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { animateNextLayout } from '../lib/layoutAnimation';
 import { useReducedMotion } from '../lib/useReducedMotion';
+import { closeBankEditor, removeBankFromImporter } from './bankEditorActions';
 
 /** Editable bank configuration values keyed by manifest field id. */
-export type BankConfig = Record<string, unknown>;
+export type { BankConfig };
+/** Reads the banks map from a config object (re-exported for screen callers). */
+export { banksOf };
 
 /** Editable target configuration values keyed by manifest field id. */
 export type TargetConfig = Record<string, unknown>;
@@ -50,21 +49,13 @@ export interface BanksScreenModel {
 interface BanksDataState {
   manifest: Manifest | null;
   config: ConfigObject;
+  baseline: ConfigObject | null;
   loading: boolean;
   error: string | null;
   setConfig: (config: ConfigObject | ((current: ConfigObject) => ConfigObject)) => void;
+  setBaseline: (config: ConfigObject) => void;
   setError: (error: string | null) => void;
   setLoading: (loading: boolean) => void;
-}
-
-/**
- * Reads the banks map from a config object.
- * @param config - The full config.
- * @returns The banks keyed by id.
- */
-export function banksOf(config: ConfigObject): Record<string, BankConfig> {
-  const banks = config.banks;
-  return typeof banks === 'object' && banks !== null ? (banks as Record<string, BankConfig>) : {};
 }
 
 /**
@@ -133,6 +124,7 @@ function confirmBankRemoval(
 function useBanksData(connection: Session | null, reloadKey: number): BanksDataState {
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<ConfigObject>({});
+  const [baseline, setBaseline] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,6 +142,7 @@ function useBanksData(connection: Session | null, reloadKey: number): BanksDataS
         if (active) {
           setManifest(loadedManifest);
           setConfig(loadedConfig);
+          setBaseline(loadedConfig);
         }
       } catch (e) {
         if (active) {
@@ -167,7 +160,17 @@ function useBanksData(connection: Session | null, reloadKey: number): BanksDataS
     };
   }, [connection, reloadKey]);
 
-  return { manifest, config, loading, error, setConfig, setError, setLoading };
+  return {
+    manifest,
+    config,
+    baseline,
+    loading,
+    error,
+    setConfig,
+    setBaseline,
+    setError,
+    setLoading,
+  };
 }
 
 /**
@@ -230,37 +233,50 @@ export function useBanksScreenModel(
       const result = await saveConfig(connection, data.config);
       if (result.ok) {
         haptics.success();
+        data.setBaseline(data.config);
         setSelected(null);
       } else {
         haptics.warning();
         setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
       }
-    } catch {
+    } catch (error: unknown) {
       haptics.warning();
-      setSaveErrors(['Save failed. Check your connection and try again.']);
+      setSaveErrors([
+        reportedOrFallback(
+          error instanceof Error ? error.message : undefined,
+          'Save failed. Check your connection and try again.',
+        ),
+      ]);
     } finally {
       setSaving(false);
     }
   };
 
   const doRemove = async (id: string): Promise<void> => {
-    if (!connection) {
-      return;
-    }
-    try {
-      const result = await removeBank(connection, id);
-      if (result.ok) {
-        haptics.success();
-        reload();
-      } else {
-        data.setError(result.error ?? 'Could not remove the bank.');
-      }
-    } catch {
-      data.setError('Could not remove the bank. Check your connection and try again.');
-    }
+    await removeBankFromImporter({
+      connection,
+      id,
+      onRemoved: reload,
+      onError: data.setError,
+    });
   };
 
   const nameOf = (id: string): string => data.manifest?.bankRequirements[id]?.displayName ?? id;
+
+  const closeSelected = (): void => {
+    closeBankEditor({
+      selected,
+      baseline: data.baseline,
+      config: data.config,
+      setConfig: data.setConfig,
+      clearErrors: () => {
+        setSaveErrors(null);
+      },
+      close: () => {
+        setSelected(null);
+      },
+    });
+  };
 
   return {
     ...data,
@@ -269,9 +285,7 @@ export function useBanksScreenModel(
     saveErrors,
     sheetOpen,
     reload,
-    closeSelected: () => {
-      setSelected(null);
-    },
+    closeSelected,
     selectBank: (id) => {
       setSaveErrors(null);
       setSelected(id);

@@ -14,6 +14,7 @@ export { ErrorView, Loader } from './Feedback';
 export { ListRow } from './ListRow';
 export { Screen } from './Screen';
 export { ScreenSwitch } from './ScreenSwitch';
+export { SectionLabel } from './SectionLabel';
 export { Sheet } from './Sheet';
 export { Skeleton, SkeletonList, SkeletonRow } from './Skeleton';
 export type { PillTone } from './StatusPill';

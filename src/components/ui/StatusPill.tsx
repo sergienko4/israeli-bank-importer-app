@@ -20,6 +20,8 @@ interface StatusPillProps {
   tone?: PillTone;
   /** Optional leading icon (defaults per tone). */
   icon?: keyof typeof Ionicons.glyphMap;
+  /** Spoken form when the visible label is too terse on its own. */
+  accessibilityLabel?: string;
 }
 
 /**
@@ -54,12 +56,15 @@ export function StatusPill({
   label,
   tone = 'neutral',
   icon,
+  accessibilityLabel,
 }: Readonly<StatusPillProps>): ReactElement {
   const theme = useTheme();
   const pop = useMountPop();
   const style = resolvePillToneStyle(theme, tone);
   return (
     <Animated.View
+      accessible={accessibilityLabel !== undefined}
+      accessibilityLabel={accessibilityLabel}
       style={[
         styles.pill,
         {
@@ -70,7 +75,7 @@ export function StatusPill({
         },
       ]}
     >
-      <Ionicons name={icon ?? style.icon} size={13} color={style.fg} />
+      <Ionicons name={icon ?? style.icon} size={13} color={style.fg} accessible={false} />
       <Text style={[styles.label, { color: style.fg }]}>{label}</Text>
     </Animated.View>
   );

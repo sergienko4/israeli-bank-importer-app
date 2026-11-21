@@ -50,7 +50,7 @@ export function EmptyState({
           },
         ]}
       >
-        <Ionicons name={icon} size={30} color={theme.colors.primary} />
+        <Ionicons name={icon} size={30} color={theme.colors.primary} accessible={false} />
       </Animated.View>
       <Text style={[theme.typography.h3, styles.title, { color: theme.colors.text }]}>{title}</Text>
       {message ? (

@@ -27,6 +27,20 @@ export function latestRun(runs: RunEntry[]): RunEntry | null {
 }
 
 /**
+ * Formats a run's bank and transaction counts for the dashboard.
+ *
+ * Used by both the visible body and the card's accessible name, so the two
+ * cannot disagree about what the last import did.
+ * @param run - The run to summarise.
+ * @returns The compact summary line.
+ */
+export function runSummary(run: RunEntry): string {
+  return `${String(run.successfulBanks)}/${String(run.totalBanks)} banks · ${String(
+    run.totalTransactions,
+  )} txns`;
+}
+
+/**
  * Formats a run's success rate for display.
  *
  * The importer already reports the rate out of 100, so this only rounds it.

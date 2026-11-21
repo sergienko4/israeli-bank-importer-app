@@ -22,6 +22,7 @@ import {
   SkeletonList,
   StatusPill,
 } from '../components/ui';
+import { bankRunRowLabel, runPillLabel } from '../lib/a11yLabels';
 import { failureMessage, reportedOrFallback } from '../lib/errorMessages';
 import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
@@ -112,8 +113,9 @@ function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
           {formatTime(entry.timestamp)}
         </Text>
         <StatusPill
-          label={`${String(entry.successfulBanks)}/${String(entry.totalBanks)}`}
+          label={`${String(entry.successfulBanks)}/${String(entry.totalBanks)} banks`}
           tone={runTone(entry)}
+          accessibilityLabel={runPillLabel(entry)}
         />
       </View>
       <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
@@ -123,9 +125,14 @@ function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
       {entry.banks.map((bank, index) => {
         const { color, icon } = bankStatusMeta(bank.status, theme.colors);
         return (
-          <View key={`${bank.name}-${String(index)}`} style={styles.bankRow}>
+          <View
+            key={`${bank.name}-${String(index)}`}
+            accessible
+            accessibilityLabel={bankRunRowLabel(bank)}
+            style={styles.bankRow}
+          >
             <View style={styles.bankName}>
-              <Ionicons name={icon} size={16} color={color} />
+              <Ionicons name={icon} size={16} color={color} accessible={false} />
               <Text style={[theme.typography.body, { color: theme.colors.text }]} numberOfLines={1}>
                 {bank.name}
               </Text>

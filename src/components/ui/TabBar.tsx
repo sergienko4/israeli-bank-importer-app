@@ -85,7 +85,7 @@ function TabButton<T extends string>({
             },
           ]}
         />
-        <Ionicons name={iconName} size={24} color={color} />
+        <Ionicons name={iconName} size={24} color={color} accessible={false} />
         <Text
           numberOfLines={1}
           style={[styles.label, { color, fontWeight: active ? '700' : '500' }]}

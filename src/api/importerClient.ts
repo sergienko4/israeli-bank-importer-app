@@ -6,7 +6,7 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
-import { isRequestTimeout, withRequestTimeout } from '../lib/requestTimeout';
+import { REQUEST_TIMEOUT_MS, RequestTimeoutError } from '../lib/requestTimeout';
 import {
   CONFIG_BODY,
   MANIFEST_BODY,
@@ -17,6 +17,7 @@ import {
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
 import { parsedBody } from './parseResponse';
+import { readJsonOrEmpty, readJsonOrUndefined, readWithinDeadline } from './responseBody';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
 
@@ -67,75 +68,65 @@ export function normalizeBaseUrl(input: string): string {
  * A dropped connection arrives as whatever the platform calls it, and every
  * caller here puts a raised message straight in front of the user. A request
  * that outlives its deadline keeps the deadline's own wording: "unreachable"
- * would be a guess, while the deadline is a fact the user can act on.
- * @param send - Performs the request.
+ * would be a guess, while the deadline is a fact the user can act on. The
+ * request is aborted and awaited before the timeout is raised, so a queued
+ * write cannot overlap a request the server may still be processing.
+ * @param send - Performs the request with the abort signal.
  * @returns The response, when the importer answered at all.
  * @throws Error naming the importer as unreachable when it did not, or a
  * {@link RequestTimeoutError} when it never answered in time.
  */
-async function reachable(send: () => Promise<Response>): Promise<Response> {
+async function reachable(send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
+  const controller = new AbortController();
+  const request = send(controller.signal);
+  const timedOut = { current: false };
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut.current = true;
+      controller.abort();
+      reject(new RequestTimeoutError());
+    }, REQUEST_TIMEOUT_MS);
+  });
   try {
-    return await withRequestTimeout(send());
-  } catch (error) {
-    if (isRequestTimeout(error)) {
-      throw error;
+    return await Promise.race([request, deadline]);
+  } catch {
+    if (timedOut.current) {
+      // Aborting can reject the request before the deadline's rejection is
+      // observed. The flag keeps that race from masquerading as a transport
+      // failure, and the await makes sure no write is left in flight.
+      await request.catch(() => undefined);
+      throw new RequestTimeoutError();
     }
     throw new Error(failureMessage('unreachable').text);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
 /**
- * Reads a response body inside the request deadline.
+ * Serializes mutating requests.
  *
- * The transport timeout in {@link reachable} ends when the headers arrive. A
- * response that then stalls its JSON body would leave a screen spinning, so
- * every body read goes through its own deadline.
- * @param read - Consumes the response body.
- * @returns The parsed value.
- * @throws RequestTimeoutError when the body never finishes.
+ * A timeout only stops the caller from waiting; the server may still apply the
+ * write. Starting a second full-config save before the first has settled lets
+ * an older PUT overwrite a newer one, so every mutation waits for the previous
+ * one to settle, whether it succeeded or failed.
+ * @param operation - The write to run after the current tail.
+ * @returns The write's result.
  */
-async function readWithinDeadline<T>(read: () => Promise<T>): Promise<T> {
-  return withRequestTimeout(read());
+function serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
+  const result = writeTail.then(operation, operation);
+  writeTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
 }
 
-/** The shape `toFailure` reads from a non-ok response. */
-interface FailureBody {
-  error?: string;
-  errors?: string[];
-}
-
-/**
- * Reads an optional failure body, treating an unreadable one as empty.
- * A timeout is not an unreadable body; it must reach the caller.
- * @param res - The non-ok response.
- * @returns The failure fields, or an empty object.
- */
-async function readJsonOrEmpty(res: Response): Promise<FailureBody> {
-  try {
-    return (await readWithinDeadline(() => res.json())) as FailureBody;
-  } catch (error) {
-    if (isRequestTimeout(error)) {
-      throw error;
-    }
-    return {};
-  }
-}
-
-/**
- * Reads an optional JSON body, treating an unreadable one as undefined.
- * @param res - The response.
- * @returns The parsed body, or undefined when it could not be read.
- */
-async function readJsonOrUndefined(res: Response): Promise<unknown> {
-  try {
-    return await readWithinDeadline(() => res.json());
-  } catch (error) {
-    if (isRequestTimeout(error)) {
-      throw error;
-    }
-    return undefined;
-  }
-}
+/** The tail of the mutation queue; starts settled. */
+let writeTail: Promise<unknown> = Promise.resolve();
 
 /**
  * Reports whether a bearer token is currently authorized via `GET /auth/status`.
@@ -151,9 +142,10 @@ async function readJsonOrUndefined(res: Response): Promise<unknown> {
  */
 export async function checkAuthorized(baseUrl: string, token: string): Promise<boolean> {
   const url = `${normalizeBaseUrl(baseUrl)}/auth/status`;
-  const res = await reachable(() =>
+  const res = await reachable((signal) =>
     fetch(url, {
       headers: { authorization: `Bearer ${token}` },
+      signal,
     }),
   );
   if (!res.ok) {
@@ -224,9 +216,9 @@ async function tryReauth(): Promise<Session | null> {
  * than expected still recovers without the caller handling it. The retry reuses
  * `init`, so a body must be a value that can be sent twice, such as a string.
  *
- * `signal` is excluded: {@link reachable} reads any rejection as an importer it
- * could not reach, which a cancelled request is not. Adding cancellation means
- * teaching that function to tell the two apart first.
+ * `signal` is excluded from `init` so this function can attach the deadline's
+ * own abort signal; the retry reuses `init`, and a body must therefore be a
+ * value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
  * @param init - Optional fetch init (method, body, headers).
@@ -240,9 +232,10 @@ async function authed(
   const send = async (active: Session): Promise<Response> => {
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
-    return reachable(() =>
+    return reachable((signal) =>
       fetch(url, {
         ...init,
+        signal,
         headers: {
           ...(init.headers as Record<string, string> | undefined),
           authorization: `Bearer ${active.token}`,
@@ -311,13 +304,15 @@ async function toFailure(res: Response): Promise<SaveResult> {
  * @param config - The config object to save.
  * @returns Success, or a failure carrying the importer's validation errors.
  */
-export async function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
-  const res = await authed(session, '/api/config', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(config),
+export function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const res = await authed(session, '/api/config', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -326,9 +321,13 @@ export async function saveConfig(session: Session, config: ConfigObject): Promis
  * @param name - The bank id to remove.
  * @returns Success or a failure with validation errors.
  */
-export async function removeBank(session: Session, name: string): Promise<SaveResult> {
-  const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, { method: 'DELETE' });
-  return res.ok ? { ok: true } : toFailure(res);
+export function removeBank(session: Session, name: string): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**
@@ -355,13 +354,15 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function registerDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function registerDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -370,13 +371,15 @@ export async function registerDevice(session: Session, token: string): Promise<S
  * @param token - The Expo push token.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
-  const res = await authed(session, '/api/devices', {
-    method: 'DELETE',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
+export function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const res = await authed(session, '/api/devices', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -399,13 +402,15 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @param channel - The channel to select (`telegram` or `app`).
  * @returns Success or a failure carrying the importer's error.
  */
-export async function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
-  const res = await authed(session, '/api/otp/settings', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ channel }),
+export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const res = await authed(session, '/api/otp/settings', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    });
+    return res.ok ? { ok: true } : toFailure(res);
   });
-  return res.ok ? { ok: true } : toFailure(res);
 }
 
 /**
@@ -456,10 +461,12 @@ export async function getPendingOtp(session: Session): Promise<PendingOtpRequest
  * @param code - The OTP code entered by the user.
  * @returns Success or a failure carrying the importer's error.
  */
-export async function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
-  const { path, init } = otpSubmission(id, code);
-  const res = await authed(session, path, init);
-  return res.ok ? { ok: true } : toFailure(res);
+export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+  return serializeWrite(async () => {
+    const { path, init } = otpSubmission(id, code);
+    const res = await authed(session, path, init);
+    return res.ok ? { ok: true } : toFailure(res);
+  });
 }
 
 /**

@@ -133,6 +133,8 @@ jobs:
       - name: Push the refresh branch
         id: push
         if: steps.check.outputs.drift == 'true' && steps.open.outputs.found == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           branch="chore/expo-sdk-patch-${GITHUB_RUN_ID}"
@@ -185,6 +187,7 @@ jobs:
       - name: Open the pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           BRANCH: ${{ needs.refresh.outputs.branch }}
         run: |
           set -euo pipefail

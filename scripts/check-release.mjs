@@ -109,6 +109,9 @@ const RELEASE_WORKFLOW = 'release-please.yml';
 /** The pull-request build check, which must stay away from every secret. */
 const PR_CHECK = 'sms-apk-check.yml';
 
+/** The scheduled workflow that may call {@link PR_CHECK} for an SDK refresh. */
+const REFRESH_WORKFLOW = 'expo-sdk-refresh.yml';
+
 /** The request header an Expo app names its update channel with. */
 const CHANNEL_HEADER = 'expo-channel-name';
 
@@ -746,6 +749,12 @@ function checkToken(workflows, actions) {
 /**
  * Asserts rule 5: the pull-request build check can reach no secret.
  *
+ * The scheduled SDK refresh may call it for a branch it just pushed, because a
+ * pull-request created with GITHUB_TOKEN starts no workflows. That exception is
+ * fenced in here: the callee declares no secrets and a ref input only, the
+ * caller runs on schedule or by hand rather than from a fork, and it is the
+ * only caller.
+ *
  * @param {Map<string, { text: string, doc: any }>} workflows - Every workflow.
  */
 function checkIsolation(workflows) {
@@ -763,17 +772,54 @@ function checkIsolation(workflows) {
     ),
     `${PR_CHECK} jobs should name no environment and widen no permission`,
   );
-  const events = Object.keys(triggersOf(workflow.doc));
-  check(
-    rule,
-    events.length === 1 && events[0] === 'pull_request',
-    `${PR_CHECK} should run on pull_request only, which gives fork runs no secret, found ${JSON.stringify(events)}`,
-  );
   check(
     rule,
     JSON.stringify(workflow.doc?.permissions) === JSON.stringify({ contents: 'read' }),
     `${PR_CHECK} should grant contents: read and nothing else`,
   );
+  const triggers = triggersOf(workflow.doc);
+  const events = Object.keys(triggers);
+  const allowedEvents = ['pull_request', 'workflow_call'];
+  check(
+    rule,
+    events.includes('pull_request') && events.every((event) => allowedEvents.includes(event)),
+    `${PR_CHECK} may run on pull_request and workflow_call only, found ${JSON.stringify(events)}`,
+  );
+  const callable = triggers.workflow_call;
+  if (callable === undefined) {
+    return;
+  }
+  check(
+    rule,
+    callable.secrets === undefined,
+    `${PR_CHECK} should accept no secrets through workflow_call`,
+  );
+  const inputs = Object.keys(callable.inputs ?? {});
+  check(
+    rule,
+    inputs.every((name) => name === 'ref'),
+    `${PR_CHECK} should accept only a ref input through workflow_call, found ${JSON.stringify(inputs)}`,
+  );
+  const callers = [...workflows.entries()]
+    .filter(([, { doc }]) =>
+      jobsOf(doc).some(([, job]) => job.uses === `./.github/workflows/${PR_CHECK}`),
+    )
+    .map(([name]) => name);
+  check(
+    rule,
+    JSON.stringify(callers) === JSON.stringify([REFRESH_WORKFLOW]),
+    `${PR_CHECK} should be called only by ${REFRESH_WORKFLOW}, found ${JSON.stringify(callers)}`,
+  );
+  const refresh = workflows.get(REFRESH_WORKFLOW);
+  check(rule, refresh !== undefined, `${WORKFLOWS}/${REFRESH_WORKFLOW} is missing`);
+  if (refresh !== undefined) {
+    const callerEvents = Object.keys(triggersOf(refresh.doc));
+    check(
+      rule,
+      callerEvents.every((event) => event === 'schedule' || event === 'workflow_dispatch'),
+      `${REFRESH_WORKFLOW} should run on schedule or workflow_dispatch only, found ${JSON.stringify(callerEvents)}`,
+    );
+  }
 }
 
 /**

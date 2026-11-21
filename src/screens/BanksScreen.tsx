@@ -89,6 +89,8 @@ function BanksListRoute({ model }: Readonly<{ model: BanksScreenModel }>): React
       configuredIds={configuredIds}
       catalog={catalog}
       nameOf={model.nameOf}
+      saveErrors={model.saveErrors}
+      removing={model.removing}
       onSelect={model.selectBank}
       onStartAdd={model.startAdd}
       onRemove={model.confirmRemove}

@@ -1,5 +1,11 @@
 import type { PendingOtpRequest } from '../api/otp';
-import { OTP_DISMISS_SNOOZE_MS, pruneSnoozed, pruneUsed, selectPendingOtp } from './otpQueue';
+import {
+  OTP_DISMISS_SNOOZE_MS,
+  pruneSnoozed,
+  pruneUsed,
+  selectPendingOtp,
+  snoozeUntil,
+} from './otpQueue';
 
 function req(id: string, deadline: number): PendingOtpRequest {
   return { id, bankId: 'leumi', createdAt: 0, deadline };
@@ -79,5 +85,25 @@ describe('pruneUsed', () => {
 
   it('returns an empty set when nothing is pending', () => {
     expect(pruneUsed(new Set(['a']), [])).toEqual(new Set());
+  });
+});
+
+describe('snoozeUntil', () => {
+  const now = 10_000;
+
+  it('caps a long snooze at one minute', () => {
+    expect(snoozeUntil(now + 120_000, now)).toBe(now + OTP_DISMISS_SNOOZE_MS);
+  });
+
+  it('leaves time to answer when the deadline is closer', () => {
+    expect(snoozeUntil(now + 30_000, now)).toBe(now + 20_000);
+  });
+
+  it('does not hide a request that is already near its deadline', () => {
+    expect(snoozeUntil(now + 5_000, now)).toBe(now);
+  });
+
+  it('never returns before now', () => {
+    expect(snoozeUntil(now - 1_000, now)).toBe(now);
   });
 });

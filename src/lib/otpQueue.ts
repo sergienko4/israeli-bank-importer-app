@@ -16,6 +16,27 @@ import type { PendingOtpRequest } from '../api/otp';
  */
 export const OTP_DISMISS_SNOOZE_MS = 60_000;
 
+/** Keeps enough of the request alive to poll and type the code after a snooze. */
+export const OTP_DISMISS_RESUME_MARGIN_MS = 10_000;
+
+/**
+ * Computes when a dismissed request may prompt again.
+ *
+ * A full-minute snooze on a request that expires sooner would hide it past its
+ * deadline, so the snooze is capped to leave a margin for the next poll and for
+ * typing the code. A request already inside that margin is available at once.
+ * @param deadline - The request's deadline in epoch ms.
+ * @param now - Current time in epoch ms (defaults to Date.now()).
+ * @returns The time the snooze ends, never before `now`.
+ */
+export function snoozeUntil(deadline: number, now: number = Date.now()): number {
+  const remaining = deadline - now;
+  if (remaining <= OTP_DISMISS_RESUME_MARGIN_MS) {
+    return now;
+  }
+  return now + Math.min(OTP_DISMISS_SNOOZE_MS, remaining - OTP_DISMISS_RESUME_MARGIN_MS);
+}
+
 /**
  * Picks the next OTP request to prompt for.
  * @param requests - The pending requests from the importer.

@@ -5,20 +5,18 @@
  * loads from the status and config endpoints with skeleton placeholders for a
  * fast first paint. Top-level navigation lives in the bottom tab bar.
  */
-import { Ionicons } from '@expo/vector-icons';
 import { type ReactElement, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { getConfig, getStatus } from '../api/importerClient';
 import type { ConfigObject } from '../api/manifest';
 import type { RunEntry } from '../api/status';
 import { useAuth } from '../auth/AuthContext';
-import type { PillTone } from '../components/ui';
-import { Banner, Button, Card, Entrance, Screen, Skeleton, StatusPill } from '../components/ui';
+import { Banner, Button, Screen, SectionLabel } from '../components/ui';
 import { haptics } from '../lib/haptics';
-import { banksConfigured, latestRun, relativeTime, successRateLabel } from '../lib/homeOverview';
+import { banksConfigured, latestRun } from '../lib/homeOverview';
 import { isOverviewTimeout, withOverviewTimeout } from '../lib/overviewTimeout';
-import { useTheme } from '../theme/ThemeContext';
+import { BankCountCard, ConnectionCard, HomeHero, LastImportCard } from './HomeCards';
 
 /** The tabs the Home quick actions can jump to. */
 export type HomeTarget = 'config' | 'banks' | 'status';
@@ -28,195 +26,18 @@ interface Props {
   onNavigate: (tab: HomeTarget) => void;
 }
 
-interface ConnectionCardProps {
-  baseUrl?: string;
-}
-
-interface LastImportCardProps {
-  loading: boolean;
-  last: RunEntry | null;
-  onOpen: () => void;
-}
-
-interface BankCountCardProps {
-  loading: boolean;
-  bankCount: number;
-  onOpen: () => void;
-}
-
-/**
- * Picks the pill tone for a run from its success ratio.
- * @param run - The run entry.
- * @returns The status pill tone.
- */
-function runTone(run: RunEntry): PillTone {
-  if (run.successfulBanks >= run.totalBanks) {
-    return 'success';
-  }
-
-  return run.successfulBanks === 0 ? 'danger' : 'warning';
-}
-
-function HomeHero(): ReactElement {
-  const theme = useTheme();
-
-  return (
-    <Entrance>
-      <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>Welcome back</Text>
-      <View style={styles.brandRow}>
-        <View
-          style={[
-            styles.logo,
-            { backgroundColor: theme.colors.primary, borderRadius: theme.radius.md },
-          ]}
-        >
-          <Ionicons name="wallet" size={20} color={theme.colors.onPrimary} />
-        </View>
-        <Text style={[theme.typography.h1, { color: theme.colors.text }]}>Bank Importer</Text>
-      </View>
-    </Entrance>
-  );
-}
-
-function ConnectionCard({ baseUrl }: Readonly<ConnectionCardProps>): ReactElement {
-  const theme = useTheme();
-
-  return (
-    <Entrance index={1}>
-      <Card style={styles.connection} elevation={2}>
-        <View style={styles.rowBetween}>
-          <Text
-            style={[theme.typography.caption, styles.eyebrow, { color: theme.colors.textSubtle }]}
-          >
-            IMPORTER
-          </Text>
-          <StatusPill label="Connected" tone="success" />
-        </View>
-        <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]} numberOfLines={1}>
-          {baseUrl}
-        </Text>
-      </Card>
-    </Entrance>
-  );
-}
-
-function LastImportBody({
-  loading,
-  last,
-}: Readonly<Omit<LastImportCardProps, 'onOpen'>>): ReactElement {
-  const theme = useTheme();
-
-  if (loading) {
-    return (
-      <View style={styles.loadingLines}>
-        <Skeleton width="60%" height={14} />
-        <Skeleton width="40%" height={12} />
-      </View>
-    );
-  }
-
-  if (last) {
-    const summary = `${String(last.successfulBanks)}/${String(last.totalBanks)} banks · ${String(
-      last.totalTransactions,
-    )} txns`;
-
-    return (
-      <View style={styles.rowBetween}>
-        <View style={styles.lastText}>
-          <Text style={[theme.typography.bodyMedium, { color: theme.colors.text }]}>{summary}</Text>
-          <Text style={[theme.typography.small, { color: theme.colors.textMuted }]}>
-            {relativeTime(last.timestamp)}
-          </Text>
-        </View>
-        <StatusPill label={successRateLabel(last)} tone={runTone(last)} />
-      </View>
-    );
-  }
-
-  return (
-    <Text style={[theme.typography.body, { color: theme.colors.textMuted }]}>No imports yet.</Text>
-  );
-}
-
-function LastImportCard({ loading, last, onOpen }: Readonly<LastImportCardProps>): ReactElement {
-  const theme = useTheme();
-
-  return (
-    <Entrance index={2}>
-      <Card
-        accessibilityLabel="Open import status"
-        accessibilityHint="Shows recent importer runs and per-bank results."
-        onPress={onOpen}
-        style={styles.card}
-      >
-        <View style={styles.cardHead}>
-          <View style={styles.cardTitle}>
-            <View
-              style={[
-                styles.bubble,
-                { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.md },
-              ]}
-            >
-              <Ionicons name="pulse" size={18} color={theme.colors.primary} />
-            </View>
-            <Text style={[theme.typography.h3, { color: theme.colors.text }]}>Last import</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textSubtle} />
-        </View>
-        <LastImportBody loading={loading} last={last} />
-      </Card>
-    </Entrance>
-  );
-}
-
-function BankCountCard({ loading, bankCount, onOpen }: Readonly<BankCountCardProps>): ReactElement {
-  const theme = useTheme();
-
-  return (
-    <Entrance index={3}>
-      <Card
-        accessibilityLabel="Open bank settings"
-        accessibilityHint="Shows configured banks and bank credential settings."
-        onPress={onOpen}
-        style={styles.card}
-      >
-        <View style={styles.cardHead}>
-          <View style={styles.cardTitle}>
-            <View
-              style={[
-                styles.bubble,
-                { backgroundColor: theme.colors.primarySoft, borderRadius: theme.radius.md },
-              ]}
-            >
-              <Ionicons name="business" size={18} color={theme.colors.primary} />
-            </View>
-            <Text style={[theme.typography.h3, { color: theme.colors.text }]}>Banks</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={theme.colors.textSubtle} />
-        </View>
-        {loading ? (
-          <Skeleton width="45%" height={14} style={styles.loadingLines} />
-        ) : (
-          <Text style={[theme.typography.body, { color: theme.colors.textMuted }]}>
-            {bankCount === 0 ? 'No banks yet — add your first.' : `${String(bankCount)} configured`}
-          </Text>
-        )}
-      </Card>
-    </Entrance>
-  );
-}
 /**
  * Shows the connection summary, last-import result, and banks count.
  * @param props - Callback to switch tabs.
  * @returns The home dashboard element.
  */
 export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
-  const theme = useTheme();
   const { connection, disconnect } = useAuth();
   const [runs, setRuns] = useState<RunEntry[]>([]);
   const [config, setConfig] = useState<ConfigObject | null>(null);
   const [loading, setLoading] = useState(true);
   const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!connection) {
@@ -237,8 +58,8 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
         if (active) {
           setOverviewError(
             isOverviewTimeout(error)
-              ? 'Overview refresh timed out. Open a tab to retry.'
-              : 'Couldn’t refresh the overview. Open a tab to retry.',
+              ? 'Overview refresh timed out.'
+              : 'Couldn’t refresh the overview.',
           );
         }
       } finally {
@@ -251,10 +72,20 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
     return () => {
       active = false;
     };
-  }, [connection]);
+  }, [connection, reloadKey]);
+
+  const reload = (): void => {
+    setOverviewError(null);
+    setLoading(true);
+    setReloadKey((key) => key + 1);
+  };
 
   const last = latestRun(runs);
   const bankCount = config ? banksConfigured(config) : 0;
+  // Keep stale data visible when only the refresh failed; report "unavailable"
+  // only when there is nothing to show, so a failed retry does not blank a
+  // dashboard the user could still act on.
+  const unavailable = overviewError !== null && config === null;
   const confirmDisconnect = (): void => {
     Alert.alert('Disconnect importer?', 'This removes the saved connection from this device.', [
       { text: 'Cancel', style: 'cancel' },
@@ -280,18 +111,21 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
       <HomeHero />
       <ConnectionCard baseUrl={connection?.baseUrl} />
 
-      <Text style={[theme.typography.caption, styles.section, { color: theme.colors.textSubtle }]}>
-        OVERVIEW
-      </Text>
+      <SectionLabel style={styles.section}>OVERVIEW</SectionLabel>
 
       {overviewError && !loading ? (
         <View style={styles.overviewNote}>
-          <Banner messages={[overviewError]} tone="warning" />
+          <Banner
+            messages={[overviewError]}
+            tone="warning"
+            action={{ label: 'Try again', onPress: reload }}
+          />
         </View>
       ) : null}
 
       <LastImportCard
         loading={loading}
+        unavailable={unavailable}
         last={last}
         onOpen={() => {
           onNavigate('status');
@@ -299,6 +133,7 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
       />
       <BankCountCard
         loading={loading}
+        unavailable={unavailable}
         bankCount={bankCount}
         onOpen={() => {
           onNavigate('banks');
@@ -318,18 +153,7 @@ export function HomeScreen({ onNavigate }: Readonly<Props>): ReactElement {
 
 const styles = StyleSheet.create({
   content: { gap: 12 },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
-  logo: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  connection: { gap: 10 },
-  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  eyebrow: { letterSpacing: 0.6 },
-  section: { letterSpacing: 0.6, marginTop: 12, marginLeft: 4 },
+  section: { marginTop: 12, marginLeft: 4 },
   overviewNote: { marginBottom: 4 },
-  card: { gap: 12 },
-  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  bubble: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
-  lastText: { flex: 1, gap: 2 },
-  loadingLines: { gap: 8 },
   disconnect: { marginTop: 16 },
 });

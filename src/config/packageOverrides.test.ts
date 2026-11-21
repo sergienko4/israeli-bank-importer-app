@@ -6,7 +6,7 @@
  * entry stays in `package.json`, changes nothing and still reads as a live
  * security fix. This proves every override landed on a resolved version in the
  * lockfile and, for a major-scoped key, that a parent still requests that
- * major, so a stale one fails here and gets removed.
+ * major and resolves the replacement. A stale one fails here and gets removed.
  */
 import manifest from '../../package.json';
 import lockfile from '../../package-lock.json';
@@ -173,6 +173,65 @@ function requestedMajors(range: string): number[] {
 }
 
 /**
+ * Resolves a dependency from a parent's position the way Node does: the
+ * nearest nested `node_modules`, then each ancestor, then the root.
+ * @param packages - The lockfile `packages` map.
+ * @param parentPath - The parent's lockfile key (`''` for the root package).
+ * @param name - The dependency name.
+ * @returns The resolved lockfile key, or undefined when nothing provides it.
+ */
+function resolveDependencyPath(
+  packages: Readonly<Record<string, LockEntry>>,
+  parentPath: string,
+  name: string,
+): string | undefined {
+  let base = parentPath;
+  for (;;) {
+    const candidate = base === '' ? `${NODE_MODULES}${name}` : `${base}/${NODE_MODULES}${name}`;
+    if (Object.hasOwn(packages, candidate)) {
+      return candidate;
+    }
+    const marker = base.lastIndexOf(NODE_MODULES);
+    if (marker === -1) {
+      return undefined;
+    }
+    base = marker === 0 ? '' : base.slice(0, marker - 1);
+  }
+}
+
+/** The dependency an override installs, as a resolved path needs it. */
+interface OverrideDependency {
+  /** The package name. */
+  readonly name: string;
+  /** The version range the override installs. */
+  readonly range: string;
+}
+
+/**
+ * Tells whether the copy a qualifying parent actually resolves is in the
+ * override's range.
+ * @param packages - The lockfile `packages` map.
+ * @param parentPath - The parent's lockfile key.
+ * @param dependency - The package name and the range the override installs.
+ * @returns True when the parent's resolved copy satisfies the range.
+ */
+function satisfiesResolvedDependency(
+  packages: Readonly<Record<string, LockEntry>>,
+  parentPath: string,
+  dependency: OverrideDependency,
+): boolean {
+  const resolvedPath = resolveDependencyPath(packages, parentPath, dependency.name);
+  if (resolvedPath === undefined) {
+    return false;
+  }
+  const version = packages[resolvedPath].version;
+  if (version === undefined) {
+    throw new Error(`${dependency.name} has no resolved version`);
+  }
+  return satisfiesCaretRange(version, dependency.range);
+}
+
+/**
  * Lists the overrides that no lockfile entry would be subject to.
  * @param overrides - The `overrides` map from `package.json`.
  * @param packages - The lockfile `packages` map.
@@ -194,15 +253,19 @@ function findInertOverrides(
       }
       const target = parseOverrideKey(key);
       const { major } = target;
+      const dependency: OverrideDependency = { name: target.name, range: value };
       if (major !== undefined) {
-        const requested = entries.some(
-          ([path, entry]) =>
-            packageName(path) !== target.name &&
-            dependencyRanges(entry, target.name).some((range) =>
-              requestedMajors(range).includes(major),
-            ),
-        );
-        if (!requested) {
+        const applied = entries.some(([path, entry]) => {
+          if (packageName(path) === target.name) {
+            return false;
+          }
+          return dependencyRanges(entry, target.name).some(
+            (range) =>
+              requestedMajors(range).includes(major) &&
+              satisfiesResolvedDependency(packages, path, dependency),
+          );
+        });
+        if (!applied) {
           return true;
         }
       }
@@ -230,10 +293,29 @@ describe('findInertOverrides', () => {
         version: '1.0.0',
         dependencies: { 'brace-expansion': '^5.0.0' },
       },
+      'node_modules/parent/node_modules/brace-expansion': { version: '5.0.12' },
       'node_modules/brace-expansion': { version: '1.1.21' },
-      'node_modules/glob/node_modules/brace-expansion': { version: '5.0.12' },
     };
     expect(findInertOverrides({ 'brace-expansion@5': '^5.0.8' }, packages)).toEqual([]);
+  });
+
+  it('accepts an override when the qualifying parent resolves the replacement', () => {
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/parent/node_modules/minimatch': { version: '11.0.9' },
+      'node_modules/glob/node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
+  });
+
+  it('flags an override when the qualifying parent resolves the old copy', () => {
+    const packages = {
+      'node_modules/parent': { version: '1.0.0', dependencies: { minimatch: '^10.2.6' } },
+      'node_modules/parent/node_modules/minimatch': { version: '10.2.6' },
+      'node_modules/glob': { version: '14.0.6', dependencies: { minimatch: '^11.0.5' } },
+      'node_modules/glob/node_modules/minimatch': { version: '11.0.9' },
+    };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
   });
 
   it('flags a major-scoped override after every parent moved off that major', () => {

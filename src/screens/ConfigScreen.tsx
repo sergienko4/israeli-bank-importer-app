@@ -24,6 +24,7 @@ import {
 } from '../components/ui';
 import { setAtPath } from '../config/formState';
 import { editableSections } from '../config/sections';
+import { runConfigSave } from '../lib/configSave';
 import { haptics } from '../lib/haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { OtpSettingsScreen } from './OtpSettingsScreen';
@@ -207,17 +208,18 @@ export function ConfigScreen({ onDepthChange }: Readonly<Props>): ReactElement {
     if (!connection) {
       return;
     }
-    setSaving(true);
-    setSaveErrors(null);
-    const result = await saveConfig(connection, config);
-    setSaving(false);
-    if (result.ok) {
-      haptics.success();
-      setSelected(null);
-    } else {
-      haptics.warning();
-      setSaveErrors(result.errors ?? [result.error ?? 'Save failed.']);
-    }
+    await runConfigSave({
+      save: () => saveConfig(connection, config),
+      setSaving,
+      setErrors: setSaveErrors,
+      onSuccess: () => {
+        haptics.success();
+        setSelected(null);
+      },
+      onFailure: () => {
+        haptics.warning();
+      },
+    });
   };
   const closeOtp = (): void => {
     setShowOtp(false);

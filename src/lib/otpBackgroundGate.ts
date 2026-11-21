@@ -21,6 +21,7 @@
  */
 import { submitOtpUnattended } from '../api/importerClient';
 import type { SaveResult } from '../api/manifest';
+import { withOtpLane } from '../api/writeQueue';
 import { currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoRead } from './otpAutoReadStore';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
@@ -78,6 +79,12 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  * its start from the caller last, in the same step. A caller that has already
  * given up then gets no request that it would have to answer for.
  *
+ * The send joins the same per-request lane as the foreground prompt, so the
+ * two cannot start a POST for one request at the same time. The switch, pairing
+ * and claim checks run when the lane reaches this send, not when it was queued:
+ * a foreground submission can hold the lane long enough for the user to change
+ * a switch or sign in elsewhere.
+ *
  * A switch read that fails counts as off. Letting its error through would read
  * as a send whose fate is unknown, and spend a code that never left the device.
  *
@@ -88,13 +95,15 @@ export async function loadBackgroundCaptureAllowed(): Promise<boolean> {
  *   the caller can tell a code that never left the device from one whose fate
  *   is unknown; or whatever the send itself threw.
  */
-export async function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
+export function submitWhileAllowed(send: CodeSend): Promise<SaveResult> {
   const { session, requestId, code, claim } = send;
-  const started = await startIfAllowed(
-    () => loadBackgroundCaptureAllowed().catch(() => false),
-    () => submitOtpUnattended(session, requestId, code),
-    () => currentPairing() === session.pairing && claim(),
-  );
-  if (started === null) throw new SendRefusedError();
-  return started.result;
+  return withOtpLane(requestId, async () => {
+    const started = await startIfAllowed(
+      () => loadBackgroundCaptureAllowed().catch(() => false),
+      () => submitOtpUnattended(session, requestId, code),
+      () => currentPairing() === session.pairing && claim(),
+    );
+    if (started === null) throw new SendRefusedError();
+    return started.result;
+  });
 }

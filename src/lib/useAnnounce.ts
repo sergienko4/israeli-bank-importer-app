@@ -6,7 +6,7 @@
  * This gives both platforms an explicit announcement.
  */
 import { useEffect, useRef } from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Platform } from 'react-native';
 
 /**
  * Announces a non-empty message whenever it changes.
@@ -17,7 +17,13 @@ export function useAnnounceOnChange(message: string | null | undefined): void {
 
   useEffect(() => {
     if (message && message !== previous.current) {
-      AccessibilityInfo.announceForAccessibility(message);
+      if (Platform.OS === 'ios') {
+        // Queue behind the control the user just activated instead of dropping
+        // the announcement while VoiceOver is still reading it.
+        AccessibilityInfo.announceForAccessibilityWithOptions(message, { queue: true });
+      } else {
+        AccessibilityInfo.announceForAccessibility(message);
+      }
     }
     previous.current = message;
   }, [message]);

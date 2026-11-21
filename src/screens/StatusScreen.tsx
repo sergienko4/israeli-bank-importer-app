@@ -3,7 +3,7 @@
  * from the importer's redacted audit log, newest first, with pull-to-refresh.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 import { Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 
 import { getStatus } from '../api/importerClient';
@@ -22,12 +22,13 @@ import {
   StatusPill,
 } from '../components/ui';
 import { bankRunRowLabel, runPillLabel } from '../lib/a11yLabels';
-import { failureMessage, reportedOrFallback } from '../lib/errorMessages';
+import { reportedOrFallback } from '../lib/errorMessages';
 import { runTone } from '../lib/runOutcome';
 import type { Theme } from '../theme/ThemeContext';
 import { useTheme } from '../theme/ThemeContext';
+import { useStatusData } from './statusData';
 
-const UNREACHABLE = failureMessage('unreachable').text;
+const UNREACHABLE = reportedOrFallback(undefined, 'unreachable');
 
 /**
  * Header action that refreshes without requiring a pull gesture.
@@ -210,47 +211,10 @@ function RunCard({ entry }: Readonly<{ entry: RunEntry }>): ReactElement {
 export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
-  const [runs, setRuns] = useState<RunEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const { runs, error, loading, setRuns, setError, reload } = useStatusData(connection);
   const [refreshError, setRefreshError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
   const inFlight = useRef(false);
-
-  useEffect(() => {
-    if (!connection) {
-      return undefined;
-    }
-    let active = true;
-    const run = async (): Promise<void> => {
-      try {
-        const loaded = await getStatus(connection);
-        if (active) {
-          setRuns(loaded);
-        }
-      } catch (e) {
-        if (active) {
-          setError(reportedOrFallback(e instanceof Error ? e.message : undefined, UNREACHABLE));
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    };
-    void run();
-    return () => {
-      active = false;
-    };
-  }, [connection, reloadKey]);
-
-  const reload = (): void => {
-    setError(null);
-    setRefreshError(null);
-    setLoading(true);
-    setReloadKey((key) => key + 1);
-  };
 
   const onRefresh = async (): Promise<void> => {
     // A ref, not the refreshing state: two taps in one frame both read the state
@@ -260,6 +224,7 @@ export function StatusScreen({ onBack }: Readonly<Props>): ReactElement {
     }
     inFlight.current = true;
     setRefreshing(true);
+    setRefreshError(null);
     try {
       setRuns(await getStatus(connection));
       setError(null);

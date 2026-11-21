@@ -71,7 +71,7 @@ export function Banner({
 }: Readonly<BannerProps>): ReactElement | null {
   const theme = useTheme();
   const pop = useMountPop();
-  useAnnounceOnChange(messages.length > 0 ? messages.join('. ') : null);
+  useAnnounceOnChange(tone === 'info' || messages.length === 0 ? null : messages.join('. '));
   if (messages.length === 0) {
     return null;
   }

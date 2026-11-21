@@ -27,8 +27,10 @@ const darkTheme: Theme = {
 const TEXT_PAIRS = [
   ['text', 'bg'],
   ['text', 'surface'],
+  ['text', 'primarySoft'],
   ['textMuted', 'bg'],
   ['textMuted', 'surface'],
+  ['textMuted', 'surfaceAlt'],
   ['textSubtle', 'bg'],
   ['textSubtle', 'surface'],
   ['textSubtle', 'surfaceAlt'],
@@ -40,6 +42,7 @@ const TEXT_PAIRS = [
   ['success', 'successSoft'],
   ['warning', 'warningSoft'],
   ['danger', 'dangerSoft'],
+  ['danger', 'surfaceAlt'],
   ['onDanger', 'danger'],
 ] as const satisfies readonly (readonly [keyof ThemeColors, keyof ThemeColors])[];
 

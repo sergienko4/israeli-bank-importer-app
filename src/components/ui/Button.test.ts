@@ -35,6 +35,8 @@ describe('resolveButtonColors', () => {
       const palette = resolveButtonColors({ theme, variant, disabled: true, loading: false });
 
       expect(contrastRatio(palette.border, palette.bg)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(palette.border, theme.colors.bg)).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(palette.border, theme.colors.surface)).toBeGreaterThanOrEqual(3);
     }
   });
 

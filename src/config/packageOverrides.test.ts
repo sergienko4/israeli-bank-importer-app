@@ -4,8 +4,8 @@
  * An override applies only while the package it names is in the tree. Once an
  * upstream release drops that package, or moves it to another major line, the
  * entry stays in `package.json`, changes nothing and still reads as a live
- * security fix. This holds every override to at least one lockfile entry it
- * would apply to, so a stale one fails here and gets removed.
+ * security fix. This proves every override landed on a resolved version in the
+ * lockfile, so a stale one fails here and gets removed.
  */
 import manifest from '../../package.json';
 import lockfile from '../../package-lock.json';
@@ -22,6 +22,63 @@ interface OverrideTarget {
 }
 
 const NODE_MODULES = 'node_modules/';
+
+/**
+ * Compares two version triples.
+ * @param left - The first version as major/minor/patch numbers.
+ * @param right - The second version as major/minor/patch numbers.
+ * @returns A negative, zero, or positive number in sort order.
+ */
+function compareVersions(left: number[], right: number[]): number {
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Returns the first version outside a caret range.
+ * @param floor - The range's minimum as major/minor/patch numbers.
+ * @returns The exclusive upper bound of the range.
+ */
+function caretUpperBound(floor: number[]): number[] {
+  const major = floor[0] ?? 0;
+  const minor = floor[1] ?? 0;
+  const patch = floor[2] ?? 0;
+  if (major > 0) {
+    return [major + 1, 0, 0];
+  }
+  if (minor > 0) {
+    return [0, minor + 1, 0];
+  }
+  return [0, 0, patch + 1];
+}
+
+/**
+ * Tells whether a resolved version satisfies the caret range an override names.
+ *
+ * An override has to prove it landed: a cross-major replacement leaves no
+ * entry on the old major line, so checking the key alone would report a live
+ * security pin as inert. Only the `^x.y.z` form used in `package.json` is
+ * accepted; anything else throws so a new form is handled here first.
+ * @param version - The resolved version from the lockfile.
+ * @param range - The override value, such as `^11.0.9`.
+ * @returns True when the version is inside the range.
+ */
+function satisfiesCaretRange(version: string, range: string): boolean {
+  const minimum = /^\^(\d+)\.(\d+)\.(\d+)$/.exec(range);
+  if (minimum === null) {
+    throw new Error(`Unsupported override range "${range}"`);
+  }
+  const current = version.split('.').map(Number);
+  const floor = [Number(minimum[1]), Number(minimum[2]), Number(minimum[3])];
+  return (
+    compareVersions(current, floor) >= 0 && compareVersions(current, caretUpperBound(floor)) < 0
+  );
+}
 
 /**
  * Reads the package name from a lockfile key such as
@@ -53,24 +110,24 @@ function parseOverrideKey(key: string): OverrideTarget {
 }
 
 /**
- * Tells whether a lockfile entry is one an override would apply to.
+ * Tells whether a lockfile entry proves an override landed.
  * @param target - The parsed override key.
- * @param name - The entry's package name.
- * @param entry - The lockfile entry.
- * @returns True when the names match and, if the key names a major line, the
- * entry's version is on it.
+ * @param range - The version range the override installs.
+ * @param candidate - The entry's package name and lockfile record.
+ * @returns True when the names match and the resolved version is in range.
  */
-function isTargeted(target: OverrideTarget, name: string, entry: LockEntry): boolean {
-  if (name !== target.name) {
+function isTargeted(
+  target: OverrideTarget,
+  range: string,
+  candidate: { readonly name: string; readonly entry: LockEntry },
+): boolean {
+  if (candidate.name !== target.name) {
     return false;
   }
-  if (target.major === undefined) {
-    return true;
+  if (candidate.entry.version === undefined) {
+    throw new Error(`${candidate.name} has no resolved version`);
   }
-  if (entry.version === undefined) {
-    throw new Error(`${name} has no resolved version`);
-  }
-  return Number(entry.version.split('.')[0]) === target.major;
+  return satisfiesCaretRange(candidate.entry.version, range);
 }
 
 /**
@@ -93,13 +150,13 @@ function findInertOverrides(
         throw new TypeError(`Override "${key}" is nested; only version ranges are checked`);
       }
       const target = parseOverrideKey(key);
-      return !installed.some(({ name, entry }) => isTargeted(target, name, entry));
+      return !installed.some((candidate) => isTargeted(target, value, candidate));
     })
     .map(([key]) => key);
 }
 
 describe('package.json overrides', () => {
-  it('applies every override to at least one locked package', () => {
+  it('lands every override on a locked version', () => {
     const packages: Readonly<Record<string, LockEntry>> = lockfile.packages;
     expect(findInertOverrides(manifest.overrides, packages)).toEqual([]);
   });
@@ -117,6 +174,31 @@ describe('findInertOverrides', () => {
       'node_modules/glob/node_modules/brace-expansion': { version: '5.0.12' },
     };
     expect(findInertOverrides({ 'brace-expansion@5': '^5.0.8' }, packages)).toEqual([]);
+  });
+
+  it('accepts a cross-major override once the replacement is in the lock', () => {
+    const packages = { 'node_modules/minimatch': { version: '11.0.9' } };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual([]);
+  });
+
+  it('flags a cross-major override whose replacement did not land', () => {
+    const packages = { 'node_modules/minimatch': { version: '11.0.8' } };
+    expect(findInertOverrides({ 'minimatch@10': '^11.0.9' }, packages)).toEqual(['minimatch@10']);
+  });
+
+  it('flags a caret override that the lockfile is below', () => {
+    const packages = { 'node_modules/katex': { version: '0.16.47' } };
+    expect(findInertOverrides({ katex: '^0.19.1' }, packages)).toEqual(['katex']);
+  });
+
+  it('accepts a zero-major caret override on the same minor line', () => {
+    const packages = { 'node_modules/katex': { version: '0.19.1' } };
+    expect(findInertOverrides({ katex: '^0.19.1' }, packages)).toEqual([]);
+  });
+
+  it('flags a zero-major caret override that crossed the minor line', () => {
+    const packages = { 'node_modules/katex': { version: '0.20.0' } };
+    expect(findInertOverrides({ katex: '^0.19.1' }, packages)).toEqual(['katex']);
   });
 
   it('flags a major-scoped override when no entry is on that line', () => {

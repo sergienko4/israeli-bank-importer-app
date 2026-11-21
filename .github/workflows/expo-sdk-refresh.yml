@@ -1,0 +1,171 @@
+name: Expo SDK patch refresh
+
+# Why this exists
+#
+# `dependabot.yml` deliberately holds the whole Expo family out of version
+# updates: an expo patch can move a native pin (57.0.17 moved react-native), and
+# Dependabot resolves packages to npm `latest` rather than to the versions the
+# installed SDK ships. The cost of that decision is a blind spot - a security
+# fix that lands only in the next SDK patch (expo 57.0.33 replaced glob 13 with
+# 14 and dropped zod 3) has no automated path and waits for a human to notice.
+#
+# This workflow closes that gap. It runs the same `npx expo install --fix` a
+# maintainer would, proves the result with the same gates CI runs, and opens a
+# pull request for review.
+#
+# It cannot rely on the `pull_request` CI gate: GitHub does not start workflows
+# for a pull request created with GITHUB_TOKEN. Every gate therefore runs in
+# this job before the pull request opens, and a human merges it after review.
+# Adding a PAT would remove that manual step; until then this is the trade.
+#
+# A new SDK *major* is still a deliberate manual upgrade. This only follows the
+# patch line of the installed SDK.
+
+on:
+  schedule:
+    # Mondays, 05:17 UTC: after Dependabot's Monday run, before the docs link
+    # check at 06:00.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: expo-sdk-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Refresh Expo SDK 57 pins
+    # A fork has no write access and no reason to open this pull request.
+    if: github.repository == 'sergienko4/israeli-bank-importer-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # Matches the `engines.node` floor declared in package.json.
+          node-version: '22'
+          cache: npm
+      - name: Pin the public registry
+        run: echo 'NPM_CONFIG_REGISTRY=https://registry.npmjs.org/' >> "$GITHUB_ENV"
+      - name: Install the lockfile
+        run: npm ci
+      # The exit code alone is not enough: a network failure also exits
+      # non-zero. Only output that names outdated packages counts as drift;
+      # anything else fails the job instead of committing a half-resolved tree.
+      - name: Check the SDK patch line
+        id: check
+        run: |
+          set -uo pipefail
+          output="$(npx --no-install expo install --check 2>&1)" && status=0 || status=$?
+          printf '%s\n' "$output"
+          if [ "$status" -eq 0 ]; then
+            echo 'drift=false' >> "$GITHUB_OUTPUT"
+            echo 'The SDK patch line is current; nothing to refresh.'
+          elif printf '%s' "$output" | grep -q 'should be updated'; then
+            echo 'drift=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::error::expo install --check failed for a reason other than SDK drift.'
+            exit 1
+          fi
+      - name: Apply the SDK pins
+        if: steps.check.outputs.drift == 'true'
+        run: npx --no-install expo install --fix
+      - name: Format the refreshed manifests
+        if: steps.check.outputs.drift == 'true'
+        run: npm run format
+      # Everything CI's `build` job would run, minus what needs secrets or EAS.
+      # A pull request from this workflow gets no required checks, so this is
+      # the only proof attached to it.
+      - name: Verify the refresh
+        if: steps.check.outputs.drift == 'true'
+        run: |
+          set -euo pipefail
+          npm run format:check
+          npm run lint
+          npm run lint:md
+          npm run typecheck
+          npm test -- --runInBand
+          npm run export
+          npm run check:bundle
+          npm run check:manifest
+          npm run check:release
+          EXPO_OFFLINE=1 npx --no-install expo install --check
+      - name: Refuse a second refresh pull request
+        id: open
+        if: steps.check.outputs.drift == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --state open --json number,title \
+            --jq '.[] | select(.title | startswith("chore(deps): refresh Expo SDK 57 patch line")) | .number' \
+            | head -n 1)"
+          if [ -n "$existing" ]; then
+            echo 'found=true' >> "$GITHUB_OUTPUT"
+            echo "Pull request #$existing is already open; leaving it to review."
+          else
+            echo 'found=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Open the refresh pull request
+        if: steps.check.outputs.drift == 'true' && steps.open.outputs.found == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="chore/expo-sdk-patch-${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch -c "$branch"
+          git add package.json package-lock.json
+          # `--fix` occasionally resolves to the versions already installed
+          # (for example when the registry rolled a patch back). A drift report
+          # with no manifest change is a no-op, not a failure.
+          if git diff --cached --quiet; then
+            echo 'No manifest change after the fix; nothing to open.'
+            exit 0
+          fi
+          unexpected="$(git status --porcelain | grep -vE '(package\.json|package-lock\.json)$' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::The refresh changed files it does not own:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+          git commit -m 'chore(deps): refresh Expo SDK 57 patch line'
+          # checkout runs with persist-credentials: false, so authenticate the
+          # push explicitly instead of embedding the token in the remote.
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title 'chore(deps): refresh Expo SDK 57 patch line' \
+            --label dependencies \
+            --label npm \
+            --body "$(cat <<'EOF'
+          Automated refresh of the Expo SDK 57 patch line.
+
+          Why: the Expo family is excluded from Dependabot version updates
+          because an expo patch can move a native pin. A security fix that
+          ships only in the next SDK patch therefore had no automated path.
+          This pull request runs the same `npx expo install --fix` a
+          maintainer would.
+
+          Verification: format, lint, markdown lint, typecheck, the full Jest
+          suite, the iOS + Android export, the bundle/manifest/release checks,
+          and an offline `expo install --check` all ran in the workflow that
+          opened this pull request.
+
+          Note: GitHub does not start CI for a pull request created with
+          GITHUB_TOKEN, so the required checks will not run here. Review the
+          diff and the workflow run, then merge.
+          EOF
+          )"

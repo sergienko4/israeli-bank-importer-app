@@ -18,6 +18,14 @@ Two things from that upgrade are easy to trip over:
   `.npmrc` pins. A corporate mirror that lags the public registry reports the
   newest published versions as unpublished and blocks `expo install --fix`.
 
+Two overrides in `package.json` are deliberate security pins, not leftovers:
+`minimatch@10` resolves to 11.0.9 because `@expo/fingerprint` and
+`eslint-plugin-sonarjs` still ask for `^10.2.6`, and `katex` resolves to 0.19.1
+because `micromark-extension-math` still asks for `^0.16.0` — both below the
+fixed release. Delete an override only when every parent widens past it; then
+re-run `npm audit`, `npm run lint` (sonarjs uses minimatch), and
+`npm run lint:md` (markdownlint loads katex).
+
 ## Code quality gates
 
 A strict, type-aware ESLint config (`eslint.config.mjs`) plus Prettier and Husky
@@ -73,6 +81,13 @@ and checks out the commit it returns.
 Every workflow that touches EAS starts with the same `EXPO_TOKEN` guard step, so
 a fork without an Expo account gets a green skip instead of a red run. Keep that
 shape when adding one.
+
+`expo-sdk-refresh.yml` owns the Expo SDK 57 patch line. It runs weekly, applies
+`npx expo install --fix`, proves the result with the same gates as CI, and opens
+a pull request. It uses `GITHUB_TOKEN`, so that pull request starts no workflows:
+the gate runs inside the job and a human merges it. Do not hand this line back to
+Dependabot — an expo patch can move a native pin, and Dependabot resolves to npm
+`latest` instead of the SDK's `bundledNativeModules`.
 
 Releases are distributed as the two APKs attached to the GitHub Release. Nothing
 here builds or submits a store binary, and nothing should be added that does

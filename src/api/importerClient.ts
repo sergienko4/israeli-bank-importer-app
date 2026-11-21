@@ -6,7 +6,7 @@
  */
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
-import { REQUEST_TIMEOUT_MS, RequestTimeoutError } from '../lib/requestTimeout';
+import { REQUEST_TIMEOUT_MS, RequestTimeoutError, withRequestTimeout } from '../lib/requestTimeout';
 import {
   CONFIG_BODY,
   MANIFEST_BODY,
@@ -106,8 +106,12 @@ async function reachable(send: (signal: AbortSignal) => Promise<Response>): Prom
     if (timedOut.current) {
       // Aborting can reject the request before the deadline's rejection is
       // observed. The flag keeps that race from masquerading as a transport
-      // failure, and the await makes sure no write is left in flight.
-      await request.catch(() => undefined);
+      // failure. Wait briefly for the abort to settle, but never on a
+      // transport that ignores it: that would hold the caller past its budget.
+      await withRequestTimeout(
+        request.catch(() => undefined),
+        1_000,
+      ).catch(() => undefined);
       throw new RequestTimeoutError();
     }
     throw new Error(failureMessage('unreachable').text);
@@ -296,6 +300,8 @@ async function toFailure(res: Response): Promise<SaveResult> {
 const configWrites = createWriteQueue();
 /** Device-token registration, independent of config saves. */
 const deviceWrites = createWriteQueue();
+/** OTP delivery settings, a separate resource from the config document. */
+const otpSettingsWrites = createWriteQueue();
 /**
  * Persists a full config via `PUT /api/config`, surfacing validation errors.
  * @param session - The active session.
@@ -401,9 +407,7 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * @returns Success or a failure carrying the importer's error.
  */
 export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
-  // The channel is an importer setting and may live in the same document the
-  // config PUT replaces, so it shares that document's lane.
-  return serializeWrite(configWrites, async () => {
+  return serializeWrite(otpSettingsWrites, async () => {
     const res = await authed(session, '/api/otp/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },

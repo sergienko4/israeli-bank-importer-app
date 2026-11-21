@@ -53,8 +53,8 @@
     "lint-staged": "^17.6.1",
     "markdownlint-cli2": "0.24.1",
     "prettier": "^3.10.1",
-    "react-test-renderer": "^19.2.3",
     "semver": "^7.8.6",
+    "test-renderer": "1.2.0",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.72.2",
     "yaml": "^2.9.0"

@@ -136,7 +136,7 @@ export function TextControl({
   const [invalid, setInvalid] = useState(false);
   const isNumber = field.kind === 'number';
   const label = field.required ? `${field.label}, required` : field.label;
-  const showError = invalid && !isPrefix(draft);
+  const showError = invalid && (!isPrefix(draft) || !focused);
   useAnnounceOnChange(showError ? NUMBER_ERROR : null);
   // While blurred, the committed value wins, so a parent reset or a list
   // reorder cannot leave another field's text in the input.

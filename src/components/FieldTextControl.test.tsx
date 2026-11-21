@@ -66,6 +66,10 @@ describe('numeric FieldInput', () => {
     expect(screen.queryByText(NUMBER_ERROR)).toBeNull();
     expect(onValidityChange).toHaveBeenLastCalledWith('rate', false);
 
+    await fireEvent(input, 'blur');
+    expect(screen.getByText(NUMBER_ERROR)).toBeTruthy();
+
+    await fireEvent(input, 'focus');
     await fireEvent.changeText(input, '-5');
     expect(onChange).toHaveBeenLastCalledWith(-5);
   });

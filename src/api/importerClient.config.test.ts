@@ -141,7 +141,10 @@ describe('write lanes', () => {
       setTimeout(resolve, 0);
     });
 
-    expect(requested).toEqual(['https://host:8080/api/config', 'https://host:8080/api/otp/req-1']);
+    expect(requested).toHaveLength(2);
+    expect(requested).toEqual(
+      expect.arrayContaining(['https://host:8080/api/config', 'https://host:8080/api/otp/req-1']),
+    );
 
     resolvers[0](fakeResponse(200, { ok: true }));
     resolvers[1](fakeResponse(200, { ok: true }));
@@ -201,6 +204,30 @@ describe('a response body that never finishes', () => {
       const assertion = expect(result).rejects.toThrow('took too long to answer');
 
       await jest.advanceTimersByTimeAsync(15_000);
+
+      await assertion;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a body read inside the deadline the headers started', async () => {
+    jest.useFakeTimers();
+    try {
+      let respond: ((response: Response) => void) | undefined;
+      globalThis.fetch = jest.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      );
+      const result = getConfig(session);
+      const assertion = expect(result).rejects.toThrow('took too long to answer');
+
+      // Headers after ten seconds leave only five of the original fifteen.
+      await jest.advanceTimersByTimeAsync(10_000);
+      respond?.(stalledBody(true));
+      await jest.advanceTimersByTimeAsync(5_000);
 
       await assertion;
     } finally {

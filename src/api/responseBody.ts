@@ -6,7 +6,7 @@
  * through its own deadline. Kept out of the client so the client stays within
  * the project's file-size limit.
  */
-import { isRequestTimeout, withRequestTimeout } from '../lib/requestTimeout';
+import { isRequestTimeout, REQUEST_TIMEOUT_MS, withRequestTimeout } from '../lib/requestTimeout';
 
 /** The shape `toFailure` reads from a non-ok response. */
 export interface FailureBody {
@@ -14,14 +14,29 @@ export interface FailureBody {
   errors?: string[];
 }
 
+/** The absolute deadline of each response, set when its headers arrive. */
+const deadlines = new WeakMap<Response, number>();
+
+/**
+ * Records the deadline a response's body must finish by.
+ * @param res - The response whose headers just arrived.
+ * @param deadline - The absolute deadline in epoch ms.
+ */
+export function markDeadline(res: Response, deadline: number): void {
+  deadlines.set(res, deadline);
+}
+
 /**
  * Reads a response body inside the request deadline.
+ * @param res - The response being read.
  * @param read - Consumes the response body.
  * @returns The parsed value.
  * @throws RequestTimeoutError when the body never finishes.
  */
-export async function readWithinDeadline<T>(read: () => Promise<T>): Promise<T> {
-  return withRequestTimeout(read());
+export async function readWithinDeadline<T>(res: Response, read: () => Promise<T>): Promise<T> {
+  const deadline = deadlines.get(res) ?? Date.now() + REQUEST_TIMEOUT_MS;
+  const remaining = Math.max(1, deadline - Date.now());
+  return withRequestTimeout(read(), remaining);
 }
 
 /**
@@ -32,7 +47,7 @@ export async function readWithinDeadline<T>(read: () => Promise<T>): Promise<T> 
  */
 export async function readJsonOrEmpty(res: Response): Promise<FailureBody> {
   try {
-    return (await readWithinDeadline(() => res.json())) as FailureBody;
+    return (await readWithinDeadline(res, () => res.json())) as FailureBody;
   } catch (error) {
     if (isRequestTimeout(error)) {
       throw error;
@@ -48,7 +63,7 @@ export async function readJsonOrEmpty(res: Response): Promise<FailureBody> {
  */
 export async function readJsonOrUndefined(res: Response): Promise<unknown> {
   try {
-    return await readWithinDeadline(() => res.json());
+    return await readWithinDeadline(res, () => res.json());
   } catch (error) {
     if (isRequestTimeout(error)) {
       throw error;

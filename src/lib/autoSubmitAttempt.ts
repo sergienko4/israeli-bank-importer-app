@@ -41,8 +41,6 @@ export interface AutoSubmitCheck {
   readonly token: number;
   /** Reads the current opt-in. */
   readonly readPreference: () => Promise<boolean>;
-  /** Reports whether the prompt is still the one on screen. */
-  readonly isStillWanted: () => boolean;
   /** Sends the code. */
   readonly send: (code: string) => Promise<void>;
   /** The armed code. */
@@ -55,13 +53,10 @@ export interface AutoSubmitCheck {
  * @returns True when the code was sent.
  */
 export async function submitIfCurrent(check: AutoSubmitCheck): Promise<boolean> {
-  if (!check.isStillWanted()) {
-    return false;
-  }
   // A read that fails cannot confirm the user still wants automatic sending,
   // so it counts as opted out rather than surfacing an unhandled rejection.
   const enabled = await check.readPreference().catch(() => false);
-  if (!enabled || !check.attempt.isCurrent(check.token) || !check.isStillWanted()) {
+  if (!enabled || !check.attempt.isCurrent(check.token)) {
     return false;
   }
   await check.send(check.code);

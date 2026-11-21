@@ -1,5 +1,6 @@
 import type { PendingOtpRequest } from '../api/otp';
 import {
+  keepThroughGap,
   OTP_DISMISS_SNOOZE_MS,
   pruneSnoozed,
   pruneUsed,
@@ -59,8 +60,8 @@ describe('snoozeUntil', () => {
     expect(snoozeUntil(now + 30_000, now)).toBe(now + 20_000);
   });
 
-  it('does not hide a request that is already near its deadline', () => {
-    expect(snoozeUntil(now + 5_000, now)).toBe(now);
+  it('stays quiet to the deadline when it is already near', () => {
+    expect(snoozeUntil(now + 5_000, now)).toBe(now + 5_000);
   });
 
   it('never returns before now', () => {
@@ -88,6 +89,40 @@ describe('pruneSnoozed', () => {
 
   it('returns an empty map once every snooze has elapsed', () => {
     expect(pruneSnoozed(new Map([['a', now - 1]]), now)).toEqual(new Map());
+  });
+});
+
+describe('keepThroughGap', () => {
+  const now = 10_000;
+
+  it('keeps a live request through one missing snapshot', () => {
+    expect(
+      keepThroughGap({ current: req('a', 20_000), requests: [], next: null, misses: 0, now }),
+    ).toBe(true);
+  });
+
+  it('drops it on the second consecutive miss', () => {
+    expect(
+      keepThroughGap({ current: req('a', 20_000), requests: [], next: null, misses: 1, now }),
+    ).toBe(false);
+  });
+
+  it('drops an expired request immediately', () => {
+    expect(
+      keepThroughGap({ current: req('a', now), requests: [], next: null, misses: 0, now }),
+    ).toBe(false);
+  });
+
+  it('drops it as soon as the snapshot still lists it', () => {
+    expect(
+      keepThroughGap({
+        current: req('a', 20_000),
+        requests: [req('a', 20_000)],
+        next: null,
+        misses: 0,
+        now,
+      }),
+    ).toBe(false);
   });
 });
 

@@ -25,7 +25,7 @@ import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
 import { refreshOtpChannel } from '../lib/otpChannelSync';
 import { TASK_BUDGET_MS } from '../lib/otpDeadline';
 import {
-  OTP_ANSWERED_QUIET_MS,
+  keepThroughGap,
   pruneSnoozed,
   pruneUsed,
   selectPendingOtp,
@@ -132,20 +132,20 @@ function startOtpPolling(
     }
     polling = true;
     const token = ++pollToken;
-    // Keep the next interval behind the actual request: a timeout only stops
-    // the wait, not the transport, and a second poll must not overlap it.
     const work = runPoll(connection, (requests) => {
       if (active && token === pollToken) onRequests(requests);
-    }).finally(() => {
-      polling = false;
     });
     try {
       await withRequestTimeout(work, POLL_TIMEOUT_MS);
     } catch {
       // Invalidate this poll's token so a late snapshot cannot be applied.
+      // The gate is still released: a transport that ignores its abort must
+      // not lock the loop shut for the rest of the session.
       if (token === pollToken) {
         pollToken += 1;
       }
+    } finally {
+      polling = false;
     }
   };
   void poll();
@@ -181,6 +181,44 @@ interface OtpWatcher {
   markAutoSubmitted: (id: string, deadline: number) => void;
 }
 
+/** The refs and setters one poll updates. */
+interface SnapshotTargets {
+  readonly pendingRef: RefObject<PendingOtpRequest | null>;
+  readonly snoozedUntil: RefObject<Map<string, number>>;
+  readonly missingPolls: RefObject<number>;
+  readonly setAutoSubmitted: Dispatch<SetStateAction<ReadonlyMap<string, number>>>;
+  readonly setPending: Dispatch<SetStateAction<PendingOtpRequest | null>>;
+}
+
+/**
+ * Applies one successful poll to the queue.
+ * @param requests - The importer's pending requests.
+ * @param targets - The queue refs and setters.
+ */
+function applySnapshot(requests: PendingOtpRequest[], targets: SnapshotTargets): void {
+  const { pendingRef, snoozedUntil, missingPolls, setAutoSubmitted, setPending } = targets;
+  handleRequests(requests);
+  snoozedUntil.current = pruneSnoozed(snoozedUntil.current);
+  setAutoSubmitted((current) => {
+    const pruned = pruneUsed(current);
+    return pruned.size === current.size ? current : pruned;
+  });
+  const next = selectPendingOtp(requests, snoozedUntil.current);
+  const keep = keepThroughGap({
+    current: pendingRef.current,
+    requests,
+    next,
+    misses: missingPolls.current,
+  });
+  if (keep) {
+    missingPolls.current += 1;
+    return;
+  }
+  missingPolls.current = 0;
+  pendingRef.current = next;
+  setPending(next);
+}
+
 /**
  * Owns the pending request, its snoozes, and the one-shot auto-submit markers.
  * @returns The queue state and the poll applier.
@@ -190,17 +228,16 @@ function useOtpQueue(): OtpQueue {
   const [autoSubmitted, setAutoSubmitted] = useState<ReadonlyMap<string, number>>(new Map());
   const pendingRef = useRef<PendingOtpRequest | null>(null);
   const snoozedUntil = useRef<Map<string, number>>(new Map());
+  const missingPolls = useRef(0);
 
   const applyRequests = useCallback((requests: PendingOtpRequest[]) => {
-    handleRequests(requests);
-    snoozedUntil.current = pruneSnoozed(snoozedUntil.current);
-    setAutoSubmitted((current) => {
-      const pruned = pruneUsed(current);
-      return pruned.size === current.size ? current : pruned;
+    applySnapshot(requests, {
+      pendingRef,
+      snoozedUntil,
+      missingPolls,
+      setAutoSubmitted,
+      setPending,
     });
-    const next = selectPendingOtp(requests, snoozedUntil.current);
-    pendingRef.current = next;
-    setPending(next);
   }, []);
 
   const markAutoSubmitted = useCallback((id: string, deadline: number) => {
@@ -282,7 +319,9 @@ function useOtpDismissals(
 
   const clearAnswered = useCallback(
     (requestId: string, deadline: number) => {
-      snoozedUntil.current.set(requestId, Math.min(deadline, Date.now() + OTP_ANSWERED_QUIET_MS));
+      // Suppress until the request itself ends: a fixed quiet period can expire
+      // while a lagging importer still lists it, which re-prompts the answer.
+      snoozedUntil.current.set(requestId, deadline);
       if (pendingRef.current?.id === requestId) {
         pendingRef.current = null;
         setPending(null);

@@ -22,7 +22,7 @@
  * The countdown is plain text rather than an animation, so it needs no
  * reduced-motion branch: there is no motion to reduce.
  */
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
 import { type Session, submitOtp } from '../api/importerClient';
@@ -189,18 +189,6 @@ export function OtpPrompt({
   // The parent owns the one-shot guard so it survives this prompt's per-request
   // remount; the guard hook keeps the same-tick check and the attempt token.
   const autoGuard = useAutoSubmitGuard(autoSubmitUsed);
-  const visibleRef = useRef(visible);
-
-  // The shell remounts this prompt per request, so there is no stale code to
-  // clear here; opening the sheet only has to put the cursor in the field.
-  // `onShow` is the reliable moment: the effect below runs before the modal's
-  // contents have mounted on a recovered request.
-  useLayoutEffect(() => {
-    visibleRef.current = visible;
-    if (visible) codeRef.current?.focus();
-    else autoGuard.invalidate();
-  }, [visible, autoGuard]);
-
   // The countdown belongs to this prompt; the one-shot guard lives in the
   // parent so it cannot be reset by a remount.
   const countdown = useAutoSubmitCountdown({
@@ -215,12 +203,20 @@ export function OtpPrompt({
         attempt,
         token: attempt.token,
         readPreference: loadOtpAutoSubmit,
-        isStillWanted: () => visibleRef.current,
         send: submit,
         code: value,
       });
     },
   });
+
+  // A hidden prompt must not keep an armed countdown: it would resume and
+  // send the old code when the same request reappears.
+  useEffect(() => {
+    if (!visible) {
+      autoGuard.invalidate();
+      countdown.cancel();
+    }
+  }, [visible, autoGuard, countdown]);
 
   const handleChange = (text: string): void => {
     autoGuard.invalidate();

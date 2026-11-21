@@ -35,7 +35,9 @@ export const OTP_ANSWERED_QUIET_MS = 5_000;
 export function snoozeUntil(deadline: number, now: number = Date.now()): number {
   const remaining = deadline - now;
   if (remaining <= OTP_DISMISS_RESUME_MARGIN_MS) {
-    return now;
+    // Too close to the deadline for a full snooze, but still quiet for the
+    // rest of the request instead of reappearing on the very next poll.
+    return Math.max(now, Math.min(deadline, now + OTP_ANSWERED_QUIET_MS));
   }
   return now + Math.min(OTP_DISMISS_SNOOZE_MS, remaining - OTP_DISMISS_RESUME_MARGIN_MS);
 }
@@ -57,6 +59,41 @@ export function selectPendingOtp(
       (request) => request.deadline >= now && (snoozedUntil.get(request.id) ?? 0) <= now,
     ) ?? null
   );
+}
+
+/** What the gap check needs from one poll. */
+export interface GapCheck {
+  /** The request currently shown, or null. */
+  readonly current: PendingOtpRequest | null;
+  /** The latest pending requests. */
+  readonly requests: readonly PendingOtpRequest[];
+  /** The request the latest snapshot selected, or null. */
+  readonly next: PendingOtpRequest | null;
+  /** How many consecutive snapshots have omitted `current`. */
+  readonly misses: number;
+  /** Current time in epoch ms (defaults to Date.now()). */
+  readonly now?: number;
+}
+
+/**
+ * Reports whether the visible request should survive one missing snapshot.
+ *
+ * A single empty or incomplete poll is not proof that the importer ended the
+ * request; dropping the sheet there loses the user's keyboard mid-code.
+ * @param check - The current, latest, selected, and miss-count values.
+ * @returns True when `current` should stay visible for this snapshot.
+ */
+export function keepThroughGap({
+  current,
+  requests,
+  next,
+  misses,
+  now = Date.now(),
+}: GapCheck): boolean {
+  if (current === null || next !== null || misses >= 1 || current.deadline <= now) {
+    return false;
+  }
+  return !requests.some((request) => request.id === current.id);
 }
 
 /**

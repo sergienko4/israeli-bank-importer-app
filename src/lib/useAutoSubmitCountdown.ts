@@ -4,7 +4,7 @@
  * The armed value carries its own request id, so a new request cannot inherit
  * the previous one's countdown.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** How long the user has to stop an automatic submission. */
 export const AUTO_SUBMIT_DELAY_SECONDS = 3;
@@ -68,15 +68,16 @@ export function useAutoSubmitCountdown({
     };
   }, [active, secondsLeft]);
 
-  return {
-    pending: active !== null,
-    secondsLeft,
-    arm: (code: string): void => {
+  const arm = useCallback(
+    (code: string): void => {
       setSecondsLeft(AUTO_SUBMIT_DELAY_SECONDS);
       setArmed({ requestId, code });
     },
-    cancel: (): void => {
-      setArmed(null);
-    },
-  };
+    [requestId],
+  );
+  const cancel = useCallback((): void => {
+    setArmed(null);
+  }, []);
+
+  return { pending: active !== null, secondsLeft, arm, cancel };
 }

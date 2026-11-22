@@ -7,7 +7,7 @@
  */
 import * as SecureStore from 'expo-secure-store';
 
-import { loadOtpChannelIsApp, saveOtpChannel } from './otpChannelStore';
+import { loadOtpChannelIsApp, saveOtpChannel, StaleChannelOwnerError } from './otpChannelStore';
 
 jest.mock('expo-secure-store');
 
@@ -74,5 +74,24 @@ describe('saveOtpChannel', () => {
     mocked.setItemAsync.mockRejectedValue(new Error('keystore locked'));
 
     await expect(saveOtpChannel('app')).rejects.toThrow('keystore locked');
+  });
+
+  it('rejects when the owner changed before the queued write', async () => {
+    wireSecureStore();
+
+    await expect(saveOtpChannel('app', () => false)).rejects.toBeInstanceOf(StaleChannelOwnerError);
+    expect(mocked.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it('confirms the importer answer before writing it', async () => {
+    wireSecureStore();
+    const confirmed = jest.fn();
+
+    await saveOtpChannel('app', () => true, confirmed);
+
+    expect(confirmed).toHaveBeenCalledTimes(1);
+    expect(confirmed.mock.invocationCallOrder[0]).toBeLessThan(
+      mocked.setItemAsync.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
+    );
   });
 });

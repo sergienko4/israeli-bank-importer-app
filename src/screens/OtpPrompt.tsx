@@ -51,7 +51,10 @@ const AUTO_SUBMIT_DELAY_SECONDS = 3;
  */
 async function sendCode(session: Session, requestId: string, code: string): Promise<string | null> {
   try {
-    const result = await submitOtp(session, requestId, code);
+    const result = await submitOtp({ session, id: requestId, code });
+    if (result === null) {
+      return CODE_REJECTED;
+    }
     return result.ok ? null : reportedOrFallback(result.error, CODE_REJECTED);
   } catch (error: unknown) {
     const reported = error instanceof Error ? error.message : undefined;

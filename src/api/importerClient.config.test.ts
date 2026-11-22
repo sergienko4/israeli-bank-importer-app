@@ -152,7 +152,7 @@ describe('write lanes', () => {
     });
 
     const save = saveConfig(session, { version: 1 });
-    const otp = submitOtp(session, 'req-1', '1234');
+    const otp = submitOtp({ session, id: 'req-1', code: '1234' });
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 0);
     });

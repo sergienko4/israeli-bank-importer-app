@@ -7,15 +7,12 @@
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import { REQUEST_TIMEOUT_MS, RequestTimeoutError, withRequestTimeout } from '../lib/requestTimeout';
-import {
-  CONFIG_BODY,
-  MANIFEST_BODY,
-  OTP_SETTINGS,
-  PENDING_OTP_BODY,
-  STATUS_BODY,
-} from './generated';
+import { type AuthedOptions, SubmissionCancelledError } from './authedTypes';
+import { CONFIG_BODY, MANIFEST_BODY, OTP_SETTINGS, STATUS_BODY } from './generated';
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
+import { otpSubmission, type OtpSubmissionRequest } from './otpPayload';
+import { pendingFrom } from './otpPending';
 import { parsedBody } from './parseResponse';
 import {
   markDeadline,
@@ -23,9 +20,11 @@ import {
   readJsonOrUndefined,
   readWithinDeadline,
 } from './responseBody';
+import type { Session } from './session';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
 import { createWriteQueue, serializeWrite, withOtpLane } from './writeQueue';
+export type { Session } from './session';
 
 const HTTPS = 'https://';
 
@@ -150,12 +149,6 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
-/** An authenticated importer session (base URL + bearer token). */
-export interface Session {
-  baseUrl: string;
-  token: string;
-}
-
 /** Produces a fresh session (e.g. by re-authenticating), or null when it cannot. */
 export type ReauthHandler = () => Promise<Session | null>;
 
@@ -220,27 +213,30 @@ async function tryReauth(): Promise<Session | null> {
  * value that can be sent twice, such as a string.
  * @param session - The active session.
  * @param path - The API path (e.g. `/api/config`).
- * @param init - Optional fetch init (method, body, headers).
+ * @param options - Optional fetch init and before-send gate.
  * @returns The fetch Response.
  */
-async function authed(
+async function authedRequest(
   session: Session,
   path: string,
-  init: Omit<RequestInit, 'signal'> = {},
+  options: AuthedOptions = {},
 ): Promise<Response> {
+  const { init = {}, beforeSend } = options;
   const send = async (active: Session): Promise<Response> => {
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
-    return reachable((signal) =>
-      fetch(url, {
-        ...init,
-        signal,
-        headers: {
-          ...(init.headers as Record<string, string> | undefined),
-          authorization: `Bearer ${active.token}`,
-        },
-      }),
-    );
+    const start = (): Promise<Response> =>
+      reachable((signal) =>
+        fetch(url, {
+          ...init,
+          signal,
+          headers: {
+            ...(init.headers as Record<string, string> | undefined),
+            authorization: `Bearer ${active.token}`,
+          },
+        }),
+      );
+    return beforeSend ? beforeSend(start) : start();
   };
   const current = sessionGuard ? await sessionGuard(session).catch(() => session) : session;
   const res = await send(current);
@@ -258,7 +254,7 @@ async function authed(
  * @throws Error when the request fails.
  */
 export async function getManifest(session: Session): Promise<Manifest> {
-  const res = await authed(session, '/api/manifest');
+  const res = await authedRequest(session, '/api/manifest');
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
@@ -272,7 +268,7 @@ export async function getManifest(session: Session): Promise<Manifest> {
  * @throws Error when unauthorized or the request fails.
  */
 export async function getConfig(session: Session): Promise<ConfigObject> {
-  const res = await authed(session, '/api/config');
+  const res = await authedRequest(session, '/api/config');
   if (res.status === 401) {
     throw new Error(failureMessage('signed-out').text);
   }
@@ -311,10 +307,12 @@ const otpSettingsWrites = createWriteQueue();
  */
 export function saveConfig(session: Session, config: ConfigObject): Promise<SaveResult> {
   return serializeWrite(configWrites, async () => {
-    const res = await authed(session, '/api/config', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(config),
+    const res = await authedRequest(session, '/api/config', {
+      init: {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(config),
+      },
     });
     return res.ok ? { ok: true } : toFailure(res);
   });
@@ -328,8 +326,8 @@ export function saveConfig(session: Session, config: ConfigObject): Promise<Save
  */
 export function removeBank(session: Session, name: string): Promise<SaveResult> {
   return serializeWrite(configWrites, async () => {
-    const res = await authed(session, `/api/banks/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
+    const res = await authedRequest(session, `/api/banks/${encodeURIComponent(name)}`, {
+      init: { method: 'DELETE' },
     });
     return res.ok ? { ok: true } : toFailure(res);
   });
@@ -342,7 +340,7 @@ export function removeBank(session: Session, name: string): Promise<SaveResult> 
  * @throws Error when unauthorized or the request fails.
  */
 export async function getStatus(session: Session): Promise<RunEntry[]> {
-  const res = await authed(session, '/api/status');
+  const res = await authedRequest(session, '/api/status');
   if (res.status === 401) {
     throw new Error(failureMessage('signed-out').text);
   }
@@ -361,10 +359,12 @@ export async function getStatus(session: Session): Promise<RunEntry[]> {
  */
 export function registerDevice(session: Session, token: string): Promise<SaveResult> {
   return serializeWrite(deviceWrites, async () => {
-    const res = await authed(session, '/api/devices', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token }),
+    const res = await authedRequest(session, '/api/devices', {
+      init: {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      },
     });
     return res.ok ? { ok: true } : toFailure(res);
   });
@@ -378,10 +378,12 @@ export function registerDevice(session: Session, token: string): Promise<SaveRes
  */
 export function unregisterDevice(session: Session, token: string): Promise<SaveResult> {
   return serializeWrite(deviceWrites, async () => {
-    const res = await authed(session, '/api/devices', {
-      method: 'DELETE',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ token }),
+    const res = await authedRequest(session, '/api/devices', {
+      init: {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      },
     });
     return res.ok ? { ok: true } : toFailure(res);
   });
@@ -394,7 +396,7 @@ export function unregisterDevice(session: Session, token: string): Promise<SaveR
  * @throws Error when the request fails.
  */
 export async function getOtpSettings(session: Session): Promise<OtpSettings> {
-  const res = await authed(session, '/api/otp/settings');
+  const res = await authedRequest(session, '/api/otp/settings');
   if (!res.ok) {
     throw new Error(messageForStatus(res.status));
   }
@@ -409,68 +411,39 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  */
 export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
   return serializeWrite(otpSettingsWrites, async () => {
-    const res = await authed(session, '/api/otp/settings', {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ channel }),
+    const res = await authedRequest(session, '/api/otp/settings', {
+      init: {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ channel }),
+      },
     });
     return res.ok ? { ok: true } : toFailure(res);
   });
 }
 
 /**
- * Reads the answer to `GET /api/otp/pending`.
- * @param res - The importer's response.
- * @returns The pending requests (may be empty); never carries codes.
- * @throws Error when the importer refused or sent something unreadable.
+ * Sends one OTP code, re-checking the caller's gate after every wait.
+ * @param request - The session, request id, code, and before-send gate.
+ * @returns The importer's answer, or null when the gate withdrew it.
  */
-async function pendingFrom(res: Response): Promise<PendingOtpRequest[]> {
-  if (!res.ok) {
-    throw new Error(messageForStatus(res.status));
-  }
-  const pendingBody = await readWithinDeadline(res, () => parsedBody(res, PENDING_OTP_BODY));
-  return pendingBody.requests;
-}
-
-/**
- * Builds the `POST /api/otp/:id` request for a code.
- * @param id - The pending request id.
- * @param code - The OTP code.
- * @returns The path and request options.
- */
-function otpSubmission(id: string, code: string): { path: string; init: RequestInit } {
-  return {
-    path: `/api/otp/${encodeURIComponent(id)}`,
-    init: {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code }),
-    },
-  };
-}
-
-/**
- * Loads the pending OTP requests via `GET /api/otp/pending`.
- * @param session - The active session.
- * @returns The pending requests (may be empty); never carries codes.
- * @throws Error when the request fails.
- */
-export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
-  return pendingFrom(await authed(session, '/api/otp/pending'));
-}
-
-/**
- * Submits an OTP code for a pending request via `POST /api/otp/:id`.
- * @param session - The active session.
- * @param id - The pending request id.
- * @param code - The OTP code entered by the user.
- * @returns Success or a failure carrying the importer's error.
- */
-export function submitOtp(session: Session, id: string, code: string): Promise<SaveResult> {
+export function submitOtp({
+  session,
+  id,
+  code,
+  beforeSend,
+}: OtpSubmissionRequest): Promise<SaveResult | null> {
   return withOtpLane(id, async () => {
     const { path, init } = otpSubmission(id, code);
-    const res = await authed(session, path, init);
-    return res.ok ? { ok: true } : toFailure(res);
+    try {
+      const res = await authedRequest(session, path, { init, beforeSend });
+      return res.ok ? { ok: true } : await toFailure(res);
+    } catch (error) {
+      if (error instanceof SubmissionCancelledError) {
+        return null;
+      }
+      throw error;
+    }
   });
 }
 
@@ -503,6 +476,16 @@ async function unattended<T>(
     },
     read,
   );
+}
+
+/**
+ * Loads the pending OTP requests via `GET /api/otp/pending`.
+ * @param session - The active session.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the request fails.
+ */
+export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
+  return pendingFrom(await authedRequest(session, '/api/otp/pending'));
 }
 
 /**

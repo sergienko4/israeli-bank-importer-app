@@ -7,7 +7,7 @@
  */
 import * as Notifications from 'expo-notifications';
 import type { ReactElement, ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { TabItem } from '../components/ui';
@@ -59,6 +59,16 @@ export function AppShell(): ReactElement {
     };
   }, []);
 
+  // The prompt names the request it is showing. Closing by that id keeps a
+  // stale sheet from dismissing the request that replaced it.
+  const closePrompt = useCallback(
+    (requestId: string): void => {
+      dismiss(requestId);
+      setPromptRequest(null);
+    },
+    [dismiss],
+  );
+
   const select = (key: Tab): void => {
     if (key === active) {
       return;
@@ -101,8 +111,8 @@ export function AppShell(): ReactElement {
           request={promptRequest}
           pairing={promptRequest.pairing}
           visible={pending !== null}
-          onSubmitted={dismiss}
-          onDismiss={dismiss}
+          onSubmitted={closePrompt}
+          onDismiss={closePrompt}
         />
       ) : null}
       <ReconnectBanner />

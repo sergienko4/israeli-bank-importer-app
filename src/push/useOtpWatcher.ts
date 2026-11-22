@@ -19,6 +19,9 @@ import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
 
+/** Stands in for a pairing the user has not dismissed anything under. */
+const NO_DISMISSALS = new Set<string>();
+
 /** A pending request plus the pairing that owned the session which fetched it. */
 export type OwnedPendingOtpRequest = PendingOtpRequest & {
   /** The pairing the polling connection was authenticated under. */
@@ -70,8 +73,8 @@ interface OtpPolling {
   readonly connection: Session | null;
   /** The pairing generation that owns the session. */
   readonly pairing: number;
-  /** Ids the user dismissed this session. */
-  readonly dismissed: Set<string>;
+  /** Ids the user dismissed, per pairing generation. */
+  readonly dismissed: Map<number, Set<string>>;
   /** Receives the next request with its pairing. */
   readonly onPending: (pending: OwnedPendingOtpRequest | null) => void;
 }
@@ -97,7 +100,7 @@ function useOtpPolling({ connection, pairing, dismissed, onPending }: OtpPolling
         return;
       }
       handleRequests(requests);
-      const next = selectPendingOtp(requests, dismissed);
+      const next = selectPendingOtp(requests, dismissed.get(pairing) ?? NO_DISMISSALS);
       onPending(next === null ? null : { ...next, pairing });
     });
     void poll();
@@ -120,22 +123,27 @@ function useOtpPolling({ connection, pairing, dismissed, onPending }: OtpPolling
  */
 export function useOtpWatcher(): {
   pending: OwnedPendingOtpRequest | null;
-  dismiss: () => void;
+  dismiss: (requestId: string) => void;
 } {
   const { connection, pairing } = useAuth();
   const [pending, setPending] = useState<OwnedPendingOtpRequest | null>(null);
-  const dismissed = useRef<Set<string>>(new Set());
+  // Dismissals belong to the pairing that showed the request: a later pairing
+  // may reuse an id, and the old session's refusal must not hide it.
+  const dismissed = useRef<Map<number, Set<string>>>(new Map());
 
   useOtpPolling({ connection, pairing, dismissed: dismissed.current, onPending: setPending });
 
-  const dismiss = useCallback(() => {
-    setPending((current) => {
-      if (current) {
-        dismissed.current.add(current.id);
-      }
-      return null;
-    });
-  }, []);
+  const dismiss = useCallback(
+    (requestId: string) => {
+      const dismissedForPairing = dismissed.current.get(pairing) ?? new Set<string>();
+      dismissed.current.set(pairing, dismissedForPairing);
+      dismissedForPairing.add(requestId);
+      // Suppress the request the prompt showed, not whichever poll landed
+      // since. A newer pending request must stay pending.
+      setPending((current) => (current?.id === requestId ? null : current));
+    },
+    [pairing],
+  );
 
   return { pending, dismiss };
 }

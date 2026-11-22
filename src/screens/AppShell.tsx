@@ -10,10 +10,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import type { PendingOtpRequest } from '../api/otp';
 import type { TabItem } from '../components/ui';
 import { ScreenSwitch, TabBar } from '../components/ui';
-import { useOtpWatcher } from '../push/useOtpWatcher';
+import { type OwnedPendingOtpRequest, useOtpWatcher } from '../push/useOtpWatcher';
 import { useTheme } from '../theme/ThemeContext';
 import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
@@ -43,7 +42,10 @@ export function AppShell(): ReactElement {
   const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
-  const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
+  const [lastPending, setLastPending] = useState<OwnedPendingOtpRequest | null>(null);
+  // Automatic attempts belong to a request, not to the prompt that shows it.
+  // The shell lives for one pairing, so these entries never outlive their pair.
+  const [usedAutoSubmits, setUsedAutoSubmits] = useState<ReadonlySet<string>>(new Set());
   const prevIndex = useRef(0);
 
   useEffect(() => {
@@ -76,9 +78,27 @@ export function AppShell(): ReactElement {
 
   useEffect(() => {
     if (pending) {
-      setPromptRequest(pending);
+      setLastPending(pending);
     }
   }, [pending]);
+
+  // The prompt always shows the request the watcher currently has pending. The
+  // last one is kept only so the sheet can animate closed after it goes null.
+  const shownRequest = pending ?? lastPending;
+  const shownKey = shownRequest ? `${String(shownRequest.pairing)}:${shownRequest.id}` : null;
+  const markAutoSubmitUsed = (): void => {
+    if (shownKey === null) {
+      return;
+    }
+    setUsedAutoSubmits((current) => {
+      if (current.has(shownKey)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(shownKey);
+      return next;
+    });
+  };
 
   let content: ReactNode;
   if (active === 'config') {
@@ -97,10 +117,14 @@ export function AppShell(): ReactElement {
         {content}
       </ScreenSwitch>
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
-      {promptRequest ? (
+      {shownRequest ? (
         <OtpPrompt
-          request={promptRequest}
+          key={shownRequest.pairing}
+          request={shownRequest}
+          pairing={shownRequest.pairing}
           visible={pending !== null}
+          autoSubmitUsed={shownKey !== null && usedAutoSubmits.has(shownKey)}
+          onAutoSubmitUsed={markAutoSubmitUsed}
           onSubmitted={dismiss}
           onDismiss={dismiss}
         />

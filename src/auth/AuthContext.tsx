@@ -35,14 +35,20 @@ import {
   toSession,
 } from './appSession';
 import { type Connection, loadConnection, migrateLegacySecrets } from './connectionStore';
+import { currentPairing } from './pairingGeneration';
 
 /** Lifecycle of the app's connection to an importer. */
 export type ConnectionStatus = 'loading' | 'connected' | 'disconnected';
+
+/** A stored connection plus the pairing generation that owns it. */
+type OwnedConnection = Connection & { readonly pairing: number };
 
 /** Connection state + actions exposed to the tree. */
 export interface AuthState {
   status: ConnectionStatus;
   connection: Session | null;
+  /** The pairing generation that owns the current connection. */
+  pairing: number;
   /** True when the session could not be renewed and the user must act. */
   sessionExpired: boolean;
   /**
@@ -103,7 +109,7 @@ async function cleanUpLegacySecrets(): Promise<void> {
  */
 export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): ReactElement {
   const [status, setStatus] = useState<ConnectionStatus>('loading');
-  const [connection, setConnection] = useState<Connection | null>(null);
+  const [connection, setConnection] = useState<OwnedConnection | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [endedReason, setEndedReason] = useState<string | null>(null);
   const inFlight = useRef<Promise<Session | null> | null>(null);
@@ -112,7 +118,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     cleanUpLegacySecrets()
       .then(loadConnection)
       .then((saved) => {
-        setConnection(saved);
+        setConnection(saved ? { ...saved, pairing: currentPairing() } : null);
         setStatus(saved ? 'connected' : 'disconnected');
       })
       .catch(() => {
@@ -140,7 +146,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
       expiresAt: tokens.expiresAt,
     };
     await adoptConnection(next);
-    setConnection(next);
+    setConnection({ ...next, pairing: currentPairing() });
     setSessionExpired(false);
     setEndedReason(null);
     setStatus('connected');
@@ -153,7 +159,12 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     }
     const outcome = await refreshConnection();
     if (outcome.status === 'refreshed') {
-      setConnection(outcome.connection);
+      // A sign-in can land while the biometric prompt is up. Its pairing is
+      // the only one a renewed connection may publish.
+      if (outcome.pairing !== currentPairing()) {
+        return null;
+      }
+      setConnection({ ...outcome.connection, pairing: outcome.pairing });
       setSessionExpired(false);
       return toSession(outcome.connection);
     }
@@ -199,13 +210,14 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     () => ({
       status,
       connection: session,
+      pairing: connection?.pairing ?? currentPairing(),
       sessionExpired,
       endedReason,
       connect,
       reauthenticate,
       disconnect,
     }),
-    [status, session, sessionExpired, endedReason, connect, reauthenticate, disconnect],
+    [status, session, connection, sessionExpired, endedReason, connect, reauthenticate, disconnect],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

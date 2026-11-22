@@ -19,6 +19,15 @@ import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
 
+/** Stands in for a pairing the user has not dismissed anything under. */
+const NO_DISMISSALS = new Set<string>();
+
+/** A pending request plus the pairing that owned the session which fetched it. */
+export type OwnedPendingOtpRequest = PendingOtpRequest & {
+  /** The pairing the polling connection was authenticated under. */
+  readonly pairing: number;
+};
+
 /**
  * Builds the poll that reads the importer's outstanding requests.
  *
@@ -58,18 +67,26 @@ function handleRequests(requests: PendingOtpRequest[]): void {
   }
 }
 
-/**
- * Provides the next pending OTP request and a way to dismiss the current one.
- * @returns The pending request (or null) and a dismiss callback.
- */
-export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: () => void } {
-  const { connection } = useAuth();
-  const [pending, setPending] = useState<PendingOtpRequest | null>(null);
-  const dismissed = useRef<Set<string>>(new Set());
+/** What the polling effect needs from the watcher. */
+interface OtpPolling {
+  /** The active importer session. */
+  readonly connection: Session | null;
+  /** The pairing generation that owns the session. */
+  readonly pairing: number;
+  /** Ids the user dismissed, per pairing generation. */
+  readonly dismissed: Map<number, Set<string>>;
+  /** Receives the next request with its pairing. */
+  readonly onPending: (pending: OwnedPendingOtpRequest | null) => void;
+}
 
+/**
+ * Polls for pending OTP requests while a connection is present.
+ * @param polling - The session, its pairing, dismissed ids and sink.
+ */
+function useOtpPolling({ connection, pairing, dismissed, onPending }: OtpPolling): void {
   useEffect(() => {
     if (!connection) {
-      setPending(null);
+      onPending(null);
       void syncAutoReadWindow([]);
       return undefined;
     }
@@ -83,7 +100,8 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
         return;
       }
       handleRequests(requests);
-      setPending(selectPendingOtp(requests, dismissed.current));
+      const next = selectPendingOtp(requests, dismissed.get(pairing) ?? NO_DISMISSALS);
+      onPending(next === null ? null : { ...next, pairing });
     });
     void poll();
     const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
@@ -96,15 +114,35 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       // receiver examine messages for a scrape nobody is watching any more.
       void syncAutoReadWindow([]);
     };
-  }, [connection]);
+  }, [connection, pairing, dismissed, onPending]);
+}
 
-  const dismiss = useCallback(() => {
-    setPending((current) => {
-      if (current) {
-        dismissed.current.add(current.id);
-      }
-      return null;
-    });
+/**
+ * Provides the next pending OTP request and a way to dismiss the current one.
+ * @returns The pending request (or null) and a dismiss callback.
+ */
+export function useOtpWatcher(): {
+  pending: OwnedPendingOtpRequest | null;
+  dismiss: (requestId: string, pairing: number) => void;
+} {
+  const { connection, pairing } = useAuth();
+  const [pending, setPending] = useState<OwnedPendingOtpRequest | null>(null);
+  // Dismissals belong to the pairing that showed the request: a later pairing
+  // may reuse an id, and the old session's refusal must not hide it.
+  const dismissed = useRef<Map<number, Set<string>>>(new Map());
+
+  useOtpPolling({ connection, pairing, dismissed: dismissed.current, onPending: setPending });
+
+  const dismiss = useCallback((requestId: string, ownerPairing: number) => {
+    const dismissedForPairing = dismissed.current.get(ownerPairing) ?? new Set<string>();
+    dismissed.current.set(ownerPairing, dismissedForPairing);
+    dismissedForPairing.add(requestId);
+    // Suppress the request the prompt showed, not whichever poll landed since.
+    // Both the id and the pairing must match, so a late close from an older
+    // pairing cannot hide the request that replaced it.
+    setPending((current) =>
+      current?.id === requestId && current.pairing === ownerPairing ? null : current,
+    );
   }, []);
 
   return { pending, dismiss };

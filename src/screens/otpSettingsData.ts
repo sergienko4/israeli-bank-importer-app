@@ -184,13 +184,17 @@ function useChannelRead({
  * so the same renewal does not restart it.
  * @param result - The last channel result, or null.
  * @param connection - The active session, or null.
+ * @param reloadKey - The read attempt the screen is showing.
  * @returns The token to read under.
  */
 function readTokenFor(
   result: ChannelResult | null,
   connection: Session | null,
+  reloadKey: number,
 ): string | undefined {
-  if (result === null || (result.baseUrl === connection?.baseUrl && result.error !== null)) {
+  const current =
+    result !== null && result.baseUrl === connection?.baseUrl && result.reloadKey === reloadKey;
+  if (!current || result.error !== null) {
     return connection?.token;
   }
   return result.token;
@@ -219,7 +223,7 @@ export function useOtpChannel(connection: Session | null): ChannelLoad {
 
   // A renewed session keeps the base URL, so only a failed read is retried on
   // the new token; a successful or optimistic state is left alone.
-  const readToken = readTokenFor(result, connection);
+  const readToken = readTokenFor(result, connection, reloadKey);
   useChannelRead({
     connectionRef,
     baseUrl: connection?.baseUrl,

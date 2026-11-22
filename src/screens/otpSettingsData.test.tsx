@@ -246,6 +246,46 @@ describe('useOtpChannel', () => {
     expect(result.current.save.saving).toBe(false);
   });
 
+  it('does not read twice after switching importers', async () => {
+    mockRefresh.mockImplementation(async (connection) => ({
+      status: 'ok',
+      channel: connection.baseUrl === A.baseUrl ? 'telegram' : 'app',
+    }));
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) => useOtpChannel(connection),
+      { initialProps: { connection: A } },
+    );
+    await flush();
+    expect(result.current.channel).toBe('telegram');
+
+    await rerender({ connection: { ...B, token: 'tb' } });
+    await flush();
+
+    expect(result.current.channel).toBe('app');
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not read twice after a reload on a renewed session', async () => {
+    mockRefresh
+      .mockResolvedValueOnce({ status: 'ok', channel: 'telegram' })
+      .mockResolvedValueOnce({ status: 'ok', channel: 'app' });
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) => useOtpChannel(connection),
+      { initialProps: { connection: A } },
+    );
+    await flush();
+
+    await rerender({ connection: { ...A, token: 'fresh' } });
+    await flush();
+    await act(async () => {
+      result.current.reload();
+    });
+    await flush();
+
+    expect(result.current.channel).toBe('app');
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps a cache failure as a non-blocking warning', async () => {
     mockRefresh.mockResolvedValue({ status: 'cache-failed', channel: 'app' });
     const { result } = await renderHook(() => useOtpChannel(A));

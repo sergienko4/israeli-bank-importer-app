@@ -2,8 +2,10 @@
  * Proves the channel the receiver acts on comes from the importer, and that the
  * native flag is re-synced whether or not that read succeeded.
  */
+import * as SecureStore from 'expo-secure-store';
+
 import { getOtpSettings } from '../api/importerClient';
-import { saveOtpChannel, StaleChannelOwnerError } from './otpChannelStore';
+import { writeSwitch } from './otpCaptureSwitch';
 import {
   beginChannelChange,
   cacheOtpChannel,
@@ -16,36 +18,54 @@ import {
 import { applyStashGate } from './otpStashGate';
 
 jest.mock('../api/importerClient', () => ({ getOtpSettings: jest.fn() }));
-jest.mock('./otpChannelStore', () => ({
-  saveOtpChannel: jest.fn(),
-  StaleChannelOwnerError: class StaleChannelOwnerError extends Error {},
-}));
+jest.mock('expo-secure-store', () => ({ setItemAsync: jest.fn(), getItemAsync: jest.fn() }));
 jest.mock('./otpStashGate', () => ({ applyStashGate: jest.fn() }));
 
 const mockGet = jest.mocked(getOtpSettings);
-const mockSave = jest.mocked(saveOtpChannel);
+const mockSet = jest.mocked(SecureStore.setItemAsync);
+const mockGetItem = jest.mocked(SecureStore.getItemAsync);
 const mockGate = jest.mocked(applyStashGate);
 
 const session = { baseUrl: 'https://importer.example', token: 't' };
+const CHANNEL_KEY = 'otp.channel.v1';
+
+/**
+ * Lets the queued turns start.
+ * @returns Once the current microtasks ran.
+ */
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+/**
+ * Occupies the real capture-switch queue until the test releases it.
+ * @returns The release and the queue turn that ends after it.
+ */
+function holdQueue(): { release: () => void; blocker: Promise<void> } {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const blocker = writeSwitch(async () => {
+    await held;
+  });
+  return { release, blocker };
+}
 
 beforeEach(() => {
   jest.resetAllMocks();
   mockGate.mockResolvedValue({ allowed: false, pushed: true });
-  mockSave.mockImplementation(
-    async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
-      if (!isCurrent()) {
-        throw new StaleChannelOwnerError();
-      }
-      onPublished();
-    },
-  );
+  mockSet.mockResolvedValue(undefined);
+  mockGetItem.mockResolvedValue(null);
 });
 
 describe('cacheOtpChannel', () => {
   it('records the channel so the receiver can read it with no session', async () => {
     await cacheOtpChannel('telegram', session.baseUrl);
 
-    expect(mockSave).toHaveBeenCalledWith('telegram', expect.any(Function), expect.any(Function));
+    expect(mockSet).toHaveBeenCalledWith(CHANNEL_KEY, 'telegram');
     expect(isChannelCacheDirty()).toBe(false);
   });
 
@@ -55,32 +75,22 @@ describe('cacheOtpChannel', () => {
     expect(mockGate).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps a dirty marker set while the cache write was pending', async () => {
-    let finishWrite: () => void = () => undefined;
-    mockSave.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishWrite = resolve;
-      }),
-    );
-
+  it('keeps the dirty marker when a marker lands while the write waits', async () => {
+    const { release, blocker } = holdQueue();
     const write = cacheOtpChannel('app', session.baseUrl);
     markChannelDirty();
-    finishWrite();
-    await write;
+    release();
+    await blocker;
 
+    await expect(write).resolves.toBe('stale');
     expect(isChannelCacheDirty()).toBe(true);
 
-    mockSave.mockImplementation(
-      async (_channel, _isCurrent = () => true, onPublished = () => undefined) => {
-        onPublished();
-      },
-    );
     await cacheOtpChannel('app', session.baseUrl);
     expect(isChannelCacheDirty()).toBe(false);
   });
 
   it('still re-applies the gate when the cache could not be written', async () => {
-    mockSave.mockRejectedValue(new Error('keystore locked'));
+    mockSet.mockRejectedValue(new Error('keystore locked'));
 
     await expect(cacheOtpChannel('app', session.baseUrl)).resolves.toBe(false);
     expect(isChannelCacheDirty()).toBe(true);
@@ -96,7 +106,7 @@ describe('refreshOtpChannel', () => {
       status: 'ok',
       channel: 'telegram',
     });
-    expect(mockSave).toHaveBeenCalledWith('telegram', expect.any(Function), expect.any(Function));
+    expect(mockSet).toHaveBeenCalledWith(CHANNEL_KEY, 'telegram');
   });
 
   it('keeps the last known channel when the importer cannot be reached', async () => {
@@ -104,7 +114,7 @@ describe('refreshOtpChannel', () => {
 
     await refreshOtpChannel(session);
 
-    expect(mockSave).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it('still re-applies the gate when the read failed', async () => {
@@ -128,8 +138,8 @@ describe('refreshOtpChannel', () => {
     resolveRead({ channel: 'app' });
 
     await expect(read).resolves.toEqual({ status: 'stale', channel: 'telegram' });
-    expect(mockSave).toHaveBeenCalledTimes(1);
-    expect(mockSave).toHaveBeenCalledWith('telegram', expect.any(Function), expect.any(Function));
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(mockSet).toHaveBeenCalledWith(CHANNEL_KEY, 'telegram');
   });
 
   it('discards a read whose importer is no longer active', async () => {
@@ -138,15 +148,12 @@ describe('refreshOtpChannel', () => {
     await expect(refreshOtpChannel(session, () => false)).resolves.toMatchObject({
       status: 'stale',
     });
-    expect(mockSave).not.toHaveBeenCalled();
+    expect(mockSet).not.toHaveBeenCalled();
   });
 
   it('reports a failed cache write so the watcher retries', async () => {
     mockGet.mockResolvedValue({ channel: 'app' });
-    mockSave.mockImplementation(async (_channel, _isCurrent, onConfirmed = () => undefined) => {
-      onConfirmed();
-      throw new Error('keystore locked');
-    });
+    mockSet.mockRejectedValue(new Error('keystore locked'));
 
     await expect(refreshOtpChannel(session)).resolves.toEqual({
       status: 'cache-failed',
@@ -173,97 +180,80 @@ describe('channel save ownership', () => {
 
     endChannelChange(session.baseUrl);
     await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
+    expect(mockSet).not.toHaveBeenCalled();
 
     endChannelChange(session.baseUrl);
     await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'ok' });
   });
 
   it('does not invalidate a queued write when the caller is already stale', async () => {
-    let releaseCurrent: () => void = () => undefined;
-    mockSave.mockImplementationOnce(
-      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
-        await new Promise<void>((resolve) => {
-          releaseCurrent = resolve;
-        });
-        if (!isCurrent()) {
-          throw new StaleChannelOwnerError();
-        }
-        onPublished();
-      },
-    );
+    const { release, blocker } = holdQueue();
     const currentWrite = cacheOtpChannel('app', session.baseUrl);
 
     await expect(cacheOtpChannel('telegram', session.baseUrl, () => false)).resolves.toBe('stale');
 
-    releaseCurrent();
+    release();
+    await blocker;
     await expect(currentWrite).resolves.toBe(true);
+    expect(mockSet).toHaveBeenCalledWith(CHANNEL_KEY, 'app');
   });
 
   it('does not discard a newer write when an older write fails', async () => {
     let failOlder: (error: Error) => void = () => undefined;
-    let finishNewer: () => void = () => undefined;
-    mockSave.mockImplementationOnce(
-      () =>
-        new Promise<void>((_resolve, reject) => {
-          failOlder = reject;
-        }),
-    );
+    mockSet
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            failOlder = reject;
+          }),
+      )
+      .mockResolvedValueOnce(undefined);
     const older = cacheOtpChannel('telegram', session.baseUrl);
-    mockSave.mockImplementationOnce(
-      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
-        await new Promise<void>((resolve) => {
-          finishNewer = resolve;
-        });
-        if (!isCurrent()) {
-          throw new StaleChannelOwnerError();
-        }
-        onPublished();
-      },
-    );
+    await flush();
     const newer = cacheOtpChannel('app', session.baseUrl);
 
     failOlder(new Error('keystore locked'));
     await expect(older).resolves.toBe(false);
 
-    finishNewer();
     await expect(newer).resolves.toBe(true);
+    expect(mockSet).toHaveBeenCalledWith(CHANNEL_KEY, 'app');
   });
 
   it('does not invalidate a user publication while its save guard is held', async () => {
     beginChannelChange(session.baseUrl);
     mockGet.mockResolvedValue({ channel: 'telegram' });
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    mockSave.mockImplementationOnce(
-      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
-        await held;
-        if (!isCurrent()) {
-          throw new StaleChannelOwnerError();
-        }
-        onPublished();
-      },
-    );
+    const { release, blocker } = holdQueue();
 
     const saveWrite = cacheOtpChannel('app', session.baseUrl);
     await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
 
     release();
+    await blocker;
     await expect(saveWrite).resolves.toBe(true);
     endChannelChange(session.baseUrl);
   });
 
   it('discards a queued write after an uncertain save failure', async () => {
     mockGet.mockResolvedValue({ channel: 'telegram' });
-    mockSave.mockImplementation(async (_channel, isCurrent = () => true) => {
-      // The save's answer was lost: the retry marker moves the generation.
-      markChannelDirty();
-      if (!isCurrent()) {
-        throw new StaleChannelOwnerError();
-      }
-    });
+    const { release, blocker } = holdQueue();
+    const write = cacheOtpChannel('telegram', session.baseUrl);
+    // The save's answer was lost: the retry marker moves the generation.
+    markChannelDirty();
+    release();
+    await blocker;
 
-    await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
+    await expect(write).resolves.toBe('stale');
+  });
+
+  it('rejects a write whose owner was checked before the queue', async () => {
+    let owned = true;
+    const { release, blocker } = holdQueue();
+    const write = cacheOtpChannel('app', session.baseUrl, () => owned);
+    owned = false;
+    release();
+    await blocker;
+
+    await expect(write).resolves.toBe('stale');
+    expect(mockSet).not.toHaveBeenCalled();
   });
 });

@@ -196,7 +196,7 @@ export async function saveChannel({
   setError,
   isCurrent,
 }: ChannelSaveRequest): Promise<void> {
-  beginChannelChange();
+  beginChannelChange(connection.baseUrl);
   setChannel(next);
   setError(null);
   try {
@@ -205,7 +205,7 @@ export async function saveChannel({
       if (!isCurrent()) {
         return;
       }
-      const cached = await cacheOtpChannel(next);
+      const cached = await cacheOtpChannel(next, connection.baseUrl);
       haptics.success();
       if (!cached) {
         setError('Could not update capture on this device. It will retry automatically.');
@@ -224,7 +224,7 @@ export async function saveChannel({
       setError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
     }
   } finally {
-    endChannelChange();
+    endChannelChange(connection.baseUrl);
   }
 }
 

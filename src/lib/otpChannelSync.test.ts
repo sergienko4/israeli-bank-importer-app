@@ -6,6 +6,7 @@ import { getOtpSettings } from '../api/importerClient';
 import { saveOtpChannel } from './otpChannelStore';
 import {
   cacheOtpChannel,
+  confirmedOtpChannel,
   isChannelCacheDirty,
   markChannelDirty,
   refreshOtpChannel,
@@ -30,14 +31,14 @@ beforeEach(() => {
 
 describe('cacheOtpChannel', () => {
   it('records the channel so the receiver can read it with no session', async () => {
-    await cacheOtpChannel('telegram');
+    await cacheOtpChannel('telegram', session.baseUrl);
 
     expect(mockSave).toHaveBeenCalledWith('telegram');
     expect(isChannelCacheDirty()).toBe(false);
   });
 
   it('re-applies the capture gate so the receiver follows the new channel', async () => {
-    await cacheOtpChannel('telegram');
+    await cacheOtpChannel('telegram', session.baseUrl);
 
     expect(mockGate).toHaveBeenCalledTimes(1);
   });
@@ -50,7 +51,7 @@ describe('cacheOtpChannel', () => {
       }),
     );
 
-    const write = cacheOtpChannel('app');
+    const write = cacheOtpChannel('app', session.baseUrl);
     markChannelDirty();
     finishWrite();
     await write;
@@ -58,14 +59,14 @@ describe('cacheOtpChannel', () => {
     expect(isChannelCacheDirty()).toBe(true);
 
     mockSave.mockResolvedValue(undefined);
-    await cacheOtpChannel('app');
+    await cacheOtpChannel('app', session.baseUrl);
     expect(isChannelCacheDirty()).toBe(false);
   });
 
   it('still re-applies the gate when the cache could not be written', async () => {
     mockSave.mockRejectedValue(new Error('keystore locked'));
 
-    await expect(cacheOtpChannel('app')).resolves.toBe(false);
+    await expect(cacheOtpChannel('app', session.baseUrl)).resolves.toBe(false);
     expect(isChannelCacheDirty()).toBe(true);
     expect(mockGate).toHaveBeenCalledTimes(1);
   });
@@ -107,7 +108,7 @@ describe('refreshOtpChannel', () => {
     );
 
     const read = refreshOtpChannel(session);
-    await cacheOtpChannel('telegram');
+    await cacheOtpChannel('telegram', session.baseUrl);
     resolveRead({ channel: 'app' });
 
     await expect(read).resolves.toEqual({ status: 'stale', channel: 'telegram' });
@@ -132,6 +133,8 @@ describe('refreshOtpChannel', () => {
       status: 'cache-failed',
       channel: 'app',
     });
+    expect(confirmedOtpChannel(session.baseUrl)).toBe('app');
+    expect(confirmedOtpChannel('https://other.example')).toBeNull();
   });
 
   it('applies the gate once when the read succeeded', async () => {

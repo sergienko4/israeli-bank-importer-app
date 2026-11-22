@@ -56,7 +56,7 @@
     "semver": "^7.8.6",
     "test-renderer": "1.2.0",
     "typescript": "~6.0.3",
-    "typescript-eslint": "^8.73.0",
+    "typescript-eslint": "^8.72.2",
     "yaml": "^2.9.0"
   },
   "overrides": {

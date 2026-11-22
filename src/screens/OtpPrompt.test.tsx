@@ -9,6 +9,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import { submitOtp } from '../api/importerClient';
 import { useAuth } from '../auth/AuthContext';
+import { changePairing } from '../auth/pairingGeneration';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { useOtpCapture } from '../lib/useOtpCapture';
 import { ThemeProvider } from '../theme/ThemeContext';
@@ -138,6 +139,30 @@ describe('OtpPrompt request transitions', () => {
       expect(onSubmitted).toHaveBeenCalledWith('a');
     });
     expect(screen.getByLabelText('OTP code').props.value).toBe('');
+  });
+
+  it('does not auto-send after the pairing changed', async () => {
+    mockSubmitOtp.mockImplementation(async ({ beforeSend }) => {
+      const start = jest.fn(() => Promise.resolve({} as Response));
+      try {
+        await beforeSend?.(start);
+      } catch {
+        return null;
+      }
+      return { ok: true };
+    });
+    const { onSubmitted } = await setup('a');
+    await flush();
+
+    changePairing();
+    await fireEvent.changeText(screen.getByLabelText('OTP code'), '111111');
+    await act(async () => {
+      jest.advanceTimersByTime(3_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(onSubmitted).not.toHaveBeenCalled();
   });
 
   it('ignores a send that completes after the request changed', async () => {

@@ -26,7 +26,6 @@ import { type ReactElement, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
 import type { PendingOtpRequest } from '../api/otp';
-import { currentPairing } from '../auth/pairingGeneration';
 import { Button, Sheet, TextField } from '../components/ui';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
@@ -143,7 +142,7 @@ export function OtpPrompt({
   onSubmitted,
   onDismiss,
 }: Readonly<Props>): ReactElement {
-  const { code, setCode, submitting, error, setError, submit } = useOtpSubmission(
+  const { code, setCode, submitting, error, setError, pairing, submit } = useOtpSubmission(
     request.id,
     onSubmitted,
   );
@@ -152,7 +151,7 @@ export function OtpPrompt({
   // The parent owns the one-shot guard so it survives this prompt's per-request
   // remount; the guard hook keeps the same-tick check and the attempt token.
   const autoGuard = useAutoSubmitGuard(autoSubmitUsed, request.id);
-  const [armed, setArmed] = useState({ token: 0, pairing: currentPairing() });
+  const [armed, setArmed] = useState({ token: 0, pairing });
   // The countdown belongs to this prompt; the one-shot guard lives in the
   // parent so it cannot be reset by a remount.
   const countdown = useAutoSubmitCountdown({
@@ -193,7 +192,7 @@ export function OtpPrompt({
     });
     if (arm) {
       autoGuard.markUsed();
-      setArmed({ token: autoGuard.currentAttempt().token, pairing: currentPairing() });
+      setArmed({ token: autoGuard.currentAttempt().token, pairing });
       onAutoSubmitUsed();
       countdown.arm(next);
       AccessibilityInfo.announceForAccessibility(

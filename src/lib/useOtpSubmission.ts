@@ -9,10 +9,12 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { BeforeSend } from '../api/authedTypes';
 import { type Session, submitOtp } from '../api/importerClient';
 import { useAuth } from '../auth/AuthContext';
+import { currentPairing } from '../auth/pairingGeneration';
 import { type OtpSendResult } from './autoSubmitAttempt';
 import { reportedOrFallback } from './errorMessages';
 import { haptics } from './haptics';
 import { isValidOtpCode, normalizeOtpCodeInput } from './otpCode';
+import { pairingGate } from './pairingGate';
 
 const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
 
@@ -68,6 +70,8 @@ export interface OtpSubmission {
   readonly error: string | null;
   /** Clears the failure as the user edits. */
   readonly setError: (error: string | null) => void;
+  /** The pairing this request arrived under. */
+  readonly pairing: number;
   /** Validates and sends one code, optionally re-checking intent at send time. */
   readonly submit: (candidate: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
 }
@@ -180,6 +184,93 @@ function useSubmissionFlight(requestId: string): { current: SubmissionFlight | n
   return flight;
 }
 
+/** The pairing a request arrived under. */
+interface RequestOwner {
+  /** The pairing that must still be current when the send starts. */
+  readonly pairing: number;
+}
+
+/**
+ * Remembers which pairing a request arrived under.
+ *
+ * A new request from the same importer keeps the pairing; a replacement, even
+ * to the same address, gives the new request its own. Reading it per request
+ * rather than per render keeps an old prompt from adopting a newer pairing.
+ * @param requestId - The pending request being answered.
+ * @returns The pairing the request belongs to.
+ */
+function useRequestOwner(requestId: string): RequestOwner {
+  const [owner, setOwner] = useState(() => ({ requestId, pairing: currentPairing() }));
+  if (owner.requestId !== requestId) {
+    setOwner({ requestId, pairing: currentPairing() });
+  }
+  return owner;
+}
+
+/** What one prompt's submit closure needs from the hook. */
+interface SubmitContext {
+  /** The pending request being answered. */
+  readonly requestId: string;
+  /** The session the prompt rendered with. */
+  readonly connection: Session | null;
+  /** The pairing the request arrived under. */
+  readonly pairing: number;
+  /** The prompt's in-flight send, if any. */
+  readonly flight: { current: SubmissionFlight | null };
+  /** Replaces the code text. */
+  readonly setCode: (code: string) => void;
+  /** Shows or clears the failure. */
+  readonly setError: (error: string | null) => void;
+  /** Records which request shows the loading state. */
+  readonly setSendingFor: (requestId: string | null) => void;
+  /** Reports the accepted code to the parent. */
+  readonly onSubmitted: (requestId: string) => void;
+}
+
+/**
+ * Builds the submit closure for the request the prompt currently shows.
+ *
+ * A gate from the automatic path wins. A manual send gets the pairing gate, so
+ * a Disconnect or a replacement cannot send the code to an importer the user
+ * has just left.
+ * @param context - The request, session, pairing, flight, and setters.
+ * @returns The submit function.
+ */
+function createSubmit(
+  context: SubmitContext,
+): (candidate: string, beforeSend?: BeforeSend) => Promise<OtpSendResult> {
+  const { requestId, connection, pairing, flight, setCode, setError, setSendingFor, onSubmitted } =
+    context;
+
+  return async (candidate, beforeSend) => {
+    if (flight.current?.requestId === requestId) {
+      return 'cancelled';
+    }
+    const prepared = prepareCode(candidate, connection, setError);
+    if (prepared === null) {
+      return 'failed';
+    }
+    const token = {};
+    flight.current = { requestId, token };
+    setSendingFor(requestId);
+    setError(null);
+    const outcome = await sendCode({
+      session: prepared.session,
+      requestId,
+      code: prepared.code,
+      beforeSend: beforeSend ?? pairingGate(pairing),
+    });
+    if (!isCurrentFlight(flight, token)) {
+      // The prompt moved on while this POST was on its way: the outcome must
+      // not clear another request's code, show its error, or report success.
+      return 'cancelled';
+    }
+    flight.current = null;
+    setSendingFor(null);
+    return finishSubmission({ outcome, requestId, setCode, setError, onSubmitted });
+  };
+}
+
 /**
  * Owns the one network write the prompt performs.
  *
@@ -201,6 +292,7 @@ export function useOtpSubmission(
   const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const flightRef = useSubmissionFlight(requestId);
+  const owner = useRequestOwner(requestId);
 
   // Starting a send for another request must not leave this request's button
   // loading, even when the old send is still on its way. Adjusting state during
@@ -209,33 +301,24 @@ export function useOtpSubmission(
     setSendingFor(null);
   }
 
-  const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
-    if (flightRef.current?.requestId === requestId) {
-      return 'cancelled';
-    }
-    const prepared = prepareCode(candidate, connection, setError);
-    if (prepared === null) {
-      return 'failed';
-    }
-    const token = {};
-    flightRef.current = { requestId, token };
-    setSendingFor(requestId);
-    setError(null);
-    const outcome = await sendCode({
-      session: prepared.session,
-      requestId,
-      code: prepared.code,
-      beforeSend,
-    });
-    if (!isCurrentFlight(flightRef, token)) {
-      // The prompt moved on while this POST was on its way: the outcome must
-      // not clear another request's code, show its error, or report success.
-      return 'cancelled';
-    }
-    flightRef.current = null;
-    setSendingFor(null);
-    return finishSubmission({ outcome, requestId, setCode, setError, onSubmitted });
-  };
+  const submit = createSubmit({
+    requestId,
+    connection,
+    pairing: owner.pairing,
+    flight: flightRef,
+    setCode,
+    setError,
+    setSendingFor,
+    onSubmitted,
+  });
 
-  return { code, setCode, submitting: sendingFor === requestId, error, setError, submit };
+  return {
+    code,
+    setCode,
+    submitting: sendingFor === requestId,
+    error,
+    setError,
+    pairing: owner.pairing,
+    submit,
+  };
 }

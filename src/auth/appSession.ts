@@ -18,7 +18,7 @@ import {
   saveConnection,
   type StoredConnection,
 } from './connectionStore';
-import { changePairing } from './pairingGeneration';
+import { changePairing, currentPairing } from './pairingGeneration';
 import { type HoldLock, withRefreshLock } from './refreshLock';
 import { processLedger } from './tokenLedger';
 
@@ -49,10 +49,11 @@ const UNREADABLE = Symbol('unreadable');
  * this process. It reaches the screen only after it returns, and a sign-in that
  * was already waiting on the refresh lock can save a new pairing in that gap;
  * handing `pairing` back to {@link dropConnection} lets the drop tell the two
- * apart.
+ * apart. A refreshed renewal carries the pairing it read under the lock, so the
+ * screen never publishes a renewed connection with an older generation.
  */
 export type RefreshOutcome =
-  | { status: 'refreshed'; connection: Connection }
+  | { status: 'refreshed'; connection: Connection; pairing: number }
   | { status: 'declined'; message: string }
   | { status: 'ended'; message: string; pairing: number };
 
@@ -158,6 +159,9 @@ async function latestStored(): Promise<StoredConnection | typeof UNREADABLE> {
  */
 async function renewLatest(hold: HoldLock): Promise<RefreshOutcome> {
   const pairing = signIns;
+  // Captured under the same lock as every pairing change, so the connection
+  // this renewal publishes carries the generation that owns it.
+  const owner = currentPairing();
   const stored = await latestStored();
   if (stored === UNREADABLE) {
     return { status: 'declined', message: STORAGE_UNREADABLE };
@@ -169,7 +173,7 @@ async function renewLatest(hold: HoldLock): Promise<RefreshOutcome> {
   const renewal = renewFrom(processLedger.current(stored.connection));
   hold(renewal);
   try {
-    return { status: 'refreshed', connection: await answerInTime(renewal) };
+    return { status: 'refreshed', connection: await answerInTime(renewal), pairing: owner };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Could not reconnect. Try again.';
     return endedBy(error) === 'ended'

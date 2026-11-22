@@ -159,7 +159,12 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>): R
     }
     const outcome = await refreshConnection();
     if (outcome.status === 'refreshed') {
-      setConnection({ ...outcome.connection, pairing: connection.pairing });
+      // A sign-in can land while the biometric prompt is up. Its pairing is
+      // the only one a renewed connection may publish.
+      if (outcome.pairing !== currentPairing()) {
+        return null;
+      }
+      setConnection({ ...outcome.connection, pairing: outcome.pairing });
       setSessionExpired(false);
       return toSession(outcome.connection);
     }

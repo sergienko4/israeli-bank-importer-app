@@ -110,7 +110,11 @@ describe('isExpiring', () => {
 describe('refreshConnection when the user unlocks', () => {
   it('rotates the tokens and stores the result', async () => {
     const outcome = await refreshConnection();
-    expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
+    expect(outcome).toEqual({
+      status: 'refreshed',
+      connection: ROTATED,
+      pairing: currentPairing(),
+    });
     expect(mockedSave).toHaveBeenCalledTimes(1);
     expect(mockedSave).toHaveBeenCalledWith(ROTATED);
   });
@@ -123,7 +127,11 @@ describe('refreshConnection when the user unlocks', () => {
   it('keeps the rotated pair when the secure store refuses the write', async () => {
     mockedSave.mockRejectedValue(new Error('Keychain unavailable.'));
     const outcome = await refreshConnection();
-    expect(outcome).toEqual({ status: 'refreshed', connection: ROTATED });
+    expect(outcome).toEqual({
+      status: 'refreshed',
+      connection: ROTATED,
+      pairing: currentPairing(),
+    });
   });
 
   it('spends the stored refresh token, not the one the screen loaded at launch', async () => {
@@ -137,6 +145,26 @@ describe('refreshConnection when the user unlocks', () => {
     await refreshConnection();
     expect(mockedRefresh).toHaveBeenCalledWith(CONNECTION.baseUrl, 'refresh-background');
     expect(mockedRefresh).not.toHaveBeenCalledWith(CONNECTION.baseUrl, CONNECTION.refreshToken);
+  });
+
+  it('pairs a refresh with the sign-in that landed during biometrics', async () => {
+    let finishUnlock: (value: { status: 'success' }) => void = () => undefined;
+    mockedUnlock.mockReturnValue(
+      new Promise<{ status: 'success' }>((resolve) => {
+        finishUnlock = resolve;
+      }),
+    );
+    const pending = refreshConnection();
+
+    await adoptConnection(SIGNED_IN_ELSEWHERE);
+    mockedRead.mockResolvedValue({ state: 'paired', connection: SIGNED_IN_ELSEWHERE });
+    finishUnlock({ status: 'success' });
+
+    await expect(pending).resolves.toMatchObject({
+      status: 'refreshed',
+      connection: ROTATED,
+      pairing: currentPairing(),
+    });
   });
 
   it('declines without spending a token when storage cannot be read', async () => {

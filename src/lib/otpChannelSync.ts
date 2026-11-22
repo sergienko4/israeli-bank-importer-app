@@ -75,9 +75,11 @@ export async function cacheOtpChannel(
     }
     // A write that would not take must not stop the gate below from running:
     // re-applying it is what actually closes the receiver, and it fails closed.
-    // The generation moves too: a read that started before this uncertain
-    // failure must not publish its older answer and clear the retry marker.
-    generation += 1;
+    // The generation moves only while this write still owns it: a newer queued
+    // publication has already advanced it and must not be discarded too.
+    if (generation === writeGeneration) {
+      generation += 1;
+    }
     dirty = true;
     dirtyRevision += 1;
     await applyStashGate();
@@ -167,7 +169,9 @@ export async function refreshOtpChannel(
     const settings = await getOtpSettings(session);
     const ownerIsCurrent = (): boolean =>
       isCurrent() && currentPairing() === pairing && !hasSaveInFlight(session.baseUrl);
-    if (!isCurrent() || startedAt !== generation) {
+    // Check before queueing: cacheOtpChannel advances the generation, and a
+    // superseded read must not invalidate the user publication ahead of it.
+    if (startedAt !== generation || !ownerIsCurrent()) {
       return { status: 'stale', channel: confirmedOtpChannel(session.baseUrl) };
     }
     const saved = await cacheOtpChannel(settings.channel, session.baseUrl, ownerIsCurrent);

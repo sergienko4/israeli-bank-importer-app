@@ -178,6 +178,61 @@ describe('channel save ownership', () => {
     await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'ok' });
   });
 
+  it('does not discard a newer write when an older write fails', async () => {
+    let failOlder: (error: Error) => void = () => undefined;
+    let finishNewer: () => void = () => undefined;
+    mockSave.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          failOlder = reject;
+        }),
+    );
+    const older = cacheOtpChannel('telegram', session.baseUrl);
+    mockSave.mockImplementationOnce(
+      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
+        await new Promise<void>((resolve) => {
+          finishNewer = resolve;
+        });
+        if (!isCurrent()) {
+          throw new StaleChannelOwnerError();
+        }
+        onPublished();
+      },
+    );
+    const newer = cacheOtpChannel('app', session.baseUrl);
+
+    failOlder(new Error('keystore locked'));
+    await expect(older).resolves.toBe(false);
+
+    finishNewer();
+    await expect(newer).resolves.toBe(true);
+  });
+
+  it('does not invalidate a user publication while its save guard is held', async () => {
+    beginChannelChange(session.baseUrl);
+    mockGet.mockResolvedValue({ channel: 'telegram' });
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockSave.mockImplementationOnce(
+      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
+        await held;
+        if (!isCurrent()) {
+          throw new StaleChannelOwnerError();
+        }
+        onPublished();
+      },
+    );
+
+    const saveWrite = cacheOtpChannel('app', session.baseUrl);
+    await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
+
+    release();
+    await expect(saveWrite).resolves.toBe(true);
+    endChannelChange(session.baseUrl);
+  });
+
   it('discards a queued write after an uncertain save failure', async () => {
     mockGet.mockResolvedValue({ channel: 'telegram' });
     mockSave.mockImplementation(async (_channel, isCurrent = () => true) => {

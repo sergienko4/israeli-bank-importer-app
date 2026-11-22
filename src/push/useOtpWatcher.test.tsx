@@ -21,8 +21,13 @@ jest.mock('expo-notifications', () => ({
   }),
 }));
 jest.mock('../lib/otpAutoReadWindow', () => ({ syncAutoReadWindow: jest.fn() }));
-jest.mock('../lib/otpChannelSync', () => ({ refreshOtpChannel: jest.fn() }));
 jest.mock('../lib/otpStashRunner', () => ({ drainHeldMessages: jest.fn() }));
+jest.mock('../lib/requestTimeout', () => ({
+  withRequestTimeout: jest.fn((work: Promise<void>) => work),
+}));
+jest.mock('./otpChannelRefresh', () => ({
+  createChannelRefresh: jest.fn(() => () => undefined),
+}));
 
 const mockGetPending = jest.mocked(getPendingOtp);
 const mockAuth = jest.mocked(useAuth);
@@ -76,50 +81,32 @@ describe('useOtpWatcher pairing ownership', () => {
   });
 
   it('suppresses the request the prompt showed, not the one pending now', async () => {
-    mockGetPending.mockResolvedValue([request('a')]);
+    const a = request('a');
+    const b = request('b');
+    mockGetPending.mockResolvedValue([a]);
     const { result } = await renderHook(() => useOtpWatcher());
     await waitFor(() => {
       expect(result.current.pending?.id).toBe('a');
     });
 
-    mockGetPending.mockResolvedValue([request('b')]);
+    await act(async () => {
+      result.current.dismiss('a', a.deadline);
+    });
+    await waitFor(() => {
+      expect(result.current.pending).toBeNull();
+    });
+
+    mockGetPending.mockResolvedValue([a, b]);
     await pollAgain();
     await waitFor(() => {
       expect(result.current.pending?.id).toBe('b');
     });
 
+    // A late dismissal of the old request must not clear the new one.
     await act(async () => {
-      result.current.dismiss('a', 777);
+      result.current.dismiss('a', a.deadline);
     });
     expect(result.current.pending?.id).toBe('b');
-
-    mockGetPending.mockResolvedValue([request('a'), request('b')]);
-    await pollAgain();
-    await waitFor(() => {
-      expect(result.current.pending?.id).toBe('b');
-    });
-  });
-
-  it('does not let an old pairing dismiss the new pairing request', async () => {
-    const { result, rerender } = await renderHook(() => useOtpWatcher());
-    await waitFor(() => {
-      expect(result.current.pending?.id).toBe('r1');
-    });
-
-    mockAuth.mockReturnValue({
-      connection: SESSION,
-      pairing: 888,
-    } as ReturnType<typeof useAuth>);
-    await rerender(undefined);
-    await waitFor(() => {
-      expect(result.current.pending).toMatchObject({ id: 'r1', pairing: 888 });
-    });
-
-    await act(async () => {
-      result.current.dismiss('r1', 777);
-    });
-
-    expect(result.current.pending).toMatchObject({ id: 'r1', pairing: 888 });
   });
 
   it('does not carry a dismissal into a new pairing', async () => {
@@ -129,7 +116,7 @@ describe('useOtpWatcher pairing ownership', () => {
     });
 
     await act(async () => {
-      result.current.dismiss('r1', 777);
+      result.current.dismiss('r1', request('r1').deadline);
     });
     await waitFor(() => {
       expect(result.current.pending).toBeNull();

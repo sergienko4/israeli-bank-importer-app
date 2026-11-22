@@ -15,7 +15,8 @@
 import type { Session } from '../api/importerClient';
 import { getOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
-import { saveOtpChannel } from './otpChannelStore';
+import { currentPairing } from '../auth/pairingGeneration';
+import { saveOtpChannel, StaleChannelOwnerError } from './otpChannelStore';
 import { applyStashGate } from './otpStashGate';
 
 /** Bumped for every channel publication, so stale reads can be discarded. */
@@ -36,29 +37,38 @@ const savesInFlight = new Set<string>();
  * cannot publish its older answer over this one, even when SecureStore fails.
  * @param channel - The channel the importer is currently set to.
  * @param baseUrl - The importer that confirmed it.
- * @returns True when the cache accepted the value, false when it did not.
+ * @param isCurrent - Re-checks ownership inside the queued write.
+ * @returns True when cached, false when the write failed, or `stale`.
  */
-export async function cacheOtpChannel(channel: OtpChannel, baseUrl: string): Promise<boolean> {
+export async function cacheOtpChannel(
+  channel: OtpChannel,
+  baseUrl: string,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean | 'stale'> {
   generation += 1;
   const revisionAtStart = dirtyRevision;
-  // Record the importer's answer even if this device cannot store it: a stale
-  // read may show it, while the dirty flag drives the cache retry.
-  confirmed = { baseUrl, channel };
-  let saved = true;
   try {
-    await saveOtpChannel(channel);
+    await saveOtpChannel(channel, isCurrent, () => {
+      // Record the importer's answer once its owner was checked in the queue.
+      confirmed = { baseUrl, channel };
+    });
     if (dirtyRevision === revisionAtStart) {
       dirty = false;
     }
-  } catch {
+    await applyStashGate();
+    return true;
+  } catch (error) {
+    if (error instanceof StaleChannelOwnerError || !isCurrent()) {
+      await applyStashGate();
+      return 'stale';
+    }
     // A write that would not take must not stop the gate below from running:
     // re-applying it is what actually closes the receiver, and it fails closed.
-    saved = false;
     dirty = true;
     dirtyRevision += 1;
+    await applyStashGate();
+    return false;
   }
-  await applyStashGate();
-  return saved;
 }
 
 /**
@@ -130,12 +140,18 @@ export async function refreshOtpChannel(
   isCurrent: () => boolean = () => true,
 ): Promise<ChannelRefreshResult> {
   const startedAt = generation;
+  const pairing = currentPairing();
   try {
     const settings = await getOtpSettings(session);
-    if (!isCurrent() || startedAt !== generation || savesInFlight.has(session.baseUrl)) {
+    const ownerIsCurrent = (): boolean =>
+      isCurrent() && currentPairing() === pairing && !savesInFlight.has(session.baseUrl);
+    if (!isCurrent() || startedAt !== generation) {
       return { status: 'stale', channel: confirmedOtpChannel(session.baseUrl) };
     }
-    const saved = await cacheOtpChannel(settings.channel, session.baseUrl);
+    const saved = await cacheOtpChannel(settings.channel, session.baseUrl, ownerIsCurrent);
+    if (saved === 'stale') {
+      return { status: 'stale', channel: confirmedOtpChannel(session.baseUrl) };
+    }
     return {
       status: saved ? 'ok' : 'cache-failed',
       channel: settings.channel,

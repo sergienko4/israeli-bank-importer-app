@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { type Session, setOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
+import { currentPairing } from '../auth/pairingGeneration';
 import { haptics } from '../lib/haptics';
 import {
   beginChannelChange,
@@ -174,6 +175,64 @@ function warnChannelFailure(): void {
   haptics.warning();
 }
 
+/** What a failed channel save should report. */
+interface ChannelFailure {
+  readonly previous: OtpChannel | null;
+  readonly setChannel: (next: OtpChannel | null) => void;
+  readonly setError: (error: string | null) => void;
+  readonly message: string;
+  readonly isCurrent: () => boolean;
+}
+
+/** What a successful channel save should publish. */
+interface ChannelSuccess {
+  readonly connection: Session;
+  readonly next: OtpChannel;
+  readonly isCurrent: () => boolean;
+  readonly setError: (error: string | null) => void;
+}
+
+/**
+ * Publishes a channel the importer accepted, if its owner is still current.
+ * @param success - The session, channel, owner check, and error setter.
+ */
+async function publishChannel({
+  connection,
+  next,
+  isCurrent,
+  setError,
+}: ChannelSuccess): Promise<void> {
+  if (!isCurrent()) {
+    return;
+  }
+  const cached = await cacheOtpChannel(next, connection.baseUrl, isCurrent);
+  if (cached === 'stale') {
+    return;
+  }
+  haptics.success();
+  if (!cached) {
+    setError('Could not update capture on this device. It will retry automatically.');
+  }
+}
+
+/**
+ * Reports a failed save without letting a stale importer roll back another one.
+ * @param failure - The previous channel, setters, message, and owner check.
+ */
+function reportChannelFailure({
+  previous,
+  setChannel,
+  setError,
+  message,
+  isCurrent,
+}: ChannelFailure): void {
+  warnChannelFailure();
+  if (isCurrent()) {
+    setChannel(previous);
+    setError(message);
+  }
+}
+
 /** What one channel save needs from the screen. */
 interface ChannelSaveRequest {
   readonly connection: Session;
@@ -196,33 +255,32 @@ export async function saveChannel({
   setError,
   isCurrent,
 }: ChannelSaveRequest): Promise<void> {
+  const pairing = currentPairing();
+  const ownerIsCurrent = (): boolean => isCurrent() && currentPairing() === pairing;
   beginChannelChange(connection.baseUrl);
   setChannel(next);
   setError(null);
   try {
     const result = await setOtpSettings(connection, next);
     if (result.ok) {
-      if (!isCurrent()) {
-        return;
-      }
-      const cached = await cacheOtpChannel(next, connection.baseUrl);
-      haptics.success();
-      if (!cached) {
-        setError('Could not update capture on this device. It will retry automatically.');
-      }
+      await publishChannel({ connection, next, isCurrent: ownerIsCurrent, setError });
     } else {
-      warnChannelFailure();
-      if (isCurrent()) {
-        setChannel(previous);
-        setError(result.error ?? 'Could not save the OTP setting.');
-      }
+      reportChannelFailure({
+        previous,
+        setChannel,
+        setError,
+        message: result.error ?? 'Could not save the OTP setting.',
+        isCurrent: ownerIsCurrent,
+      });
     }
   } catch (e) {
-    warnChannelFailure();
-    if (isCurrent()) {
-      setChannel(previous);
-      setError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
-    }
+    reportChannelFailure({
+      previous,
+      setChannel,
+      setError,
+      message: e instanceof Error ? e.message : 'Could not save the OTP setting.',
+      isCurrent: ownerIsCurrent,
+    });
   } finally {
     endChannelChange(connection.baseUrl);
   }

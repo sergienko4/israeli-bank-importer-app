@@ -58,11 +58,13 @@ interface AppliedChannel {
  */
 function applyChannelResult(result: ChannelRefreshResult): AppliedChannel {
   if (result.status === 'stale') {
-    return {
-      channel: null,
-      error: 'The channel changed while loading. Try again.',
-      warning: null,
-    };
+    return result.channel === null
+      ? {
+          channel: null,
+          error: 'The channel changed while loading. Try again.',
+          warning: null,
+        }
+      : { channel: result.channel, error: null, warning: null };
   }
   if (result.status === 'failed') {
     return {

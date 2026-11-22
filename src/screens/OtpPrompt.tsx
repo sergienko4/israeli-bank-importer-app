@@ -25,24 +25,19 @@
 import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
-import { type BeforeSend, SubmissionCancelledError } from '../api/authedTypes';
+import { type BeforeSend } from '../api/authedTypes';
 import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
 import { currentPairing } from '../auth/pairingGeneration';
 import { Button, Sheet, TextField } from '../components/ui';
-import {
-  type AutoSubmitAttempt,
-  type OtpSendResult,
-  submitIfCurrent,
-} from '../lib/autoSubmitAttempt';
+import { autoSendGate } from '../lib/autoSendGate';
+import { type OtpSendResult, submitIfCurrent } from '../lib/autoSubmitAttempt';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
-import { startIfAllowed } from '../lib/otpCaptureSwitch';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
-import { isRequestTimeout, withRequestTimeout } from '../lib/requestTimeout';
 import { AUTO_SUBMIT_DELAY_SECONDS, useAutoSubmitCountdown } from '../lib/useAutoSubmitCountdown';
 import { type AutoSubmitGuard, useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
 import { useOtpCapture } from '../lib/useOtpCapture';
@@ -161,34 +156,6 @@ function autoFire({
       }
     });
   };
-}
-
-/**
- * Builds the before-send gate used after every automatic-send wait.
- * @param attempt - The attempt generation captured when the code was armed.
- * @param token - The generation that must still be current.
- * @param pairing - The importer pairing that must still own the session.
- * @returns A gate that re-reads intent and checks the generation and pairing.
- */
-function autoSendGate(attempt: AutoSubmitAttempt, token: number, pairing: number): BeforeSend {
-  return (start) =>
-    withRequestTimeout(
-      startIfAllowed(
-        () => loadOtpAutoSubmit().catch(() => false),
-        start,
-        () => attempt.isCurrent(token) && currentPairing() === pairing,
-      ),
-      20_000,
-    )
-      .then((started) => {
-        if (started === null) {
-          throw new SubmissionCancelledError();
-        }
-        return started.result;
-      })
-      .catch((error: unknown) => {
-        throw isRequestTimeout(error) ? new SubmissionCancelledError() : error;
-      });
 }
 
 interface Props {

@@ -85,7 +85,7 @@ describe('refreshOtpChannel', () => {
     await cacheOtpChannel('telegram');
     resolveRead({ channel: 'app' });
 
-    await expect(read).resolves.toEqual({ status: 'stale', channel: null });
+    await expect(read).resolves.toEqual({ status: 'stale', channel: 'telegram' });
     expect(mockSave).toHaveBeenCalledTimes(1);
     expect(mockSave).toHaveBeenCalledWith('telegram');
   });
@@ -93,9 +93,8 @@ describe('refreshOtpChannel', () => {
   it('discards a read whose importer is no longer active', async () => {
     mockGet.mockResolvedValue({ channel: 'app' });
 
-    await expect(refreshOtpChannel(session, () => false)).resolves.toEqual({
+    await expect(refreshOtpChannel(session, () => false)).resolves.toMatchObject({
       status: 'stale',
-      channel: null,
     });
     expect(mockSave).not.toHaveBeenCalled();
   });

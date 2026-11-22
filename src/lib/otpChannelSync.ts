@@ -22,6 +22,8 @@ import { applyStashGate } from './otpStashGate';
 let generation = 0;
 /** True while the device cache does not hold the last confirmed channel. */
 let dirty = false;
+/** The last channel this process published, for a stale read to show. */
+let confirmed: OtpChannel | null = null;
 /** How many user saves are between their start and the cache publication. */
 let savesInFlight = 0;
 
@@ -39,6 +41,7 @@ export async function cacheOtpChannel(channel: OtpChannel): Promise<boolean> {
   try {
     await saveOtpChannel(channel);
     dirty = false;
+    confirmed = channel;
   } catch {
     // A write that would not take must not stop the gate below from running:
     // re-applying it is what actually closes the receiver, and it fails closed.
@@ -55,6 +58,14 @@ export async function cacheOtpChannel(channel: OtpChannel): Promise<boolean> {
  */
 export function isChannelCacheDirty(): boolean {
   return dirty;
+}
+
+/**
+ * Reads the last channel this process published.
+ * @returns The last confirmed channel, or null before the first publication.
+ */
+export function confirmedOtpChannel(): OtpChannel | null {
+  return confirmed;
 }
 
 /**
@@ -107,7 +118,7 @@ export async function refreshOtpChannel(
   try {
     const settings = await getOtpSettings(session);
     if (!isCurrent() || startedAt !== generation || savesInFlight > 0) {
-      return { status: 'stale', channel: null };
+      return { status: 'stale', channel: confirmedOtpChannel() };
     }
     const saved = await cacheOtpChannel(settings.channel);
     return {

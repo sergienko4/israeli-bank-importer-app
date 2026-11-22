@@ -202,6 +202,13 @@ export function useOtpSubmission(
   const [error, setError] = useState<string | null>(null);
   const flightRef = useSubmissionFlight(requestId);
 
+  // Starting a send for another request must not leave this request's button
+  // loading, even when the old send is still on its way. Adjusting state during
+  // render keeps the stale value out of the committed tree.
+  if (sendingFor !== null && sendingFor !== requestId) {
+    setSendingFor(null);
+  }
+
   const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
     if (flightRef.current?.requestId === requestId) {
       return 'cancelled';

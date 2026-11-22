@@ -184,6 +184,7 @@ describe('OtpPrompt request transitions', () => {
 
     await rerender('b');
     await rerender('a');
+    expect(screen.getByRole('button', { name: 'Submit code', busy: false })).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText('OTP code'), '333333');
     await act(async () => {
       resolveSend({ ok: true });

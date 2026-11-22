@@ -21,7 +21,12 @@ import type { AutoSubmitGuard } from './useAutoSubmitGuard';
  * @returns Whether automatic submission is enabled.
  */
 export function useAutoSubmitPreference(visible: boolean): boolean {
-  const [enabled, setEnabled] = useState(false);
+  // The answer is tagged with the visibility it was read for, so hiding the
+  // sheet drops it in the same render instead of carrying it into a reopen.
+  const [preference, setPreference] = useState({ visible, enabled: false });
+  if (preference.visible !== visible) {
+    setPreference({ visible, enabled: false });
+  }
   useEffect(() => {
     if (!visible) {
       return undefined;
@@ -30,7 +35,7 @@ export function useAutoSubmitPreference(visible: boolean): boolean {
     const run = async (): Promise<void> => {
       const stored = await loadOtpAutoSubmit();
       if (active) {
-        setEnabled(stored);
+        setPreference({ visible: true, enabled: stored });
       }
     };
     void run();
@@ -38,7 +43,7 @@ export function useAutoSubmitPreference(visible: boolean): boolean {
       active = false;
     };
   }, [visible]);
-  return enabled;
+  return preference.enabled;
 }
 
 /** What one automatic send needs from the prompt. */

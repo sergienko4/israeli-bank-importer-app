@@ -43,6 +43,9 @@ export function AppShell(): ReactElement {
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
   const [lastPending, setLastPending] = useState<OwnedPendingOtpRequest | null>(null);
+  // Automatic attempts belong to a request, not to the prompt that shows it.
+  // The shell lives for one pairing, so these entries never outlive their pair.
+  const [usedAutoSubmits, setUsedAutoSubmits] = useState<ReadonlySet<string>>(new Set());
   const prevIndex = useRef(0);
 
   useEffect(() => {
@@ -82,6 +85,20 @@ export function AppShell(): ReactElement {
   // The prompt always shows the request the watcher currently has pending. The
   // last one is kept only so the sheet can animate closed after it goes null.
   const shownRequest = pending ?? lastPending;
+  const shownKey = shownRequest ? `${String(shownRequest.pairing)}:${shownRequest.id}` : null;
+  const markAutoSubmitUsed = (): void => {
+    if (shownKey === null) {
+      return;
+    }
+    setUsedAutoSubmits((current) => {
+      if (current.has(shownKey)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(shownKey);
+      return next;
+    });
+  };
 
   let content: ReactNode;
   if (active === 'config') {
@@ -106,6 +123,8 @@ export function AppShell(): ReactElement {
           request={shownRequest}
           pairing={shownRequest.pairing}
           visible={pending !== null}
+          autoSubmitUsed={shownKey !== null && usedAutoSubmits.has(shownKey)}
+          onAutoSubmitUsed={markAutoSubmitUsed}
           onSubmitted={dismiss}
           onDismiss={dismiss}
         />

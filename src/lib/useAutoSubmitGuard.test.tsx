@@ -31,6 +31,22 @@ describe('useAutoSubmitGuard', () => {
     expect(attempt.isCurrent(token)).toBe(false);
   });
 
+  it("restores the parent's used flag when a request returns", async () => {
+    const { result, rerender } = await renderHook<
+      AutoSubmitGuard,
+      { requestId: string; used: boolean }
+    >(({ requestId, used }) => useAutoSubmitGuard(used, requestId), {
+      initialProps: { requestId: 'a', used: true },
+    });
+    expect(result.current.isUsed()).toBe(true);
+
+    await rerender({ requestId: 'b', used: false });
+    expect(result.current.isUsed()).toBe(false);
+
+    await rerender({ requestId: 'a', used: true });
+    expect(result.current.isUsed()).toBe(true);
+  });
+
   it('resets the used flag and attempt for a different request', async () => {
     const { result, rerender } = await renderHook<AutoSubmitGuard, { requestId: string }>(
       ({ requestId }) => useAutoSubmitGuard(false, requestId),

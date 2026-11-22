@@ -35,10 +35,23 @@ jest.mock('../components/ui', () => {
   return {
     Sheet: ({ children }: { children: ReactModule.ReactNode }) =>
       createElement(View, null, children),
-    Button: ({ title, onPress }: { title: string; onPress: () => void }) =>
+    Button: ({
+      title,
+      onPress,
+      loading,
+    }: {
+      title: string;
+      onPress: () => void;
+      loading?: boolean;
+    }) =>
       createElement(
         Pressable,
-        { accessibilityRole: 'button', accessibilityLabel: title, onPress },
+        {
+          accessibilityRole: 'button',
+          accessibilityLabel: title,
+          accessibilityState: { busy: loading === true },
+          onPress,
+        },
         createElement(Text, null, title),
       ),
     TextField: ({
@@ -150,6 +163,7 @@ describe('OtpPrompt request transitions', () => {
       expect(onSubmitted).toHaveBeenCalledWith('a', expect.any(Number));
     });
     expect(screen.getByLabelText('OTP code').props.value).toBe('');
+    expect(screen.getByRole('button', { name: 'Submit code', busy: false })).toBeTruthy();
   });
 
   it('does not auto-send after the pairing changed', async () => {
@@ -227,6 +241,7 @@ describe('OtpPrompt request transitions', () => {
     await flush();
     await fireEvent.changeText(screen.getByLabelText('OTP code'), '111111');
     await fireEvent.press(screen.getByRole('button', { name: 'Submit code' }));
+    expect(screen.getByRole('button', { name: 'Submit code', busy: true })).toBeTruthy();
 
     await rerender('b');
     await rerender('a');

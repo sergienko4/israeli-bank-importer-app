@@ -53,10 +53,10 @@ interface Props {
   autoSubmitUsed?: boolean;
   /** Marks the request as having used its automatic attempt. */
   onAutoSubmitUsed?: () => void;
-  /** Called after a successful submit. */
-  onSubmitted: (requestId: string) => void;
-  /** Called when the user dismisses without submitting. */
-  onDismiss: (requestId: string) => void;
+  /** Called after a successful submit, with the pairing it belonged to. */
+  onSubmitted: (requestId: string, pairing: number) => void;
+  /** Called on dismissal, with the pairing the shown request belonged to. */
+  onDismiss: (requestId: string, pairing: number) => void;
 }
 
 /** What the OTP sheet body renders. */
@@ -145,10 +145,13 @@ export function OtpPrompt({
   onSubmitted,
   onDismiss,
 }: Readonly<Props>): ReactElement {
+  const reportSubmitted = (requestId: string): void => {
+    onSubmitted(requestId, pairing);
+  };
   const { code, setCode, submitting, error, setError, submit } = useOtpSubmission(
     request.id,
     pairing,
-    onSubmitted,
+    reportSubmitted,
   );
   const autoEnabled = useAutoSubmitPreference(visible);
   const codeRef = useRef<{ focus: () => void } | null>(null);
@@ -222,7 +225,7 @@ export function OtpPrompt({
   const dismiss = (): void => {
     autoGuard.invalidate();
     countdown.cancel();
-    onDismiss(request.id);
+    onDismiss(request.id, pairing);
   };
   const submitManually = (candidate: string): void => {
     autoGuard.invalidate();

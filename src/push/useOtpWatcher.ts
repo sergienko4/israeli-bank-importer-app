@@ -123,7 +123,7 @@ function useOtpPolling({ connection, pairing, dismissed, onPending }: OtpPolling
  */
 export function useOtpWatcher(): {
   pending: OwnedPendingOtpRequest | null;
-  dismiss: (requestId: string) => void;
+  dismiss: (requestId: string, pairing: number) => void;
 } {
   const { connection, pairing } = useAuth();
   const [pending, setPending] = useState<OwnedPendingOtpRequest | null>(null);
@@ -133,17 +133,17 @@ export function useOtpWatcher(): {
 
   useOtpPolling({ connection, pairing, dismissed: dismissed.current, onPending: setPending });
 
-  const dismiss = useCallback(
-    (requestId: string) => {
-      const dismissedForPairing = dismissed.current.get(pairing) ?? new Set<string>();
-      dismissed.current.set(pairing, dismissedForPairing);
-      dismissedForPairing.add(requestId);
-      // Suppress the request the prompt showed, not whichever poll landed
-      // since. A newer pending request must stay pending.
-      setPending((current) => (current?.id === requestId ? null : current));
-    },
-    [pairing],
-  );
+  const dismiss = useCallback((requestId: string, ownerPairing: number) => {
+    const dismissedForPairing = dismissed.current.get(ownerPairing) ?? new Set<string>();
+    dismissed.current.set(ownerPairing, dismissedForPairing);
+    dismissedForPairing.add(requestId);
+    // Suppress the request the prompt showed, not whichever poll landed since.
+    // Both the id and the pairing must match, so a late close from an older
+    // pairing cannot hide the request that replaced it.
+    setPending((current) =>
+      current?.id === requestId && current.pairing === ownerPairing ? null : current,
+    );
+  }, []);
 
   return { pending, dismiss };
 }

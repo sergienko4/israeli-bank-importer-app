@@ -7,7 +7,7 @@
  */
 import * as Notifications from 'expo-notifications';
 import type { ReactElement, ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import type { TabItem } from '../components/ui';
@@ -42,7 +42,7 @@ export function AppShell(): ReactElement {
   const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
-  const [promptRequest, setPromptRequest] = useState<OwnedPendingOtpRequest | null>(null);
+  const [lastPending, setLastPending] = useState<OwnedPendingOtpRequest | null>(null);
   const prevIndex = useRef(0);
 
   useEffect(() => {
@@ -58,16 +58,6 @@ export function AppShell(): ReactElement {
       sub.remove();
     };
   }, []);
-
-  // The prompt names the request it is showing. Closing by that id keeps a
-  // stale sheet from dismissing the request that replaced it.
-  const closePrompt = useCallback(
-    (requestId: string): void => {
-      dismiss(requestId);
-      setPromptRequest(null);
-    },
-    [dismiss],
-  );
 
   const select = (key: Tab): void => {
     if (key === active) {
@@ -85,9 +75,13 @@ export function AppShell(): ReactElement {
 
   useEffect(() => {
     if (pending) {
-      setPromptRequest(pending);
+      setLastPending(pending);
     }
   }, [pending]);
+
+  // The prompt always shows the request the watcher currently has pending. The
+  // last one is kept only so the sheet can animate closed after it goes null.
+  const shownRequest = pending ?? lastPending;
 
   let content: ReactNode;
   if (active === 'config') {
@@ -106,13 +100,14 @@ export function AppShell(): ReactElement {
         {content}
       </ScreenSwitch>
       {depth === 0 ? <TabBar tabs={TABS} active={active} onSelect={select} /> : null}
-      {promptRequest ? (
+      {shownRequest ? (
         <OtpPrompt
-          request={promptRequest}
-          pairing={promptRequest.pairing}
+          key={shownRequest.pairing}
+          request={shownRequest}
+          pairing={shownRequest.pairing}
           visible={pending !== null}
-          onSubmitted={closePrompt}
-          onDismiss={closePrompt}
+          onSubmitted={dismiss}
+          onDismiss={dismiss}
         />
       ) : null}
       <ReconnectBanner />

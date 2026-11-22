@@ -89,7 +89,7 @@ describe('useOtpWatcher pairing ownership', () => {
     });
 
     await act(async () => {
-      result.current.dismiss('a');
+      result.current.dismiss('a', 777);
     });
     expect(result.current.pending?.id).toBe('b');
 
@@ -100,6 +100,28 @@ describe('useOtpWatcher pairing ownership', () => {
     });
   });
 
+  it('does not let an old pairing dismiss the new pairing request', async () => {
+    const { result, rerender } = await renderHook(() => useOtpWatcher());
+    await waitFor(() => {
+      expect(result.current.pending?.id).toBe('r1');
+    });
+
+    mockAuth.mockReturnValue({
+      connection: SESSION,
+      pairing: 888,
+    } as ReturnType<typeof useAuth>);
+    await rerender(undefined);
+    await waitFor(() => {
+      expect(result.current.pending).toMatchObject({ id: 'r1', pairing: 888 });
+    });
+
+    await act(async () => {
+      result.current.dismiss('r1', 777);
+    });
+
+    expect(result.current.pending).toMatchObject({ id: 'r1', pairing: 888 });
+  });
+
   it('does not carry a dismissal into a new pairing', async () => {
     const { result, rerender } = await renderHook(() => useOtpWatcher());
     await waitFor(() => {
@@ -107,7 +129,7 @@ describe('useOtpWatcher pairing ownership', () => {
     });
 
     await act(async () => {
-      result.current.dismiss('r1');
+      result.current.dismiss('r1', 777);
     });
     await waitFor(() => {
       expect(result.current.pending).toBeNull();

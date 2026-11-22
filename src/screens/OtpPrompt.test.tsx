@@ -147,7 +147,7 @@ describe('OtpPrompt request transitions', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Submit code' }));
 
     await waitFor(() => {
-      expect(onSubmitted).toHaveBeenCalledWith('a');
+      expect(onSubmitted).toHaveBeenCalledWith('a', expect.any(Number));
     });
     expect(screen.getByLabelText('OTP code').props.value).toBe('');
   });
@@ -266,6 +266,6 @@ describe('OtpPrompt request transitions', () => {
         expect.objectContaining({ id: 'b', code: '222222' }),
       );
     });
-    expect(onSubmitted).toHaveBeenCalledWith('b');
+    expect(onSubmitted).toHaveBeenCalledWith('b', expect.any(Number));
   });
 });

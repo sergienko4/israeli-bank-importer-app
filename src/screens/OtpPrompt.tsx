@@ -45,6 +45,8 @@ import { useTheme } from '../theme/ThemeContext';
 interface Props {
   /** The pending request to answer. */
   request: PendingOtpRequest;
+  /** The pairing generation that owns the request's session. */
+  pairing: number;
   /** Whether the prompt sheet is open. */
   visible: boolean;
   /** Whether this request already used its one automatic attempt. */
@@ -136,14 +138,16 @@ function OtpSheetContent({
  */
 export function OtpPrompt({
   request,
+  pairing,
   visible,
   autoSubmitUsed = false,
   onAutoSubmitUsed = () => undefined,
   onSubmitted,
   onDismiss,
 }: Readonly<Props>): ReactElement {
-  const { code, setCode, submitting, error, setError, pairing, submit } = useOtpSubmission(
+  const { code, setCode, submitting, error, setError, submit } = useOtpSubmission(
     request.id,
+    pairing,
     onSubmitted,
   );
   const autoEnabled = useAutoSubmitPreference(visible);

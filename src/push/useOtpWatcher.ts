@@ -19,6 +19,12 @@ import { drainHeldMessages } from '../lib/otpStashRunner';
 
 const POLL_INTERVAL_MS = 5000;
 
+/** A pending request plus the pairing that owned the session which fetched it. */
+export type OwnedPendingOtpRequest = PendingOtpRequest & {
+  /** The pairing the polling connection was authenticated under. */
+  readonly pairing: number;
+};
+
 /**
  * Builds the poll that reads the importer's outstanding requests.
  *
@@ -58,18 +64,26 @@ function handleRequests(requests: PendingOtpRequest[]): void {
   }
 }
 
-/**
- * Provides the next pending OTP request and a way to dismiss the current one.
- * @returns The pending request (or null) and a dismiss callback.
- */
-export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: () => void } {
-  const { connection } = useAuth();
-  const [pending, setPending] = useState<PendingOtpRequest | null>(null);
-  const dismissed = useRef<Set<string>>(new Set());
+/** What the polling effect needs from the watcher. */
+interface OtpPolling {
+  /** The active importer session. */
+  readonly connection: Session | null;
+  /** The pairing generation that owns the session. */
+  readonly pairing: number;
+  /** Ids the user dismissed this session. */
+  readonly dismissed: Set<string>;
+  /** Receives the next request with its pairing. */
+  readonly onPending: (pending: OwnedPendingOtpRequest | null) => void;
+}
 
+/**
+ * Polls for pending OTP requests while a connection is present.
+ * @param polling - The session, its pairing, dismissed ids and sink.
+ */
+function useOtpPolling({ connection, pairing, dismissed, onPending }: OtpPolling): void {
   useEffect(() => {
     if (!connection) {
-      setPending(null);
+      onPending(null);
       void syncAutoReadWindow([]);
       return undefined;
     }
@@ -83,7 +97,8 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
         return;
       }
       handleRequests(requests);
-      setPending(selectPendingOtp(requests, dismissed.current));
+      const next = selectPendingOtp(requests, dismissed);
+      onPending(next === null ? null : { ...next, pairing });
     });
     void poll();
     const interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
@@ -96,7 +111,22 @@ export function useOtpWatcher(): { pending: PendingOtpRequest | null; dismiss: (
       // receiver examine messages for a scrape nobody is watching any more.
       void syncAutoReadWindow([]);
     };
-  }, [connection]);
+  }, [connection, pairing, dismissed, onPending]);
+}
+
+/**
+ * Provides the next pending OTP request and a way to dismiss the current one.
+ * @returns The pending request (or null) and a dismiss callback.
+ */
+export function useOtpWatcher(): {
+  pending: OwnedPendingOtpRequest | null;
+  dismiss: () => void;
+} {
+  const { connection, pairing } = useAuth();
+  const [pending, setPending] = useState<OwnedPendingOtpRequest | null>(null);
+  const dismissed = useRef<Set<string>>(new Set());
+
+  useOtpPolling({ connection, pairing, dismissed: dismissed.current, onPending: setPending });
 
   const dismiss = useCallback(() => {
     setPending((current) => {

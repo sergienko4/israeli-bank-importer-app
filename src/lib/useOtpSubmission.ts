@@ -9,7 +9,6 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { BeforeSend } from '../api/authedTypes';
 import { type Session, submitOtp } from '../api/importerClient';
 import { useAuth } from '../auth/AuthContext';
-import { currentPairing } from '../auth/pairingGeneration';
 import { type OtpSendResult } from './autoSubmitAttempt';
 import { reportedOrFallback } from './errorMessages';
 import { haptics } from './haptics';
@@ -70,8 +69,6 @@ export interface OtpSubmission {
   readonly error: string | null;
   /** Clears the failure as the user edits. */
   readonly setError: (error: string | null) => void;
-  /** The pairing this request arrived under. */
-  readonly pairing: number;
   /** Validates and sends one code, optionally re-checking intent at send time. */
   readonly submit: (candidate: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
 }
@@ -184,29 +181,6 @@ function useSubmissionFlight(requestId: string): { current: SubmissionFlight | n
   return flight;
 }
 
-/** The pairing a request arrived under. */
-interface RequestOwner {
-  /** The pairing that must still be current when the send starts. */
-  readonly pairing: number;
-}
-
-/**
- * Remembers which pairing a request arrived under.
- *
- * A new request from the same importer keeps the pairing; a replacement, even
- * to the same address, gives the new request its own. Reading it per request
- * rather than per render keeps an old prompt from adopting a newer pairing.
- * @param requestId - The pending request being answered.
- * @returns The pairing the request belongs to.
- */
-function useRequestOwner(requestId: string): RequestOwner {
-  const [owner, setOwner] = useState(() => ({ requestId, pairing: currentPairing() }));
-  if (owner.requestId !== requestId) {
-    setOwner({ requestId, pairing: currentPairing() });
-  }
-  return owner;
-}
-
 /** What one prompt's submit closure needs from the hook. */
 interface SubmitContext {
   /** The pending request being answered. */
@@ -278,11 +252,13 @@ function createSubmit(
  * state flag does not become true until React re-renders. A ref closes that
  * gap, which is worth a bank attempt.
  * @param requestId - The pending request being answered.
+ * @param pairing - The pairing that owns the request's session.
  * @param onSubmitted - Called after the importer accepts a code.
  * @returns The submit state and controls.
  */
 export function useOtpSubmission(
   requestId: string,
+  pairing: number,
   onSubmitted: (requestId: string) => void,
 ): OtpSubmission {
   const { connection } = useAuth();
@@ -292,7 +268,6 @@ export function useOtpSubmission(
   const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const flightRef = useSubmissionFlight(requestId);
-  const owner = useRequestOwner(requestId);
 
   // Starting a send for another request must not leave this request's button
   // loading, even when the old send is still on its way. Adjusting state during
@@ -304,7 +279,7 @@ export function useOtpSubmission(
   const submit = createSubmit({
     requestId,
     connection,
-    pairing: owner.pairing,
+    pairing,
     flight: flightRef,
     setCode,
     setError,
@@ -318,7 +293,6 @@ export function useOtpSubmission(
     submitting: sendingFor === requestId,
     error,
     setError,
-    pairing: owner.pairing,
     submit,
   };
 }

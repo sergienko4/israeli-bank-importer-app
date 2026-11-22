@@ -9,7 +9,7 @@ import { act, renderHook } from '@testing-library/react-native';
 
 import { submitOtp } from '../api/importerClient';
 import { useAuth } from '../auth/AuthContext';
-import { changePairing } from '../auth/pairingGeneration';
+import { changePairing, currentPairing } from '../auth/pairingGeneration';
 import { useOtpSubmission } from './useOtpSubmission';
 
 jest.mock('../api/importerClient', () => ({ submitOtp: jest.fn() }));
@@ -32,7 +32,8 @@ describe('useOtpSubmission', () => {
       await beforeSend?.(start);
       return { ok: true };
     });
-    const { result } = await renderHook(() => useOtpSubmission('r1', onSubmitted));
+    const pairing = currentPairing();
+    const { result } = await renderHook(() => useOtpSubmission('r1', pairing, onSubmitted));
 
     await act(async () => {
       await expect(result.current.submit('123456')).resolves.toBe('sent');
@@ -53,7 +54,8 @@ describe('useOtpSubmission', () => {
       }
       return { ok: true };
     });
-    const { result } = await renderHook(() => useOtpSubmission('r1', onSubmitted));
+    const pairing = currentPairing();
+    const { result } = await renderHook(() => useOtpSubmission('r1', pairing, onSubmitted));
 
     changePairing();
 

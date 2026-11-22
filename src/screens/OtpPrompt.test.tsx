@@ -9,7 +9,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import { submitOtp } from '../api/importerClient';
 import { useAuth } from '../auth/AuthContext';
-import { changePairing } from '../auth/pairingGeneration';
+import { changePairing, currentPairing } from '../auth/pairingGeneration';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
 import { useOtpCapture } from '../lib/useOtpCapture';
 import { ThemeProvider } from '../theme/ThemeContext';
@@ -70,9 +70,13 @@ function request(id: string): { id: string; bankId: string; createdAt: number; d
 /**
  * Renders the prompt and returns its callbacks.
  * @param id - Initial request id.
+ * @param pairing - The pairing that owns the request's session.
  * @returns The callbacks and render controls.
  */
-async function setup(id = 'a'): Promise<{
+async function setup(
+  id = 'a',
+  pairing = currentPairing(),
+): Promise<{
   onSubmitted: jest.Mock;
   onDismiss: jest.Mock;
   rerender: (nextId: string) => Promise<void>;
@@ -81,7 +85,13 @@ async function setup(id = 'a'): Promise<{
   const onDismiss = jest.fn();
   const view = await render(
     <ThemeProvider>
-      <OtpPrompt request={request(id)} visible onSubmitted={onSubmitted} onDismiss={onDismiss} />
+      <OtpPrompt
+        request={request(id)}
+        pairing={pairing}
+        visible
+        onSubmitted={onSubmitted}
+        onDismiss={onDismiss}
+      />
     </ThemeProvider>,
   );
   return {
@@ -92,6 +102,7 @@ async function setup(id = 'a'): Promise<{
         <ThemeProvider>
           <OtpPrompt
             request={request(nextId)}
+            pairing={pairing}
             visible
             onSubmitted={onSubmitted}
             onDismiss={onDismiss}
@@ -151,17 +162,27 @@ describe('OtpPrompt request transitions', () => {
       }
       return { ok: true };
     });
-    const { onSubmitted } = await setup('a');
+    const pairing = currentPairing();
+    const { onSubmitted } = await setup('a', pairing);
     await flush();
 
     changePairing();
     await fireEvent.changeText(screen.getByLabelText('OTP code'), '111111');
+    await act(() => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await act(() => {
+      jest.advanceTimersByTime(1_000);
+    });
+    await act(() => {
+      jest.advanceTimersByTime(1_000);
+    });
     await act(async () => {
-      jest.advanceTimersByTime(3_000);
       await Promise.resolve();
       await Promise.resolve();
     });
 
+    expect(mockSubmitOtp).toHaveBeenCalledTimes(1);
     expect(onSubmitted).not.toHaveBeenCalled();
   });
 

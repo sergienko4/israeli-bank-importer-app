@@ -10,10 +10,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import type { PendingOtpRequest } from '../api/otp';
 import type { TabItem } from '../components/ui';
 import { ScreenSwitch, TabBar } from '../components/ui';
-import { useOtpWatcher } from '../push/useOtpWatcher';
+import { type OwnedPendingOtpRequest, useOtpWatcher } from '../push/useOtpWatcher';
 import { useTheme } from '../theme/ThemeContext';
 import { BanksScreen } from './BanksScreen';
 import { ConfigScreen } from './ConfigScreen';
@@ -43,7 +42,7 @@ export function AppShell(): ReactElement {
   const { pending, dismiss } = useOtpWatcher();
   const [active, setActive] = useState<Tab>('home');
   const [depth, setDepth] = useState(0);
-  const [promptRequest, setPromptRequest] = useState<PendingOtpRequest | null>(null);
+  const [promptRequest, setPromptRequest] = useState<OwnedPendingOtpRequest | null>(null);
   const prevIndex = useRef(0);
 
   useEffect(() => {
@@ -100,6 +99,7 @@ export function AppShell(): ReactElement {
       {promptRequest ? (
         <OtpPrompt
           request={promptRequest}
+          pairing={promptRequest.pairing}
           visible={pending !== null}
           onSubmitted={dismiss}
           onDismiss={dismiss}

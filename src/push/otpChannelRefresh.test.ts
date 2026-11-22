@@ -83,6 +83,41 @@ describe('createChannelRefresh', () => {
     expect(mockRefresh).toHaveBeenCalledTimes(3);
   });
 
+  it('drops a timed-out read and waits five seconds before retrying', async () => {
+    let settle: (result: Awaited<ReturnType<typeof refreshOtpChannel>>) => void = () => undefined;
+    mockRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    const refresh = createChannelRefresh(
+      () => SESSION,
+      () => true,
+    );
+    refresh();
+    await flush();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    const firstOwner = mockRefresh.mock.calls[0]?.[1];
+    expect(firstOwner?.()).toBe(true);
+
+    await jest.advanceTimersByTimeAsync(20_000);
+    await flush();
+    expect(firstOwner?.()).toBe(false);
+
+    refresh();
+    await flush();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+    jest.setSystemTime(25_000);
+    refresh();
+    await flush();
+    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    expect(firstOwner?.()).toBe(false);
+
+    settle({ status: 'ok', channel: 'app' });
+    await flush();
+  });
+
   it('retries a dirty cache before the normal interval', async () => {
     const refresh = createChannelRefresh(
       () => SESSION,

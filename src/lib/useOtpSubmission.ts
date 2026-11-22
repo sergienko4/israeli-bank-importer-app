@@ -4,7 +4,7 @@
  * Kept out of the screen so the prompt stays within the project's function and
  * file caps, and so the accepted-code reset is testable with the submission.
  */
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 import type { BeforeSend } from '../api/authedTypes';
 import { type Session, submitOtp } from '../api/importerClient';
@@ -115,6 +115,74 @@ function finishSubmission({
 }
 
 /**
+ * Validates one code and the connection before anything is sent.
+ * @param candidate - What the user or the countdown supplied.
+ * @param connection - The active importer session, or null when disconnected.
+ * @param setError - Shows why the send cannot start.
+ * @returns The session and normalised code, or null when the send must not start.
+ */
+function prepareCode(
+  candidate: string,
+  connection: Session | null,
+  setError: (error: string | null) => void,
+): { session: Session; code: string } | null {
+  const trimmed = normalizeOtpCodeInput(candidate);
+  if (!isValidOtpCode(trimmed)) {
+    setError('Enter the 4–8 digit app OTP code.');
+    return null;
+  }
+  if (!connection) {
+    haptics.warning();
+    setError('Reconnect to the importer, then enter the code again.');
+    return null;
+  }
+  return { session: connection, code: trimmed };
+}
+
+/** Which request's POST is on its way, and whether the prompt still shows it. */
+interface SubmissionFlight {
+  /** Reports whether this request already has a POST on its way. */
+  readonly isSending: (requestId: string) => boolean;
+  /** Records that this request's POST started. */
+  readonly start: (requestId: string) => void;
+  /** Records that this request's POST settled. */
+  readonly finish: () => void;
+  /** Reports whether the prompt still shows the request that started it. */
+  readonly isCurrent: (requestId: string) => boolean;
+}
+
+/**
+ * Tracks the POST a prompt has on its way against the request it belongs to.
+ * @param requestId - The request the prompt currently shows.
+ * @returns The flight reads and writes.
+ */
+function useSubmissionFlight(requestId: string): SubmissionFlight {
+  const inFlight = useRef<string | null>(null);
+  const current = useRef(requestId);
+
+  useLayoutEffect(() => {
+    if (current.current === requestId) {
+      return;
+    }
+    current.current = requestId;
+    // The previous request's POST may still be on its way. Its completion
+    // belongs to that request, and this one must be able to submit.
+    inFlight.current = null;
+  }, [requestId]);
+
+  return {
+    isSending: (id) => inFlight.current === id,
+    start: (id) => {
+      inFlight.current = id;
+    },
+    finish: () => {
+      inFlight.current = null;
+    },
+    isCurrent: (id) => current.current === id,
+  };
+}
+
+/**
  * Owns the one network write the prompt performs.
  *
  * The countdown and the button can both reach `submit` in the same tick, and a
@@ -130,32 +198,38 @@ export function useOtpSubmission(
 ): OtpSubmission {
   const { connection } = useAuth();
   const [code, setCode] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  // Which request is showing the loading state. Naming the request rather
+  // than holding a boolean makes a replacement request start unburdened.
+  const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
+  const flight = useSubmissionFlight(requestId);
 
   const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
-    if (inFlight.current) {
+    if (flight.isSending(requestId)) {
       return 'cancelled';
     }
-    const trimmed = normalizeOtpCodeInput(candidate);
-    if (!isValidOtpCode(trimmed)) {
-      setError('Enter the 4–8 digit app OTP code.');
+    const prepared = prepareCode(candidate, connection, setError);
+    if (prepared === null) {
       return 'failed';
     }
-    if (!connection) {
-      haptics.warning();
-      setError('Reconnect to the importer, then enter the code again.');
-      return 'failed';
-    }
-    inFlight.current = true;
-    setSubmitting(true);
+    flight.start(requestId);
+    setSendingFor(requestId);
     setError(null);
-    const outcome = await sendCode({ session: connection, requestId, code: trimmed, beforeSend });
-    inFlight.current = false;
-    setSubmitting(false);
+    const outcome = await sendCode({
+      session: prepared.session,
+      requestId,
+      code: prepared.code,
+      beforeSend,
+    });
+    if (!flight.isCurrent(requestId)) {
+      // The prompt is showing another request now: this outcome must not
+      // clear its code, show its error, or report its success.
+      return 'cancelled';
+    }
+    flight.finish();
+    setSendingFor(null);
     return finishSubmission({ outcome, requestId, setCode, setError, onSubmitted });
   };
 
-  return { code, setCode, submitting, error, setError, submit };
+  return { code, setCode, submitting: sendingFor === requestId, error, setError, submit };
 }

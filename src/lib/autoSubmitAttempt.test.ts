@@ -28,6 +28,32 @@ describe('createAutoSubmitAttempt', () => {
 });
 
 describe('submitIfCurrent', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('gives up on a preference read that never settles', async () => {
+    jest.useFakeTimers();
+    const attempt = createAutoSubmitAttempt();
+    const sent: string[] = [];
+
+    const result = submitIfCurrent({
+      attempt,
+      token: attempt.token,
+      readPreference: () => new Promise<boolean>(() => undefined),
+      send: async (code) => {
+        sent.push(code);
+        return 'sent';
+      },
+      code: '123456',
+    });
+
+    await jest.advanceTimersByTimeAsync(5_000);
+
+    await expect(result).resolves.toBe('cancelled');
+    expect(sent).toEqual([]);
+  });
+
   it('does not send when the attempt is invalidated during the read', async () => {
     const attempt = createAutoSubmitAttempt();
     const token = attempt.token;

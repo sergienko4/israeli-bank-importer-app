@@ -6,6 +6,9 @@
  * dismissed the sheet, submitted by hand, or left the prompt entirely.
  */
 
+/** How long an automatic send waits for the stored opt-in. */
+const PREFERENCE_TIMEOUT_MS = 5_000;
+
 /** A generation tracker for one armed code. */
 export interface AutoSubmitAttempt {
   /** The current generation. */
@@ -51,6 +54,33 @@ export interface AutoSubmitCheck {
 }
 
 /**
+ * Reads the opt-in, treating a read that never settles as opted out.
+ *
+ * The gate's own read is bounded by its queue timeout, but it only runs once
+ * the transport starts. A hung read here would consume the request's one
+ * automatic attempt before anything is armed, so it is bounded as well.
+ * @param read - Reads the stored opt-in.
+ * @returns Whether automatic sending is on.
+ */
+async function readPreferenceWithinTimeout(read: () => Promise<boolean>): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      read().catch(() => false),
+      new Promise<boolean>((settle) => {
+        timer = setTimeout(() => {
+          settle(false);
+        }, PREFERENCE_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+/**
  * Sends an armed code only if the opt-in is still on and the attempt is current.
  * @param check - The tracker, captured token, preference read, send, and code.
  * @returns What the send did, or `cancelled` when the checks refused it.
@@ -58,7 +88,7 @@ export interface AutoSubmitCheck {
 export async function submitIfCurrent(check: AutoSubmitCheck): Promise<OtpSendResult> {
   // A read that fails cannot confirm the user still wants automatic sending,
   // so it counts as opted out rather than surfacing an unhandled rejection.
-  const enabled = await check.readPreference().catch(() => false);
+  const enabled = await readPreferenceWithinTimeout(check.readPreference);
   if (!enabled || !check.attempt.isCurrent(check.token)) {
     return 'cancelled';
   }

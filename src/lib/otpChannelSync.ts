@@ -54,6 +54,11 @@ export async function cacheOtpChannel(
   baseUrl = '',
   isCurrent: () => boolean = () => true,
 ): Promise<boolean | 'stale'> {
+  // A caller that has already lost ownership must not advance the generation:
+  // doing so would discard a current publication already queued ahead of it.
+  if (!isCurrent()) {
+    return 'stale';
+  }
   generation += 1;
   const writeGeneration = generation;
   const revisionAtStart = dirtyRevision;

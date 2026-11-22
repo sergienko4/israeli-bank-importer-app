@@ -178,6 +178,27 @@ describe('channel save ownership', () => {
     await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'ok' });
   });
 
+  it('does not invalidate a queued write when the caller is already stale', async () => {
+    let releaseCurrent: () => void = () => undefined;
+    mockSave.mockImplementationOnce(
+      async (_channel, isCurrent = () => true, onPublished = () => undefined) => {
+        await new Promise<void>((resolve) => {
+          releaseCurrent = resolve;
+        });
+        if (!isCurrent()) {
+          throw new StaleChannelOwnerError();
+        }
+        onPublished();
+      },
+    );
+    const currentWrite = cacheOtpChannel('app', session.baseUrl);
+
+    await expect(cacheOtpChannel('telegram', session.baseUrl, () => false)).resolves.toBe('stale');
+
+    releaseCurrent();
+    await expect(currentWrite).resolves.toBe(true);
+  });
+
   it('does not discard a newer write when an older write fails', async () => {
     let failOlder: (error: Error) => void = () => undefined;
     let finishNewer: () => void = () => undefined;

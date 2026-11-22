@@ -22,21 +22,29 @@
  * The countdown is plain text rather than an animation, so it needs no
  * reduced-motion branch: there is no motion to reduce.
  */
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
+import { type BeforeSend, SubmissionCancelledError } from '../api/authedTypes';
 import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
 import { useAuth } from '../auth/AuthContext';
+import { currentPairing } from '../auth/pairingGeneration';
 import { Button, Sheet, TextField } from '../components/ui';
-import { type AutoSubmitAttempt, submitIfCurrent } from '../lib/autoSubmitAttempt';
+import {
+  type AutoSubmitAttempt,
+  type OtpSendResult,
+  submitIfCurrent,
+} from '../lib/autoSubmitAttempt';
 import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
 import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
+import { startIfAllowed } from '../lib/otpCaptureSwitch';
 import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
+import { isRequestTimeout, withRequestTimeout } from '../lib/requestTimeout';
 import { AUTO_SUBMIT_DELAY_SECONDS, useAutoSubmitCountdown } from '../lib/useAutoSubmitCountdown';
-import { useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
+import { type AutoSubmitGuard, useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
 import { useOtpCapture } from '../lib/useOtpCapture';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -53,8 +61,8 @@ interface SendCodeRequest {
   readonly requestId: string;
   /** The normalised code to send. */
   readonly code: string;
-  /** Re-checks intent after the lane and session renewal. */
-  readonly beforeSend?: () => Promise<boolean>;
+  /** Orders the final opt-in read and POST start after every wait. */
+  readonly beforeSend?: BeforeSend;
 }
 
 /**
@@ -113,14 +121,74 @@ function useAutoSubmitPreference(visible: boolean): boolean {
   return enabled;
 }
 
+/** What one automatic send needs from the prompt. */
+interface AutoFireOptions {
+  /** The prompt's attempt guard. */
+  readonly autoGuard: AutoSubmitGuard;
+  /** The generation captured when the code was armed. */
+  readonly token: number;
+  /** The importer pairing captured when the code was armed. */
+  readonly pairing: number;
+  /** The send function. */
+  readonly submit: (code: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
+  /** Shows the fallback when nothing left. */
+  readonly setError: (message: string | null) => void;
+}
+
+/**
+ * Fires one automatic send and reports a gate that withdrew it.
+ * @param options - The guard, armed generation, send, and error setter.
+ * @returns The countdown's fire callback.
+ */
+function autoFire({
+  autoGuard,
+  token,
+  pairing,
+  submit,
+  setError,
+}: AutoFireOptions): (value: string) => void {
+  return (value) => {
+    const attempt = autoGuard.currentAttempt();
+    void submitIfCurrent({
+      attempt,
+      token,
+      readPreference: loadOtpAutoSubmit,
+      send: (candidate) => submit(candidate, autoSendGate(attempt, token, pairing)),
+      code: value,
+    }).then((result) => {
+      if (result === 'cancelled' && attempt.isCurrent(token)) {
+        setError('Auto-send stopped. Press Submit code.');
+      }
+    });
+  };
+}
+
 /**
  * Builds the before-send gate used after every automatic-send wait.
- * @param attempt - The attempt generation captured at fire time.
+ * @param attempt - The attempt generation captured when the code was armed.
  * @param token - The generation that must still be current.
- * @returns A gate that re-reads the opt-in and checks the generation.
+ * @param pairing - The importer pairing that must still own the session.
+ * @returns A gate that re-reads intent and checks the generation and pairing.
  */
-function autoSendGate(attempt: AutoSubmitAttempt, token: number): () => Promise<boolean> {
-  return async () => (await loadOtpAutoSubmit().catch(() => false)) && attempt.isCurrent(token);
+function autoSendGate(attempt: AutoSubmitAttempt, token: number, pairing: number): BeforeSend {
+  return (start) =>
+    withRequestTimeout(
+      startIfAllowed(
+        () => loadOtpAutoSubmit().catch(() => false),
+        start,
+        () => attempt.isCurrent(token) && currentPairing() === pairing,
+      ),
+      20_000,
+    )
+      .then((started) => {
+        if (started === null) {
+          throw new SubmissionCancelledError();
+        }
+        return started.result;
+      })
+      .catch((error: unknown) => {
+        throw isRequestTimeout(error) ? new SubmissionCancelledError() : error;
+      });
 }
 
 interface Props {
@@ -147,7 +215,7 @@ interface OtpSubmission {
   /** Clears the failure as the user edits. */
   readonly setError: (error: string | null) => void;
   /** Validates and sends one code, optionally re-checking intent at send time. */
-  readonly submit: (candidate: string, beforeSend?: () => Promise<boolean>) => Promise<void>;
+  readonly submit: (candidate: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
 }
 
 /**
@@ -169,19 +237,19 @@ function useOtpSubmission(
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
 
-  const submit = async (candidate: string, beforeSend?: () => Promise<boolean>): Promise<void> => {
+  const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
     if (inFlight.current) {
-      return;
+      return 'cancelled';
     }
     const trimmed = normalizeOtpCodeInput(candidate);
     if (!isValidOtpCode(trimmed)) {
       setError('Enter the 4–8 digit app OTP code.');
-      return;
+      return 'failed';
     }
     if (!connection) {
       haptics.warning();
       setError('Reconnect to the importer, then enter the code again.');
-      return;
+      return 'failed';
     }
     inFlight.current = true;
     setSubmitting(true);
@@ -189,16 +257,17 @@ function useOtpSubmission(
     const outcome = await sendCode({ session: connection, requestId, code: trimmed, beforeSend });
     inFlight.current = false;
     setSubmitting(false);
-    if (outcome.kind === 'cancelled') {
-      return;
-    }
     if (outcome.kind === 'failed') {
       haptics.warning();
       setError(outcome.message);
-      return;
+      return 'failed';
+    }
+    if (outcome.kind === 'cancelled') {
+      return 'cancelled';
     }
     haptics.success();
     onSubmitted(requestId);
+    return 'sent';
   };
 
   return { submitting, error, setError, submit };
@@ -225,30 +294,26 @@ export function OtpPrompt({
   // The parent owns the one-shot guard so it survives this prompt's per-request
   // remount; the guard hook keeps the same-tick check and the attempt token.
   const autoGuard = useAutoSubmitGuard(autoSubmitUsed);
+  const [armed, setArmed] = useState({ token: 0, pairing: currentPairing() });
   // The countdown belongs to this prompt; the one-shot guard lives in the
   // parent so it cannot be reset by a remount.
   const countdown = useAutoSubmitCountdown({
     requestId: request.id,
     visible,
-    onFire: (value: string): void => {
-      const attempt = autoGuard.currentAttempt();
-      // Re-read after every wait: the user may have turned auto-submit off,
-      // edited, or dismissed while the lane or session guard was busy.
-      void submitIfCurrent({
-        attempt,
-        token: attempt.token,
-        readPreference: loadOtpAutoSubmit,
-        send: (candidate) => submit(candidate, autoSendGate(attempt, attempt.token)),
-        code: value,
-      });
-    },
+    onFire: autoFire({
+      autoGuard,
+      token: armed.token,
+      pairing: armed.pairing,
+      submit,
+      setError,
+    }),
   });
 
   const cancelCountdown = countdown.cancel;
 
   // A hidden prompt must not keep an armed countdown: it would resume and
   // send the old code when the same request reappears.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) {
       autoGuard.invalidate();
       cancelCountdown();
@@ -271,6 +336,7 @@ export function OtpPrompt({
     });
     if (arm) {
       autoGuard.markUsed();
+      setArmed({ token: autoGuard.currentAttempt().token, pairing: currentPairing() });
       onAutoSubmitUsed();
       countdown.arm(next);
       AccessibilityInfo.announceForAccessibility(

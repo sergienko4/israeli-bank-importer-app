@@ -4,7 +4,7 @@
  */
 import { getOtpSettings } from '../api/importerClient';
 import { saveOtpChannel } from './otpChannelStore';
-import { cacheOtpChannel, refreshOtpChannel } from './otpChannelSync';
+import { cacheOtpChannel, isChannelCacheDirty, refreshOtpChannel } from './otpChannelSync';
 import { applyStashGate } from './otpStashGate';
 
 jest.mock('../api/importerClient', () => ({ getOtpSettings: jest.fn() }));
@@ -28,6 +28,7 @@ describe('cacheOtpChannel', () => {
     await cacheOtpChannel('telegram');
 
     expect(mockSave).toHaveBeenCalledWith('telegram');
+    expect(isChannelCacheDirty()).toBe(false);
   });
 
   it('re-applies the capture gate so the receiver follows the new channel', async () => {
@@ -39,7 +40,8 @@ describe('cacheOtpChannel', () => {
   it('still re-applies the gate when the cache could not be written', async () => {
     mockSave.mockRejectedValue(new Error('keystore locked'));
 
-    await expect(cacheOtpChannel('app')).resolves.toBeUndefined();
+    await expect(cacheOtpChannel('app')).resolves.toBe(false);
+    expect(isChannelCacheDirty()).toBe(true);
     expect(mockGate).toHaveBeenCalledTimes(1);
   });
 });
@@ -48,8 +50,10 @@ describe('refreshOtpChannel', () => {
   it('caches the channel the importer reports', async () => {
     mockGet.mockResolvedValue({ channel: 'telegram' });
 
-    await refreshOtpChannel(session);
-
+    await expect(refreshOtpChannel(session)).resolves.toEqual({
+      status: 'ok',
+      channel: 'telegram',
+    });
     expect(mockSave).toHaveBeenCalledWith('telegram');
   });
 
@@ -67,6 +71,43 @@ describe('refreshOtpChannel', () => {
     await refreshOtpChannel(session);
 
     expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a read that a newer channel publication superseded', async () => {
+    let resolveRead: (value: { channel: 'app' }) => void = () => undefined;
+    mockGet.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+
+    const read = refreshOtpChannel(session);
+    await cacheOtpChannel('telegram');
+    resolveRead({ channel: 'app' });
+
+    await expect(read).resolves.toEqual({ status: 'stale', channel: null });
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave).toHaveBeenCalledWith('telegram');
+  });
+
+  it('discards a read whose importer is no longer active', async () => {
+    mockGet.mockResolvedValue({ channel: 'app' });
+
+    await expect(refreshOtpChannel(session, () => false)).resolves.toEqual({
+      status: 'stale',
+      channel: null,
+    });
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed cache write so the watcher retries', async () => {
+    mockGet.mockResolvedValue({ channel: 'app' });
+    mockSave.mockRejectedValue(new Error('keystore locked'));
+
+    await expect(refreshOtpChannel(session)).resolves.toEqual({
+      status: 'cache-failed',
+      channel: 'app',
+    });
   });
 
   it('applies the gate once when the read succeeded', async () => {

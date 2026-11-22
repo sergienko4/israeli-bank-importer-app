@@ -27,19 +27,18 @@ export const OTP_ANSWERED_QUIET_MS = 5_000;
  *
  * A full-minute snooze on a request that expires sooner would hide it past its
  * deadline, so the snooze is capped to leave a margin for the next poll and for
- * typing the code. Inside that margin it stays quiet only until the deadline.
+ * typing the code. Inside that margin it stays quiet for a short window.
  * @param deadline - The request's deadline in epoch ms.
  * @param now - Current time in epoch ms (defaults to Date.now()).
  * @returns The time the snooze ends, never before `now`.
  */
 export function snoozeUntil(deadline: number, now: number = Date.now()): number {
   const remaining = deadline - now;
-  if (remaining <= OTP_DISMISS_RESUME_MARGIN_MS) {
-    // Too close to the deadline for a full snooze, but still quiet for the
-    // rest of the request instead of reappearing on the very next poll.
-    return Math.max(now, Math.min(deadline, now + OTP_ANSWERED_QUIET_MS));
-  }
-  return now + Math.min(OTP_DISMISS_SNOOZE_MS, remaining - OTP_DISMISS_RESUME_MARGIN_MS);
+  const quiet = Math.min(
+    OTP_DISMISS_SNOOZE_MS,
+    Math.max(OTP_ANSWERED_QUIET_MS, remaining - OTP_DISMISS_RESUME_MARGIN_MS),
+  );
+  return Math.max(now, Math.min(deadline, now + quiet));
 }
 
 /**
@@ -67,12 +66,40 @@ export interface GapCheck {
   readonly current: PendingOtpRequest | null;
   /** The latest pending requests. */
   readonly requests: readonly PendingOtpRequest[];
-  /** The request the latest snapshot selected, or null. */
-  readonly next: PendingOtpRequest | null;
   /** How many consecutive snapshots have omitted `current`. */
   readonly misses: number;
   /** Current time in epoch ms (defaults to Date.now()). */
   readonly now?: number;
+}
+
+/** What the next-prompt choice depends on. */
+export interface NextOtpOptions {
+  /** The request currently shown, or null. */
+  readonly current: PendingOtpRequest | null;
+  /** The latest pending requests. */
+  readonly requests: PendingOtpRequest[];
+  /** Snooze deadlines keyed by request id. */
+  readonly snoozedUntil: ReadonlyMap<string, number>;
+  /** Current time in epoch ms (defaults to Date.now()). */
+  readonly now?: number;
+}
+
+/**
+ * Keeps the request already on screen while it is still actionable.
+ * @param options - The current request, latest snapshot, snoozes, and time.
+ * @returns The request to show, or null when none is actionable.
+ */
+export function selectNextOtp({
+  current,
+  requests,
+  snoozedUntil,
+  now = Date.now(),
+}: NextOtpOptions): PendingOtpRequest | null {
+  const listed =
+    current === null ? undefined : requests.find((request) => request.id === current.id);
+  const currentLive =
+    listed !== undefined && listed.deadline >= now && (snoozedUntil.get(listed.id) ?? 0) <= now;
+  return currentLive ? listed : selectPendingOtp(requests, snoozedUntil, now);
 }
 
 /**
@@ -83,14 +110,8 @@ export interface GapCheck {
  * @param check - The current, latest, selected, and miss-count values.
  * @returns True when `current` should stay visible for this snapshot.
  */
-export function keepThroughGap({
-  current,
-  requests,
-  next,
-  misses,
-  now = Date.now(),
-}: GapCheck): boolean {
-  if (current === null || next !== null || misses >= 1 || current.deadline <= now) {
+export function keepThroughGap({ current, requests, misses, now = Date.now() }: GapCheck): boolean {
+  if (current === null || misses >= 1 || current.deadline <= now) {
     return false;
   }
   return !requests.some((request) => request.id === current.id);

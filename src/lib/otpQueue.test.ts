@@ -4,6 +4,7 @@ import {
   OTP_DISMISS_SNOOZE_MS,
   pruneSnoozed,
   pruneUsed,
+  selectNextOtp,
   selectPendingOtp,
   snoozeUntil,
 } from './otpQueue';
@@ -60,7 +61,10 @@ describe('snoozeUntil', () => {
     expect(snoozeUntil(now + 30_000, now)).toBe(now + 20_000);
   });
 
-  it('stays quiet to the deadline when it is already near', () => {
+  it('uses at least a five-second window when the deadline is close', () => {
+    expect(snoozeUntil(now + 15_000, now)).toBe(now + 5_000);
+    expect(snoozeUntil(now + 11_000, now)).toBe(now + 5_000);
+    expect(snoozeUntil(now + 8_000, now)).toBe(now + 5_000);
     expect(snoozeUntil(now + 5_000, now)).toBe(now + 5_000);
   });
 
@@ -92,25 +96,67 @@ describe('pruneSnoozed', () => {
   });
 });
 
+describe('selectNextOtp', () => {
+  const now = 1_000;
+
+  it('keeps the request already on screen while it is still listed', () => {
+    expect(
+      selectNextOtp({
+        current: req('a', 5_000),
+        requests: [req('b', 5_000), req('a', 5_000)],
+        snoozedUntil: new Map(),
+        now,
+      })?.id,
+    ).toBe('a');
+  });
+
+  it('moves on when the current request is snoozed', () => {
+    expect(
+      selectNextOtp({
+        current: req('a', 5_000),
+        requests: [req('a', 5_000), req('b', 5_000)],
+        snoozedUntil: new Map([['a', now + 1]]),
+        now,
+      })?.id,
+    ).toBe('b');
+  });
+
+  it('moves on when the current request disappeared', () => {
+    expect(
+      selectNextOtp({
+        current: req('a', 5_000),
+        requests: [req('b', 5_000)],
+        snoozedUntil: new Map(),
+        now,
+      })?.id,
+    ).toBe('b');
+  });
+});
+
 describe('keepThroughGap', () => {
   const now = 10_000;
 
   it('keeps a live request through one missing snapshot', () => {
-    expect(
-      keepThroughGap({ current: req('a', 20_000), requests: [], next: null, misses: 0, now }),
-    ).toBe(true);
+    expect(keepThroughGap({ current: req('a', 20_000), requests: [], misses: 0, now })).toBe(true);
   });
 
   it('drops it on the second consecutive miss', () => {
-    expect(
-      keepThroughGap({ current: req('a', 20_000), requests: [], next: null, misses: 1, now }),
-    ).toBe(false);
+    expect(keepThroughGap({ current: req('a', 20_000), requests: [], misses: 1, now })).toBe(false);
   });
 
   it('drops an expired request immediately', () => {
+    expect(keepThroughGap({ current: req('a', now), requests: [], misses: 0, now })).toBe(false);
+  });
+
+  it('keeps it even when another request is available', () => {
     expect(
-      keepThroughGap({ current: req('a', now), requests: [], next: null, misses: 0, now }),
-    ).toBe(false);
+      keepThroughGap({
+        current: req('a', 20_000),
+        requests: [req('b', 20_000)],
+        misses: 0,
+        now,
+      }),
+    ).toBe(true);
   });
 
   it('drops it as soon as the snapshot still lists it', () => {
@@ -118,7 +164,6 @@ describe('keepThroughGap', () => {
       keepThroughGap({
         current: req('a', 20_000),
         requests: [req('a', 20_000)],
-        next: null,
         misses: 0,
         now,
       }),

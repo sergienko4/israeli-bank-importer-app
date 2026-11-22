@@ -1,5 +1,6 @@
 /** The wire shape of one foreground OTP submission. */
-import type { Session } from './importerClient';
+import type { BeforeSend } from './authedTypes';
+import type { Session } from './session';
 
 /** One foreground OTP submission. */
 export interface OtpSubmissionRequest {
@@ -9,8 +10,8 @@ export interface OtpSubmissionRequest {
   readonly id: string;
   /** The code the user is submitting. */
   readonly code: string;
-  /** Re-checks intent after the lane and session renewal, before the POST. */
-  readonly beforeSend?: () => Promise<boolean>;
+  /** Orders the final opt-in read and POST start after every wait. */
+  readonly beforeSend?: BeforeSend;
 }
 
 /**

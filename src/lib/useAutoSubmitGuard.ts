@@ -5,7 +5,7 @@
  * the prompt goes away, so the tracker lives in refs owned by a hook. Kept out
  * of the screen so the prompt stays within the project's function-size cap.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { type AutoSubmitAttempt, createAutoSubmitAttempt } from './autoSubmitAttempt';
 
@@ -34,7 +34,7 @@ export function useAutoSubmitGuard(autoSubmitUsed: boolean): AutoSubmitGuard {
     used.current = autoSubmitUsed;
   }, [autoSubmitUsed]);
 
-  useEffect(
+  useLayoutEffect(
     () => () => {
       attempt.current.invalidate();
     },

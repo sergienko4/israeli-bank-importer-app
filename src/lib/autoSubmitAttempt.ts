@@ -33,16 +33,19 @@ export function createAutoSubmitAttempt(): AutoSubmitAttempt {
   };
 }
 
+/** What one attempted send actually did. */
+export type OtpSendResult = 'sent' | 'failed' | 'cancelled';
+
 /** What a guarded automatic submission needs. */
 export interface AutoSubmitCheck {
   /** The attempt tracker. */
   readonly attempt: AutoSubmitAttempt;
-  /** The generation captured before the preference read. */
+  /** The generation captured when the code was armed. */
   readonly token: number;
   /** Reads the current opt-in. */
   readonly readPreference: () => Promise<boolean>;
-  /** Sends the code. */
-  readonly send: (code: string) => Promise<void>;
+  /** Sends the code and reports what actually happened. */
+  readonly send: (code: string) => Promise<OtpSendResult>;
   /** The armed code. */
   readonly code: string;
 }
@@ -50,15 +53,14 @@ export interface AutoSubmitCheck {
 /**
  * Sends an armed code only if the opt-in is still on and the attempt is current.
  * @param check - The tracker, captured token, preference read, send, and code.
- * @returns True when the code was sent.
+ * @returns What the send did, or `cancelled` when the checks refused it.
  */
-export async function submitIfCurrent(check: AutoSubmitCheck): Promise<boolean> {
+export async function submitIfCurrent(check: AutoSubmitCheck): Promise<OtpSendResult> {
   // A read that fails cannot confirm the user still wants automatic sending,
   // so it counts as opted out rather than surfacing an unhandled rejection.
   const enabled = await check.readPreference().catch(() => false);
   if (!enabled || !check.attempt.isCurrent(check.token)) {
-    return false;
+    return 'cancelled';
   }
-  await check.send(check.code);
-  return true;
+  return check.send(check.code);
 }

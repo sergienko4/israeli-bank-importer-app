@@ -1,5 +1,7 @@
+import { SubmissionCancelledError } from './authedTypes';
 import {
   getOtpSettings,
+  getPendingOtp,
   getPendingOtpUnattended,
   type Session,
   setOtpSettings,
@@ -8,7 +10,6 @@ import {
   submitOtp,
   submitOtpUnattended,
 } from './importerClient';
-import { getPendingOtp } from './otpPending';
 import { NO_RESPONSE } from './timedFetch';
 
 const session: Session = { baseUrl: 'https://host:8080', token: 'tok' };
@@ -142,7 +143,7 @@ describe('submitOtp', () => {
       session,
       id: 'r1',
       code: '123456',
-      beforeSend: () => Promise.resolve(false),
+      beforeSend: () => Promise.reject(new SubmissionCancelledError()),
     });
 
     expect(result).toBeNull();

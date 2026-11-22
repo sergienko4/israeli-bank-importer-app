@@ -40,6 +40,7 @@ describe('submitIfCurrent', () => {
       readPreference: () => preference.promise,
       send: async (code) => {
         sent.push(code);
+        return 'sent';
       },
       code: '123456',
     });
@@ -47,7 +48,7 @@ describe('submitIfCurrent', () => {
     attempt.invalidate();
     preference.resolve(true);
 
-    await expect(result).resolves.toBe(false);
+    await expect(result).resolves.toBe('cancelled');
     expect(sent).toEqual([]);
   });
 
@@ -62,10 +63,11 @@ describe('submitIfCurrent', () => {
         readPreference: () => Promise.resolve(true),
         send: async (code) => {
           sent.push(code);
+          return 'sent';
         },
         code: '123456',
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe('sent');
     expect(sent).toEqual(['123456']);
   });
 
@@ -80,11 +82,40 @@ describe('submitIfCurrent', () => {
         readPreference: () => Promise.resolve(false),
         send: async (code) => {
           sent.push(code);
+          return 'sent';
         },
         code: '123456',
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('cancelled');
     expect(sent).toEqual([]);
+  });
+
+  it('reports a send that the gate cancelled', async () => {
+    const attempt = createAutoSubmitAttempt();
+
+    await expect(
+      submitIfCurrent({
+        attempt,
+        token: attempt.token,
+        readPreference: () => Promise.resolve(true),
+        send: () => Promise.resolve('cancelled'),
+        code: '123456',
+      }),
+    ).resolves.toBe('cancelled');
+  });
+
+  it('reports a send the importer rejected', async () => {
+    const attempt = createAutoSubmitAttempt();
+
+    await expect(
+      submitIfCurrent({
+        attempt,
+        token: attempt.token,
+        readPreference: () => Promise.resolve(true),
+        send: () => Promise.resolve('failed'),
+        code: '123456',
+      }),
+    ).resolves.toBe('failed');
   });
 
   it('does not send when the preference cannot be read', async () => {
@@ -98,10 +129,11 @@ describe('submitIfCurrent', () => {
         readPreference: () => Promise.reject(new Error('storage unavailable')),
         send: async (code) => {
           sent.push(code);
+          return 'sent';
         },
         code: '123456',
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('cancelled');
     expect(sent).toEqual([]);
   });
 });

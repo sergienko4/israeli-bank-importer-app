@@ -18,36 +18,109 @@ import type { OtpChannel } from '../api/otp';
 import { saveOtpChannel } from './otpChannelStore';
 import { applyStashGate } from './otpStashGate';
 
+/** Bumped for every channel publication, so stale reads can be discarded. */
+let generation = 0;
+/** True while the device cache does not hold the last confirmed channel. */
+let dirty = false;
+/** How many user saves are between their start and the cache publication. */
+let savesInFlight = 0;
+
 /**
  * Records a channel the importer just confirmed and re-syncs the capture flag.
  *
+ * The generation is advanced before writing so a read that started earlier
+ * cannot publish its older answer over this one, even when SecureStore fails.
  * @param channel - The channel the importer is currently set to.
- * @returns Nothing; a cache that would not take is absorbed on purpose.
+ * @returns True when the cache accepted the value, false when it did not.
  */
-export async function cacheOtpChannel(channel: OtpChannel): Promise<void> {
+export async function cacheOtpChannel(channel: OtpChannel): Promise<boolean> {
+  generation += 1;
+  let saved = true;
   try {
     await saveOtpChannel(channel);
+    dirty = false;
   } catch {
     // A write that would not take must not stop the gate below from running:
     // re-applying it is what actually closes the receiver, and it fails closed.
+    saved = false;
+    dirty = true;
   }
   await applyStashGate();
+  return saved;
+}
+
+/**
+ * Reports whether the device cache still needs a retry.
+ * @returns True when the last channel write failed.
+ */
+export function isChannelCacheDirty(): boolean {
+  return dirty;
+}
+
+/**
+ * Invalidates reads that are already in flight before a channel save starts.
+ * The save itself bumps the generation again when it publishes the result.
+ */
+export function beginChannelChange(): void {
+  savesInFlight += 1;
+  generation += 1;
+}
+
+/** Marks a save as settled, whether or not it published. */
+export function endChannelChange(): void {
+  savesInFlight = Math.max(0, savesInFlight - 1);
+}
+
+/** Forces the next poll to reconcile after a save that may have applied. */
+export function markChannelDirty(): void {
+  dirty = true;
+}
+
+/** What one channel refresh did. */
+export type ChannelRefreshStatus = 'ok' | 'stale' | 'cache-failed' | 'failed';
+
+/** The result of one channel refresh. */
+export interface ChannelRefreshResult {
+  /** Whether the read was current and what happened to the cache. */
+  readonly status: ChannelRefreshStatus;
+  /** The confirmed channel when the read succeeded, else null. */
+  readonly channel: OtpChannel | null;
+  /** Why a failed read failed, when known. */
+  readonly error?: string;
 }
 
 /**
  * Re-reads the importer's OTP channel and re-syncs the native capture flag.
  *
+ * A read started for one importer or before a user save is discarded before
+ * it can publish, so an older answer never overwrites a newer channel.
  * @param session - The active importer session.
- * @returns True when the read confirmed the channel, false when it failed.
+ * @param isCurrent - Reports whether the importer that started the read is
+ *   still the active one.
+ * @returns What the read did and, when successful, the confirmed channel.
  */
-export async function refreshOtpChannel(session: Session): Promise<boolean> {
+export async function refreshOtpChannel(
+  session: Session,
+  isCurrent: () => boolean = () => true,
+): Promise<ChannelRefreshResult> {
+  const startedAt = generation;
   try {
     const settings = await getOtpSettings(session);
-    await cacheOtpChannel(settings.channel);
-    return true;
-  } catch {
+    if (!isCurrent() || startedAt !== generation || savesInFlight > 0) {
+      return { status: 'stale', channel: null };
+    }
+    const saved = await cacheOtpChannel(settings.channel);
+    return {
+      status: saved ? 'ok' : 'cache-failed',
+      channel: settings.channel,
+    };
+  } catch (e) {
     // Unreachable importer: keep the last known channel and re-sync from it.
+    await applyStashGate();
+    return {
+      status: 'failed',
+      channel: null,
+      error: e instanceof Error ? e.message : undefined,
+    };
   }
-  await applyStashGate();
-  return false;
 }

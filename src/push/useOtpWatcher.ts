@@ -17,28 +17,25 @@ import {
   useState,
 } from 'react';
 
-import type { Session } from '../api/importerClient';
+import { getPendingOtp, type Session } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
-import { getPendingOtp } from '../api/otpPending';
 import { useAuth } from '../auth/AuthContext';
 import { syncAutoReadWindow } from '../lib/otpAutoReadWindow';
-import { refreshOtpChannel } from '../lib/otpChannelSync';
 import { TASK_BUDGET_MS } from '../lib/otpDeadline';
 import {
   keepThroughGap,
   pruneSnoozed,
   pruneUsed,
-  selectPendingOtp,
+  selectNextOtp,
   snoozeUntil,
 } from '../lib/otpQueue';
 import { drainHeldMessages } from '../lib/otpStashRunner';
 import { withRequestTimeout } from '../lib/requestTimeout';
+import { createChannelRefresh } from './otpChannelRefresh';
 
 const POLL_INTERVAL_MS = 5000;
 /** A hung poll must not latch the loop shut forever. */
 const POLL_TIMEOUT_MS = POLL_INTERVAL_MS * 4;
-/** How often the channel is reconciled even when no prompt appears. */
-const CHANNEL_REFRESH_MS = 5 * 60_000;
 
 /**
  * Builds the poll that reads the importer's outstanding requests.
@@ -80,34 +77,6 @@ function handleRequests(requests: PendingOtpRequest[]): void {
 }
 
 /**
- * Builds a bounded channel reconciliation for the poll loop.
- *
- * The channel can change from the importer's own UI, and off the app channel
- * the switches that would close capture are hidden, so polls reconcile it
- * every few minutes and retry on the next poll after a failed read.
- * @param getConnection - Reads the current session.
- * @returns A function that refreshes when due.
- */
-function createChannelRefresh(getConnection: () => Session | null): () => void {
-  let nextAt = 0;
-  let inFlight = false;
-  return () => {
-    const connection = getConnection();
-    if (!connection || inFlight || Date.now() < nextAt) {
-      return;
-    }
-    inFlight = true;
-    nextAt = Date.now() + CHANNEL_REFRESH_MS;
-    void refreshOtpChannel(connection).then((confirmed) => {
-      if (!confirmed) {
-        nextAt = 0;
-      }
-      inFlight = false;
-    });
-  };
-}
-
-/**
  * Runs one poll against the importer.
  * @param connection - The session to read with.
  * @param onRequests - Receives a successful snapshot.
@@ -138,7 +107,7 @@ function startOtpPolling(
 ): () => void {
   let active = true;
   let pollToken = 0;
-  const refreshChannel = createChannelRefresh(getConnection);
+  const refreshChannel = createChannelRefresh(getConnection, () => active);
   refreshChannel();
   let polling = false;
   const poll = async (): Promise<void> => {
@@ -187,6 +156,7 @@ interface OtpQueue {
   autoSubmitted: ReadonlyMap<string, number>;
   applyRequests: (requests: PendingOtpRequest[]) => void;
   markAutoSubmitted: (id: string, deadline: number) => void;
+  reset: () => void;
 }
 
 /** What the prompt needs from the watcher. */
@@ -215,11 +185,14 @@ interface SnapshotTargets {
 function applySnapshot(requests: PendingOtpRequest[], targets: SnapshotTargets): void {
   const { pendingRef, snoozedUntil, missingPolls, setAutoSubmitted, setPending } = targets;
   const current = pendingRef.current;
-  const next = selectPendingOtp(requests, snoozedUntil.current);
+  const next = selectNextOtp({
+    current,
+    requests,
+    snoozedUntil: snoozedUntil.current,
+  });
   const keep = keepThroughGap({
     current,
     requests,
-    next,
     misses: missingPolls.current,
   });
   // Keep SMS capture open for the request shown through a transient gap.
@@ -236,6 +209,27 @@ function applySnapshot(requests: PendingOtpRequest[], targets: SnapshotTargets):
   missingPolls.current = 0;
   pendingRef.current = next;
   setPending(next);
+}
+
+/**
+ * Builds the one-shot marker writer.
+ * @param set - The marker state setter.
+ * @returns A callback that records a marker once.
+ */
+function useAutoSubmitMarker(
+  set: Dispatch<SetStateAction<ReadonlyMap<string, number>>>,
+): (id: string, deadline: number) => void {
+  return useCallback(
+    (id: string, deadline: number) => {
+      set((current) => {
+        if (current.has(id)) {
+          return current;
+        }
+        return new Map(current).set(id, deadline);
+      });
+    },
+    [set],
+  );
 }
 
 /**
@@ -259,13 +253,14 @@ function useOtpQueue(): OtpQueue {
     });
   }, []);
 
-  const markAutoSubmitted = useCallback((id: string, deadline: number) => {
-    setAutoSubmitted((current) => {
-      if (current.has(id)) {
-        return current;
-      }
-      return new Map(current).set(id, deadline);
-    });
+  const markAutoSubmitted = useAutoSubmitMarker(setAutoSubmitted);
+
+  const reset = useCallback(() => {
+    pendingRef.current = null;
+    snoozedUntil.current = new Map();
+    missingPolls.current = 0;
+    setPending(null);
+    setAutoSubmitted(new Map());
   }, []);
 
   return {
@@ -276,6 +271,7 @@ function useOtpQueue(): OtpQueue {
     autoSubmitted,
     applyRequests,
     markAutoSubmitted,
+    reset,
   };
 }
 
@@ -284,10 +280,12 @@ function useOtpQueue(): OtpQueue {
  * replaced on every silent token refresh.
  * @param connection - The active session, or null when signed out.
  * @param applyRequests - Applies one successful poll.
+ * @param reset - Clears the previous importer's queue before the first poll.
  */
 function useOtpPolling(
   connection: Session | null,
   applyRequests: (requests: PendingOtpRequest[]) => void,
+  reset: () => void,
 ): void {
   const connectionRef = useRef(connection);
 
@@ -296,13 +294,14 @@ function useOtpPolling(
   }, [connection]);
 
   useEffect(() => {
+    reset();
     const activeConnection = connectionRef.current;
     if (!activeConnection) {
       applyRequests([]);
       return undefined;
     }
     return startOtpPolling(() => connectionRef.current, applyRequests);
-  }, [applyRequests, connection?.baseUrl]);
+  }, [applyRequests, connection?.baseUrl, reset]);
 }
 
 /**
@@ -361,7 +360,7 @@ function useOtpDismissals(
 export function useOtpWatcher(): OtpWatcher {
   const { connection } = useAuth();
   const queue = useOtpQueue();
-  useOtpPolling(connection, queue.applyRequests);
+  useOtpPolling(connection, queue.applyRequests, queue.reset);
   const { dismiss, clearAnswered } = useOtpDismissals(
     queue.pendingRef,
     queue.snoozedUntil,

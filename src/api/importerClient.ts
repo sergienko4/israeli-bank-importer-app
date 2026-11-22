@@ -20,9 +20,11 @@ import {
   readJsonOrUndefined,
   readWithinDeadline,
 } from './responseBody';
+import type { Session } from './session';
 import type { RunEntry } from './status';
 import { timedFetch } from './timedFetch';
 import { createWriteQueue, serializeWrite, withOtpLane } from './writeQueue';
+export type { Session } from './session';
 
 const HTTPS = 'https://';
 
@@ -147,12 +149,6 @@ export async function checkAuthorized(baseUrl: string, token: string): Promise<b
   return (authStatus as { authorized?: unknown } | undefined)?.authorized === true;
 }
 
-/** An authenticated importer session (base URL + bearer token). */
-export interface Session {
-  baseUrl: string;
-  token: string;
-}
-
 /** Produces a fresh session (e.g. by re-authenticating), or null when it cannot. */
 export type ReauthHandler = () => Promise<Session | null>;
 
@@ -220,28 +216,27 @@ async function tryReauth(): Promise<Session | null> {
  * @param options - Optional fetch init and before-send gate.
  * @returns The fetch Response.
  */
-export async function authedRequest(
+async function authedRequest(
   session: Session,
   path: string,
   options: AuthedOptions = {},
 ): Promise<Response> {
   const { init = {}, beforeSend } = options;
   const send = async (active: Session): Promise<Response> => {
-    if (beforeSend && !(await beforeSend())) {
-      throw new SubmissionCancelledError();
-    }
     // Built before the guard so a rejected address keeps its own wording.
     const url = `${normalizeBaseUrl(active.baseUrl)}${path}`;
-    return reachable((signal) =>
-      fetch(url, {
-        ...init,
-        signal,
-        headers: {
-          ...(init.headers as Record<string, string> | undefined),
-          authorization: `Bearer ${active.token}`,
-        },
-      }),
-    );
+    const start = (): Promise<Response> =>
+      reachable((signal) =>
+        fetch(url, {
+          ...init,
+          signal,
+          headers: {
+            ...(init.headers as Record<string, string> | undefined),
+            authorization: `Bearer ${active.token}`,
+          },
+        }),
+      );
+    return beforeSend ? beforeSend(start) : start();
   };
   const current = sessionGuard ? await sessionGuard(session).catch(() => session) : session;
   const res = await send(current);
@@ -439,9 +434,6 @@ export function submitOtp({
   beforeSend,
 }: OtpSubmissionRequest): Promise<SaveResult | null> {
   return withOtpLane(id, async () => {
-    if (beforeSend && !(await beforeSend())) {
-      return null;
-    }
     const { path, init } = otpSubmission(id, code);
     try {
       const res = await authedRequest(session, path, { init, beforeSend });
@@ -484,6 +476,16 @@ async function unattended<T>(
     },
     read,
   );
+}
+
+/**
+ * Loads the pending OTP requests via `GET /api/otp/pending`.
+ * @param session - The active session.
+ * @returns The pending requests (may be empty); never carries codes.
+ * @throws Error when the request fails.
+ */
+export async function getPendingOtp(session: Session): Promise<PendingOtpRequest[]> {
+  return pendingFrom(await authedRequest(session, '/api/otp/pending'));
 }
 
 /**

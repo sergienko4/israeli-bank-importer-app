@@ -7,7 +7,7 @@
 
 import { failureMessage, messageForStatus } from '../lib/errorMessages';
 import { REQUEST_TIMEOUT_MS, RequestTimeoutError, withRequestTimeout } from '../lib/requestTimeout';
-import { type AuthedOptions, SubmissionCancelledError } from './authedTypes';
+import { type AuthedOptions, type BeforeSend, SubmissionCancelledError } from './authedTypes';
 import { CONFIG_BODY, MANIFEST_BODY, OTP_SETTINGS, STATUS_BODY } from './generated';
 import type { ConfigObject, Manifest, SaveResult } from './manifest';
 import type { OtpChannel, OtpSettings, PendingOtpRequest } from './otp';
@@ -407,9 +407,14 @@ export async function getOtpSettings(session: Session): Promise<OtpSettings> {
  * Sets the OTP delivery channel via `PUT /api/otp/settings`.
  * @param session - The active session.
  * @param channel - The channel to select (`telegram` or `app`).
+ * @param beforeSend - Gate that runs after the write queue and before every attempt.
  * @returns Success or a failure carrying the importer's error.
  */
-export function setOtpSettings(session: Session, channel: OtpChannel): Promise<SaveResult> {
+export function setOtpSettings(
+  session: Session,
+  channel: OtpChannel,
+  beforeSend?: BeforeSend,
+): Promise<SaveResult> {
   return serializeWrite(otpSettingsWrites, async () => {
     const res = await authedRequest(session, '/api/otp/settings', {
       init: {
@@ -417,6 +422,7 @@ export function setOtpSettings(session: Session, channel: OtpChannel): Promise<S
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ channel }),
       },
+      beforeSend,
     });
     return res.ok ? { ok: true } : toFailure(res);
   });

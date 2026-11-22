@@ -335,6 +335,19 @@ interface DismissalQueue {
 }
 
 /**
+ * Keeps the pairing that currently owns the queue.
+ * @param pairing - The pairing the watcher renders with.
+ * @returns A ref that always names the live owner.
+ */
+function useQueueOwner(pairing: number): RefObject<number> {
+  const owner = useRef(pairing);
+  useEffect(() => {
+    owner.current = pairing;
+  }, [pairing]);
+  return owner;
+}
+
+/**
  * Builds the two ways the visible request can leave: dismiss, or answer.
  * @param queue - The pending ref, snoozes, setter, and owning pairing.
  * @returns The dismiss and answer callbacks.
@@ -345,11 +358,15 @@ function useOtpDismissals({
   setPending,
   pairing,
 }: DismissalQueue): Pick<OtpWatcher, 'dismiss' | 'clearAnswered'> {
+  // A callback retained across a pairing change must compare against the live
+  // queue owner, not the one captured when it was created.
+  const ownerRef = useQueueOwner(pairing);
+
   const dismiss = useCallback(
     (requestId: string, deadline: number, ownerPairing: number) => {
       // A late callback from the previous prompt must not touch the queue that
       // replaced it, even when the new pairing reuses the request id.
-      if (ownerPairing !== pairing) {
+      if (ownerPairing !== ownerRef.current) {
         return;
       }
       const current = pendingRef.current;
@@ -365,12 +382,12 @@ function useOtpDismissals({
         setPending(null);
       }
     },
-    [pairing, pendingRef, setPending, snoozedUntil],
+    [ownerRef, pendingRef, setPending, snoozedUntil],
   );
 
   const clearAnswered = useCallback(
     (requestId: string, deadline: number, ownerPairing: number) => {
-      if (ownerPairing !== pairing) {
+      if (ownerPairing !== ownerRef.current) {
         return;
       }
       // Suppress until the request itself ends: a fixed quiet period can expire
@@ -381,7 +398,7 @@ function useOtpDismissals({
         setPending(null);
       }
     },
-    [pairing, pendingRef, setPending, snoozedUntil],
+    [ownerRef, pendingRef, setPending, snoozedUntil],
   );
 
   return { dismiss, clearAnswered };

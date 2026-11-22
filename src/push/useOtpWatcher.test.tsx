@@ -136,6 +136,9 @@ describe('useOtpWatcher pairing ownership', () => {
       expect(result.current.pending?.id).toBe('r1');
     });
 
+    const retainedDismiss = result.current.dismiss;
+    const retainedClearAnswered = result.current.clearAnswered;
+
     mockAuth.mockReturnValue({
       connection: SESSION,
       pairing: 888,
@@ -147,8 +150,8 @@ describe('useOtpWatcher pairing ownership', () => {
 
     const deadline = request('r1').deadline;
     await act(async () => {
-      result.current.dismiss('r1', deadline, 777);
-      result.current.clearAnswered('r1', deadline, 777);
+      retainedDismiss('r1', deadline, 777);
+      retainedClearAnswered('r1', deadline, 777);
     });
 
     expect(result.current.pending).toMatchObject({ id: 'r1', pairing: 888 });

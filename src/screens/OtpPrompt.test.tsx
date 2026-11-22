@@ -167,6 +167,34 @@ describe('OtpPrompt request transitions', () => {
     expect(onSubmitted).not.toHaveBeenCalled();
   });
 
+  it('drops a send from an earlier visit to the same request', async () => {
+    mockLoad.mockResolvedValue(false);
+    type SubmitResult = Awaited<ReturnType<typeof submitOtp>>;
+    let resolveSend: (result: SubmitResult) => void = () => undefined;
+    mockSubmitOtp.mockImplementationOnce(
+      () =>
+        new Promise<SubmitResult>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+    const { rerender, onSubmitted } = await setup('a');
+    await flush();
+    await fireEvent.changeText(screen.getByLabelText('OTP code'), '111111');
+    await fireEvent.press(screen.getByRole('button', { name: 'Submit code' }));
+
+    await rerender('b');
+    await rerender('a');
+    await fireEvent.changeText(screen.getByLabelText('OTP code'), '333333');
+    await act(async () => {
+      resolveSend({ ok: true });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByLabelText('OTP code').props.value).toBe('333333');
+    expect(onSubmitted).not.toHaveBeenCalled();
+  });
+
   it('resets the guard and clears the code for a different request', async () => {
     const { rerender, onSubmitted } = await setup('a');
     await flush();

@@ -139,47 +139,45 @@ function prepareCode(
   return { session: connection, code: trimmed };
 }
 
-/** Which request's POST is on its way, and whether the prompt still shows it. */
+/** One POST the prompt has on its way. */
 interface SubmissionFlight {
-  /** Reports whether this request already has a POST on its way. */
-  readonly isSending: (requestId: string) => boolean;
-  /** Records that this request's POST started. */
-  readonly start: (requestId: string) => void;
-  /** Records that this request's POST settled. */
-  readonly finish: () => void;
-  /** Reports whether the prompt still shows the request that started it. */
-  readonly isCurrent: (requestId: string) => boolean;
+  /** The request it belongs to. */
+  readonly requestId: string;
+  /** Names this exact send, so a newer one can supersede it. */
+  readonly token: object;
 }
 
 /**
- * Tracks the POST a prompt has on its way against the request it belongs to.
- * @param requestId - The request the prompt currently shows.
- * @returns The flight reads and writes.
+ * Reports whether this send is still the one the prompt is tracking.
+ * @param flight - The prompt's flight ref.
+ * @param token - The send's own token.
+ * @returns Whether no request change or newer send replaced it.
  */
-function useSubmissionFlight(requestId: string): SubmissionFlight {
-  const inFlight = useRef<string | null>(null);
-  const current = useRef(requestId);
+function isCurrentFlight(flight: { current: SubmissionFlight | null }, token: object): boolean {
+  return flight.current?.token === token;
+}
 
-  useLayoutEffect(() => {
-    if (current.current === requestId) {
-      return;
-    }
-    current.current = requestId;
-    // The previous request's POST may still be on its way. Its completion
-    // belongs to that request, and this one must be able to submit.
-    inFlight.current = null;
-  }, [requestId]);
+/**
+ * Tracks the POST a prompt has on its way.
+ *
+ * `requestId` is a dependency rather than a filter: when the prompt moves to
+ * another request, the cleanup drops the flight even if the same request id
+ * comes back after an intervening one, so a send from the previous visit can
+ * never be mistaken for the current visit's send.
+ * @param requestId - The request the prompt currently shows.
+ * @returns A ref holding the flight, or null when none is on its way.
+ */
+function useSubmissionFlight(requestId: string): { current: SubmissionFlight | null } {
+  const flight = useRef<SubmissionFlight | null>(null);
 
-  return {
-    isSending: (id) => inFlight.current === id,
-    start: (id) => {
-      inFlight.current = id;
+  useLayoutEffect(
+    () => () => {
+      flight.current = null;
     },
-    finish: () => {
-      inFlight.current = null;
-    },
-    isCurrent: (id) => current.current === id,
-  };
+    [requestId],
+  );
+
+  return flight;
 }
 
 /**
@@ -202,17 +200,18 @@ export function useOtpSubmission(
   // than holding a boolean makes a replacement request start unburdened.
   const [sendingFor, setSendingFor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const flight = useSubmissionFlight(requestId);
+  const flightRef = useSubmissionFlight(requestId);
 
   const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
-    if (flight.isSending(requestId)) {
+    if (flightRef.current?.requestId === requestId) {
       return 'cancelled';
     }
     const prepared = prepareCode(candidate, connection, setError);
     if (prepared === null) {
       return 'failed';
     }
-    flight.start(requestId);
+    const token = {};
+    flightRef.current = { requestId, token };
     setSendingFor(requestId);
     setError(null);
     const outcome = await sendCode({
@@ -221,12 +220,12 @@ export function useOtpSubmission(
       code: prepared.code,
       beforeSend,
     });
-    if (!flight.isCurrent(requestId)) {
-      // The prompt is showing another request now: this outcome must not
-      // clear its code, show its error, or report its success.
+    if (!isCurrentFlight(flightRef, token)) {
+      // The prompt moved on while this POST was on its way: the outcome must
+      // not clear another request's code, show its error, or report success.
       return 'cancelled';
     }
-    flight.finish();
+    flightRef.current = null;
     setSendingFor(null);
     return finishSubmission({ outcome, requestId, setCode, setError, onSubmitted });
   };

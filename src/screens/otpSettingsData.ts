@@ -166,6 +166,14 @@ export interface ChannelSave {
   readonly choose: (next: OtpChannel) => Promise<void>;
 }
 
+/**
+ * Marks the cache dirty and warns after a channel save may have applied.
+ */
+function warnChannelFailure(): void {
+  markChannelDirty();
+  haptics.warning();
+}
+
 /** What one channel save needs from the screen. */
 interface ChannelSaveRequest {
   readonly connection: Session;
@@ -180,7 +188,7 @@ interface ChannelSaveRequest {
  * Sends one channel choice and publishes it only for the same importer.
  * @param request - The session, choices, setters, and owner check.
  */
-async function saveChannel({
+export async function saveChannel({
   connection,
   next,
   previous,
@@ -202,17 +210,19 @@ async function saveChannel({
       if (!cached) {
         setError('Could not update capture on this device. It will retry automatically.');
       }
-      return;
+    } else {
+      warnChannelFailure();
+      if (isCurrent()) {
+        setChannel(previous);
+        setError(result.error ?? 'Could not save the OTP setting.');
+      }
     }
-    markChannelDirty();
-    setChannel(previous);
-    haptics.warning();
-    setError(result.error ?? 'Could not save the OTP setting.');
   } catch (e) {
-    markChannelDirty();
-    setChannel(previous);
-    haptics.warning();
-    setError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
+    warnChannelFailure();
+    if (isCurrent()) {
+      setChannel(previous);
+      setError(e instanceof Error ? e.message : 'Could not save the OTP setting.');
+    }
   } finally {
     endChannelChange();
   }

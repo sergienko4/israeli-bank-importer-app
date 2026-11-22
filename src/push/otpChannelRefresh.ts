@@ -70,7 +70,7 @@ export function createChannelRefresh(
   let inFlight = false;
   return () => {
     const connection = getConnection();
-    if (!connection || inFlight || !isDue(nextAt, retryAt, isChannelCacheDirty())) {
+    if (!isActive() || !connection || inFlight || !isDue(nextAt, retryAt, isChannelCacheDirty())) {
       return;
     }
     inFlight = true;

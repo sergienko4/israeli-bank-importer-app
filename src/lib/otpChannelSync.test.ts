@@ -4,7 +4,12 @@
  */
 import { getOtpSettings } from '../api/importerClient';
 import { saveOtpChannel } from './otpChannelStore';
-import { cacheOtpChannel, isChannelCacheDirty, refreshOtpChannel } from './otpChannelSync';
+import {
+  cacheOtpChannel,
+  isChannelCacheDirty,
+  markChannelDirty,
+  refreshOtpChannel,
+} from './otpChannelSync';
 import { applyStashGate } from './otpStashGate';
 
 jest.mock('../api/importerClient', () => ({ getOtpSettings: jest.fn() }));
@@ -35,6 +40,26 @@ describe('cacheOtpChannel', () => {
     await cacheOtpChannel('telegram');
 
     expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a dirty marker set while the cache write was pending', async () => {
+    let finishWrite: () => void = () => undefined;
+    mockSave.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      }),
+    );
+
+    const write = cacheOtpChannel('app');
+    markChannelDirty();
+    finishWrite();
+    await write;
+
+    expect(isChannelCacheDirty()).toBe(true);
+
+    mockSave.mockResolvedValue(undefined);
+    await cacheOtpChannel('app');
+    expect(isChannelCacheDirty()).toBe(false);
   });
 
   it('still re-applies the gate when the cache could not be written', async () => {

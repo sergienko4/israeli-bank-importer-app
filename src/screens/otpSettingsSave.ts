@@ -5,7 +5,7 @@
  * project's file cap. A save is owned by the importer and pairing it started
  * under; a late answer never moves another importer's screen.
  */
-import type { RefObject } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { type Session, setOtpSettings } from '../api/importerClient';
@@ -54,6 +54,8 @@ interface ChannelFailure {
   readonly setError: (error: string | null) => void;
   readonly message: string;
   readonly isCurrent: () => boolean;
+  /** Re-reads the channel after an ambiguous failure. */
+  readonly onAmbiguousFailure?: () => void;
 }
 
 /** What a successful channel save should publish. */
@@ -78,7 +80,9 @@ async function publishChannel({
     return;
   }
   const cached = await cacheOtpChannel(next, connection.baseUrl, isCurrent);
-  if (cached === 'stale') {
+  // Ownership can change while the cache write awaits the gate: a late answer
+  // must not overwrite another importer's warning or success feedback.
+  if (cached === 'stale' || !isCurrent()) {
     return;
   }
   haptics.success();
@@ -97,11 +101,13 @@ function reportChannelFailure({
   setError,
   message,
   isCurrent,
+  onAmbiguousFailure,
 }: ChannelFailure): void {
   warnChannelFailure();
   if (isCurrent()) {
     setChannel(previous);
     setError(message);
+    onAmbiguousFailure?.();
   }
 }
 
@@ -149,16 +155,16 @@ export async function saveChannel({
       });
     }
   } catch (e) {
+    // The importer may have applied the change before the answer was lost;
+    // the watcher will reconcile the cache, so bring the screen with it.
     reportChannelFailure({
       previous,
       setChannel,
       setError,
       message: e instanceof Error ? e.message : 'Could not save the OTP setting.',
       isCurrent: ownerIsCurrent,
+      onAmbiguousFailure,
     });
-    // The importer may have applied the change before the answer was lost;
-    // the watcher will reconcile the cache, so bring the screen with it.
-    onAmbiguousFailure?.();
   } finally {
     endChannelChange(connection.baseUrl);
   }
@@ -229,6 +235,22 @@ function useLatestSession(connection: Session | null): RefObject<Session | null>
 }
 
 /**
+ * Removes one importer from the pending-save set.
+ * @param set - The pending set's state setter.
+ * @param baseUrl - The importer whose save settled.
+ */
+function clearSaving(set: Dispatch<SetStateAction<ReadonlySet<string>>>, baseUrl: string): void {
+  set((current) => {
+    if (!current.has(baseUrl)) {
+      return current;
+    }
+    const next = new Set(current);
+    next.delete(baseUrl);
+    return next;
+  });
+}
+
+/**
  * Saves a channel choice and keeps the device cache in step.
  * @param options - The session, shown channel, optimistic setter, and reload.
  * @returns The save state and the choice handler.
@@ -240,19 +262,20 @@ export function useChannelSave({
   reload,
 }: ChannelSaveOptions): ChannelSave {
   // Both the lock and the visible state name their importer: a save for A must
-  // not make B look busy, swallow B's choices, or show A's error on B.
-  const [savingFor, setSavingFor] = useState<string | null>(null);
+  // not make B look busy, swallow B's choices, or show A's error on B. The set
+  // keeps A's lock while B is saving, so returning to A still reports it.
+  const [savingFor, setSavingFor] = useState<ReadonlySet<string>>(new Set());
   const [failure, setFailure] = useState<{ baseUrl: string; message: string } | null>(null);
-  const savingRef = useRef<string | null>(null);
+  const savingRef = useRef<Set<string>>(new Set());
   const connectionRef = useLatestSession(connection);
 
   const choose = async (next: OtpChannel): Promise<void> => {
-    if (!connection || savingRef.current === connection.baseUrl || next === channel) {
+    if (!connection || savingRef.current.has(connection.baseUrl) || next === channel) {
       return;
     }
     const baseUrl = connection.baseUrl;
-    savingRef.current = baseUrl;
-    setSavingFor(baseUrl);
+    savingRef.current.add(baseUrl);
+    setSavingFor((current) => new Set(current).add(baseUrl));
     setFailure(null);
     try {
       await writeChoice(connection, next, {
@@ -263,16 +286,14 @@ export function useChannelSave({
         reload,
       });
     } finally {
-      if (savingRef.current === baseUrl) {
-        savingRef.current = null;
-        setSavingFor(null);
-      }
+      savingRef.current.delete(baseUrl);
+      clearSaving(setSavingFor, baseUrl);
     }
   };
 
   const ownedFailure = failure !== null && failure.baseUrl === connection?.baseUrl;
   return {
-    saving: savingFor !== null && savingFor === connection?.baseUrl,
+    saving: connection !== null && savingFor.has(connection.baseUrl),
     saveError: ownedFailure ? failure.message : null,
     choose,
   };

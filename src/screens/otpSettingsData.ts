@@ -107,6 +107,25 @@ async function readWithRetry(
 }
 
 /**
+ * Reads once, using the latest session for the importer.
+ * @param connectionRef - The latest session.
+ * @param baseUrl - The importer whose read this is.
+ * @param isCurrent - Ownership check for the cache update.
+ * @returns One refresh result.
+ */
+function readChannel(
+  connectionRef: RefObject<Session | null>,
+  baseUrl: string,
+  isCurrent: () => boolean,
+): Promise<ChannelRefreshResult> {
+  const session = connectionRef.current;
+  if (session?.baseUrl !== baseUrl) {
+    return Promise.resolve({ status: 'stale', channel: null });
+  }
+  return refreshOtpChannel(session, isCurrent);
+}
+
+/**
  * Reads the channel once per importer or retry.
  * @param options - The latest session ref, importer address, retry key, setter.
  */
@@ -122,8 +141,11 @@ function useChannelRead({
       return undefined;
     }
     let active = true;
-    const stillCurrent = (): boolean =>
-      active && connectionRef.current?.baseUrl === activeConnection.baseUrl;
+    // The cache update outlives the screen: it is gated by the importer and
+    // pairing, while screen updates and retries also need the mount.
+    const ownsConnection = (): boolean =>
+      connectionRef.current?.baseUrl === activeConnection.baseUrl;
+    const stillCurrent = (): boolean => active && ownsConnection();
     const done = (
       channel: OtpChannel | null,
       error: string | null,
@@ -134,7 +156,7 @@ function useChannelRead({
       }
     };
     const read = (): Promise<ChannelRefreshResult> =>
-      refreshOtpChannel(activeConnection, stillCurrent);
+      readChannel(connectionRef, activeConnection.baseUrl, ownsConnection);
     void readWithRetry(read, stillCurrent)
       .then((result) => {
         const applied = applyChannelResult(result);

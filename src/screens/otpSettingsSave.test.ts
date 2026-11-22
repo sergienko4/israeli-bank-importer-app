@@ -3,7 +3,12 @@ import { act, renderHook } from '@testing-library/react-native';
 import type { Session } from '../api/importerClient';
 import { setOtpSettings } from '../api/importerClient';
 import { haptics } from '../lib/haptics';
-import { beginChannelChange, endChannelChange, markChannelDirty } from '../lib/otpChannelSync';
+import {
+  beginChannelChange,
+  cacheOtpChannel,
+  endChannelChange,
+  markChannelDirty,
+} from '../lib/otpChannelSync';
 import { saveChannel, useChannelSave } from './otpSettingsSave';
 
 jest.mock('../api/importerClient', () => ({ setOtpSettings: jest.fn() }));
@@ -19,6 +24,7 @@ jest.mock('../lib/haptics', () => ({
 }));
 
 const mockSet = jest.mocked(setOtpSettings);
+const mockCache = jest.mocked(cacheOtpChannel);
 const SESSION: Session = { baseUrl: 'https://host:8080', token: 'tok' };
 
 /**
@@ -62,6 +68,48 @@ describe('saveChannel', () => {
     expect(haptics.warning).toHaveBeenCalled();
     expect(endChannelChange).toHaveBeenCalled();
     expect(beginChannelChange).toHaveBeenCalled();
+  });
+
+  it('does not publish a late cache warning for another importer', async () => {
+    let current = true;
+    mockSet.mockResolvedValue({ ok: true });
+    mockCache.mockImplementation(async () => {
+      current = false;
+      return false;
+    });
+    const spies = setup(true);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: () => current,
+    });
+
+    expect(haptics.success).not.toHaveBeenCalled();
+    expect(spies.setError).not.toHaveBeenCalledWith(
+      'Could not update capture on this device. It will retry automatically.',
+    );
+  });
+
+  it('reloads after an ambiguous failure only for the current importer', async () => {
+    mockSet.mockRejectedValue(new Error('offline'));
+    const reload = jest.fn();
+    const spies = setup(true);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: () => false,
+      onAmbiguousFailure: reload,
+    });
+
+    expect(reload).not.toHaveBeenCalled();
   });
 
   it('rolls a current importer back to the previous channel', async () => {
@@ -121,6 +169,42 @@ describe('saveChannel', () => {
       await result.current.choose('app');
     });
 
+    expect(mockSet).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps each importer pending while another save runs', async () => {
+    mockSet.mockReturnValue(
+      new Promise<Awaited<ReturnType<typeof setOtpSettings>>>(() => undefined),
+    );
+    const other: Session = { baseUrl: 'https://other.example', token: 'tok' };
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) =>
+        useChannelSave({
+          connection,
+          channel: 'telegram',
+          setChannel: jest.fn(),
+          reload: jest.fn(),
+        }),
+      { initialProps: { connection: SESSION } },
+    );
+
+    await act(async () => {
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
+    await rerender({ connection: other });
+    await act(async () => {
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
+
+    await rerender({ connection: SESSION });
+    expect(result.current.saving).toBe(true);
+
+    await act(async () => {
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
     expect(mockSet).toHaveBeenCalledTimes(2);
   });
 

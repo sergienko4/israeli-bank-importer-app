@@ -3,6 +3,7 @@ import { currentPairing } from '../auth/pairingGeneration';
 import { autoSendGate } from './autoSendGate';
 import { createAutoSubmitAttempt } from './autoSubmitAttempt';
 import { loadOtpAutoSubmit } from './otpAutoSubmitStore';
+import { writeSwitch } from './otpCaptureSwitch';
 
 jest.mock('./otpAutoSubmitStore', () => ({ loadOtpAutoSubmit: jest.fn() }));
 jest.mock('../auth/pairingGeneration', () => ({ currentPairing: jest.fn() }));
@@ -92,5 +93,21 @@ describe('autoSendGate', () => {
     const { attempt, token, start } = setup(false);
 
     await expect(autoSendGate(attempt, token, PAIRING)(start)).rejects.toThrow('transport failed');
+  });
+
+  it('releases the capture queue when the preference read never settles', async () => {
+    jest.useFakeTimers();
+    const { attempt, token, start } = setup();
+    mockLoad.mockReturnValue(new Promise<boolean>(() => undefined));
+
+    const gate = autoSendGate(attempt, token, PAIRING)(start);
+    const assertion = expect(gate).rejects.toBeInstanceOf(SubmissionCancelledError);
+    await jest.advanceTimersByTimeAsync(20_000);
+    await assertion;
+
+    const next = jest.fn(() => Promise.resolve());
+    await expect(writeSwitch(next)).resolves.toBeUndefined();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
   });
 });

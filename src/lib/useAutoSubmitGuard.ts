@@ -5,7 +5,7 @@
  * the prompt goes away, so the tracker lives in refs owned by a hook. Kept out
  * of the screen so the prompt stays within the project's function-size cap.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 
 import { type AutoSubmitAttempt, createAutoSubmitAttempt } from './autoSubmitAttempt';
 
@@ -24,15 +24,23 @@ export interface AutoSubmitGuard {
 /**
  * Keeps the one-shot guard and the auto-send generation across renders.
  * @param autoSubmitUsed - Whether the parent already recorded an attempt.
+ * @param requestId - The pending request the guard belongs to.
  * @returns The guard reads and controls.
  */
-export function useAutoSubmitGuard(autoSubmitUsed: boolean): AutoSubmitGuard {
+export function useAutoSubmitGuard(autoSubmitUsed: boolean, requestId: string): AutoSubmitGuard {
   const used = useRef(autoSubmitUsed);
   const attempt = useRef(createAutoSubmitAttempt());
+  const activeRequest = useRef(requestId);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (activeRequest.current !== requestId) {
+      activeRequest.current = requestId;
+      // A new request must not inherit the previous request's attempt or
+      // consume its one automatic send.
+      attempt.current.invalidate();
+    }
     used.current = autoSubmitUsed;
-  }, [autoSubmitUsed]);
+  }, [autoSubmitUsed, requestId]);
 
   useLayoutEffect(
     () => () => {

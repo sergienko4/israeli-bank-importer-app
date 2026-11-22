@@ -22,141 +22,26 @@
  * The countdown is plain text rather than an animation, so it needs no
  * reduced-motion branch: there is no motion to reduce.
  */
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, Text, View } from 'react-native';
 
-import { type BeforeSend } from '../api/authedTypes';
-import { type Session, submitOtp } from '../api/importerClient';
 import type { PendingOtpRequest } from '../api/otp';
-import { useAuth } from '../auth/AuthContext';
 import { currentPairing } from '../auth/pairingGeneration';
 import { Button, Sheet, TextField } from '../components/ui';
-import { autoSendGate } from '../lib/autoSendGate';
-import { type OtpSendResult, submitIfCurrent } from '../lib/autoSubmitAttempt';
-import { reportedOrFallback } from '../lib/errorMessages';
 import { haptics } from '../lib/haptics';
 import { shouldArmAutoSubmit } from '../lib/otpAutoSubmit';
-import { loadOtpAutoSubmit } from '../lib/otpAutoSubmitStore';
-import { isValidOtpCode, normalizeOtpCodeInput } from '../lib/otpCode';
-import { AUTO_SUBMIT_DELAY_SECONDS, useAutoSubmitCountdown } from '../lib/useAutoSubmitCountdown';
-import { type AutoSubmitGuard, useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
+import { normalizeOtpCodeInput } from '../lib/otpCode';
+import {
+  AUTO_SUBMIT_DELAY_SECONDS,
+  type Countdown,
+  useAutoSubmitCountdown,
+} from '../lib/useAutoSubmitCountdown';
+import { useAutoSubmitGuard } from '../lib/useAutoSubmitGuard';
+import { autoFire, useAutoSubmitPreference } from '../lib/useOtpAutoSend';
 import { useOtpCapture } from '../lib/useOtpCapture';
+import { usePromptLifecycle } from '../lib/useOtpPromptLifecycle';
+import { useOtpSubmission } from '../lib/useOtpSubmission';
 import { useTheme } from '../theme/ThemeContext';
-
-const CODE_REJECTED = 'The importer would not accept that code. Check it and try again.';
-
-/** What one foreground send produced. */
-type SendOutcome = { kind: 'sent' } | { kind: 'failed'; message: string } | { kind: 'cancelled' };
-
-/** One foreground send. */
-interface SendCodeRequest {
-  /** The active importer session. */
-  readonly session: Session;
-  /** The pending request being answered. */
-  readonly requestId: string;
-  /** The normalised code to send. */
-  readonly code: string;
-  /** Orders the final opt-in read and POST start after every wait. */
-  readonly beforeSend?: BeforeSend;
-}
-
-/**
- * Sends a code to the importer and flattens every outcome to one value.
- * @param request - The session, request id, code, and before-send gate.
- * @returns Whether the code left, failed with a message, or was cancelled.
- */
-async function sendCode({
-  session,
-  requestId,
-  code,
-  beforeSend,
-}: SendCodeRequest): Promise<SendOutcome> {
-  try {
-    const result = await submitOtp({ session, id: requestId, code, beforeSend });
-    if (result === null) {
-      return { kind: 'cancelled' };
-    }
-    return result.ok
-      ? { kind: 'sent' }
-      : { kind: 'failed', message: reportedOrFallback(result.error, CODE_REJECTED) };
-  } catch (error: unknown) {
-    const reported = error instanceof Error ? error.message : undefined;
-    return { kind: 'failed', message: reportedOrFallback(reported, CODE_REJECTED) };
-  }
-}
-
-/**
- * Reads the stored auto-submit opt-in each time the sheet opens.
- *
- * Re-reading on open matters in the unsafe direction: the prompt can stay
- * mounted across requests, so a user who turns the setting *off* in Settings
- * must not find the next code still leaving on its own. Until the read lands
- * the answer is false, so a slow read costs a button press, never a surprise.
- * @param visible - Whether the sheet is on screen.
- * @returns Whether automatic submission is enabled.
- */
-function useAutoSubmitPreference(visible: boolean): boolean {
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    if (!visible) {
-      return undefined;
-    }
-    let active = true;
-    const run = async (): Promise<void> => {
-      const stored = await loadOtpAutoSubmit();
-      if (active) {
-        setEnabled(stored);
-      }
-    };
-    void run();
-    return () => {
-      active = false;
-    };
-  }, [visible]);
-  return enabled;
-}
-
-/** What one automatic send needs from the prompt. */
-interface AutoFireOptions {
-  /** The prompt's attempt guard. */
-  readonly autoGuard: AutoSubmitGuard;
-  /** The generation captured when the code was armed. */
-  readonly token: number;
-  /** The importer pairing captured when the code was armed. */
-  readonly pairing: number;
-  /** The send function. */
-  readonly submit: (code: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
-  /** Shows the fallback when nothing left. */
-  readonly setError: (message: string | null) => void;
-}
-
-/**
- * Fires one automatic send and reports a gate that withdrew it.
- * @param options - The guard, armed generation, send, and error setter.
- * @returns The countdown's fire callback.
- */
-function autoFire({
-  autoGuard,
-  token,
-  pairing,
-  submit,
-  setError,
-}: AutoFireOptions): (value: string) => void {
-  return (value) => {
-    const attempt = autoGuard.currentAttempt();
-    void submitIfCurrent({
-      attempt,
-      token,
-      readPreference: loadOtpAutoSubmit,
-      send: (candidate) => submit(candidate, autoSendGate(attempt, token, pairing)),
-      code: value,
-    }).then((result) => {
-      if (result === 'cancelled' && attempt.isCurrent(token)) {
-        setError('Auto-send stopped. Press Submit code.');
-      }
-    });
-  };
-}
 
 interface Props {
   /** The pending request to answer. */
@@ -173,71 +58,76 @@ interface Props {
   onDismiss: (requestId: string) => void;
 }
 
-/** The submit state and controls the prompt renders. */
-interface OtpSubmission {
-  /** Whether a code is on its way to the importer. */
-  readonly submitting: boolean;
-  /** Why the last submission failed, or null. */
+/** What the OTP sheet body renders. */
+interface OtpSheetContentProps {
+  /** Current code text. */
+  readonly code: string;
+  /** The last submission failure. */
   readonly error: string | null;
-  /** Clears the failure as the user edits. */
-  readonly setError: (error: string | null) => void;
-  /** Validates and sends one code, optionally re-checking intent at send time. */
-  readonly submit: (candidate: string, beforeSend?: BeforeSend) => Promise<OtpSendResult>;
+  /** Whether a code is in flight. */
+  readonly submitting: boolean;
+  /** The countdown state. */
+  readonly countdown: Countdown;
+  /** Handles code edits. */
+  readonly onChange: (text: string) => void;
+  /** Stops an armed automatic send. */
+  readonly onCancelAuto: () => void;
+  /** Submits the current code. */
+  readonly onSubmit: () => void;
+  /** Receives the input handle. */
+  readonly onInputReady: (input: { focus: () => void } | null) => void;
 }
 
 /**
- * Owns the one network write the prompt performs.
- *
- * The countdown and the button can both reach `submit` in the same tick, and a
- * state flag does not become true until React re-renders. A ref closes that
- * gap, which is worth a bank attempt.
- * @param requestId - The pending request being answered.
- * @param onSubmitted - Called after the importer accepts a code.
- * @returns The submit state and controls.
+ * Renders the OTP field and its action button.
+ * @param props - The code, status, countdown and handlers.
+ * @returns The sheet body.
  */
-function useOtpSubmission(
-  requestId: string,
-  onSubmitted: (requestId: string) => void,
-): OtpSubmission {
-  const { connection } = useAuth();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const inFlight = useRef(false);
-
-  const submit = async (candidate: string, beforeSend?: BeforeSend): Promise<OtpSendResult> => {
-    if (inFlight.current) {
-      return 'cancelled';
-    }
-    const trimmed = normalizeOtpCodeInput(candidate);
-    if (!isValidOtpCode(trimmed)) {
-      setError('Enter the 4–8 digit app OTP code.');
-      return 'failed';
-    }
-    if (!connection) {
-      haptics.warning();
-      setError('Reconnect to the importer, then enter the code again.');
-      return 'failed';
-    }
-    inFlight.current = true;
-    setSubmitting(true);
-    setError(null);
-    const outcome = await sendCode({ session: connection, requestId, code: trimmed, beforeSend });
-    inFlight.current = false;
-    setSubmitting(false);
-    if (outcome.kind === 'failed') {
-      haptics.warning();
-      setError(outcome.message);
-      return 'failed';
-    }
-    if (outcome.kind === 'cancelled') {
-      return 'cancelled';
-    }
-    haptics.success();
-    onSubmitted(requestId);
-    return 'sent';
-  };
-
-  return { submitting, error, setError, submit };
+function OtpSheetContent({
+  code,
+  error,
+  submitting,
+  countdown,
+  onChange,
+  onCancelAuto,
+  onSubmit,
+  onInputReady,
+}: Readonly<OtpSheetContentProps>): ReactElement {
+  const theme = useTheme();
+  return (
+    <>
+      <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
+        The importer is waiting for the bank one-time code delivered through the app OTP channel.
+      </Text>
+      <TextField
+        label="OTP code"
+        value={code}
+        onChangeText={onChange}
+        placeholder="123456"
+        keyboardType="number-pad"
+        autoComplete="sms-otp"
+        textContentType="oneTimeCode"
+        icon="keypad-outline"
+        error={error}
+        onInputReady={onInputReady}
+      />
+      {countdown.pending ? (
+        <View>
+          <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
+            {`Sending this code automatically in ${String(countdown.secondsLeft)}s.`}
+          </Text>
+          <Button
+            title="Cancel auto-send"
+            icon="close"
+            variant="secondary"
+            onPress={onCancelAuto}
+          />
+        </View>
+      ) : (
+        <Button title="Submit code" icon="checkmark" loading={submitting} onPress={onSubmit} />
+      )}
+    </>
+  );
 }
 
 /**
@@ -253,14 +143,15 @@ export function OtpPrompt({
   onSubmitted,
   onDismiss,
 }: Readonly<Props>): ReactElement {
-  const theme = useTheme();
-  const [code, setCode] = useState('');
-  const { submitting, error, setError, submit } = useOtpSubmission(request.id, onSubmitted);
+  const { code, setCode, submitting, error, setError, submit } = useOtpSubmission(
+    request.id,
+    onSubmitted,
+  );
   const autoEnabled = useAutoSubmitPreference(visible);
   const codeRef = useRef<{ focus: () => void } | null>(null);
   // The parent owns the one-shot guard so it survives this prompt's per-request
   // remount; the guard hook keeps the same-tick check and the attempt token.
-  const autoGuard = useAutoSubmitGuard(autoSubmitUsed);
+  const autoGuard = useAutoSubmitGuard(autoSubmitUsed, request.id);
   const [armed, setArmed] = useState({ token: 0, pairing: currentPairing() });
   // The countdown belongs to this prompt; the one-shot guard lives in the
   // parent so it cannot be reset by a remount.
@@ -277,15 +168,14 @@ export function OtpPrompt({
   });
 
   const cancelCountdown = countdown.cancel;
-
-  // A hidden prompt must not keep an armed countdown: it would resume and
-  // send the old code when the same request reappears.
-  useLayoutEffect(() => {
-    if (!visible) {
-      autoGuard.invalidate();
-      cancelCountdown();
-    }
-  }, [visible, autoGuard, cancelCountdown]);
+  usePromptLifecycle({
+    requestId: request.id,
+    visible,
+    autoGuard,
+    cancelCountdown,
+    setCode,
+    setError,
+  });
 
   const handleChange = (text: string): void => {
     autoGuard.invalidate();
@@ -345,40 +235,20 @@ export function OtpPrompt({
       }}
       title={`Enter OTP for ${request.bankId}`}
     >
-      <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
-        The importer is waiting for the bank one-time code delivered through the app OTP channel.
-      </Text>
-      <TextField
-        label="OTP code"
-        value={code}
-        onChangeText={handleChange}
-        placeholder="123456"
-        keyboardType="number-pad"
-        autoComplete="sms-otp"
-        textContentType="oneTimeCode"
-        icon="keypad-outline"
+      <OtpSheetContent
+        code={code}
         error={error}
+        submitting={submitting}
+        countdown={countdown}
+        onChange={handleChange}
+        onCancelAuto={cancelAuto}
+        onSubmit={() => {
+          submitManually(code);
+        }}
         onInputReady={(input) => {
           codeRef.current = input;
         }}
       />
-      {countdown.pending ? (
-        <View>
-          <Text style={[theme.typography.small, styles.hint, { color: theme.colors.textMuted }]}>
-            {`Sending this code automatically in ${String(countdown.secondsLeft)}s.`}
-          </Text>
-          <Button title="Cancel auto-send" icon="close" variant="secondary" onPress={cancelAuto} />
-        </View>
-      ) : (
-        <Button
-          title="Submit code"
-          icon="checkmark"
-          loading={submitting}
-          onPress={() => {
-            submitManually(code);
-          }}
-        />
-      )}
     </Sheet>
   );
 }

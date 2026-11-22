@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.16](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.15...israeli-bank-importer-app-v0.2.16) (2026-11-22)
+
+
+### Bug Fixes
+
+* **a11y:** expose headings and empty-run status ([#207](https://github.com/sergienko4/israeli-bank-importer-app/issues/207)) ([cda6347](https://github.com/sergienko4/israeli-bank-importer-app/commit/cda63475a80ff82f3f9f905c8a376d580391ee79))
+* **api:** bound requests and serialize writes ([#204](https://github.com/sergienko4/israeli-bank-importer-app/issues/204)) ([d291ebc](https://github.com/sergienko4/israeli-bank-importer-app/commit/d291ebc38326eed0bbb21d1369793865565ad33b))
+* **otp:** guard automatic prompt sends ([#213](https://github.com/sergienko4/israeli-bank-importer-app/issues/213)) ([e6d34fc](https://github.com/sergienko4/israeli-bank-importer-app/commit/e6d34fc4e0c92b48c64b8caeb6f6d1deffc36c87))
+* **otp:** harden submission transport ([#212](https://github.com/sergienko4/israeli-bank-importer-app/issues/212)) ([b917ea5](https://github.com/sergienko4/israeli-bank-importer-app/commit/b917ea50be95998d179e3950c4f93e14e09083a3))
+* **otp:** own the channel cache write ([#215](https://github.com/sergienko4/israeli-bank-importer-app/issues/215)) ([1af8885](https://github.com/sergienko4/israeli-bank-importer-app/commit/1af8885b5dc495cd40e56ac5bcdb0328bd058a35))
+* **otp:** own the settings screen state ([#217](https://github.com/sergienko4/israeli-bank-importer-app/issues/217)) ([7ec518c](https://github.com/sergienko4/israeli-bank-importer-app/commit/7ec518c0a9645added7e699f63a9a4a86fef744b))
+* **otp:** own the watcher queue and prompt ([#216](https://github.com/sergienko4/israeli-bank-importer-app/issues/216)) ([47dc764](https://github.com/sergienko4/israeli-bank-importer-app/commit/47dc7643f944cddbab5d9a1922de97c5bf41e6ed))
+* **ui:** preserve numeric drafts ([#208](https://github.com/sergienko4/israeli-bank-importer-app/issues/208)) ([6fc79af](https://github.com/sergienko4/israeli-bank-importer-app/commit/6fc79af48f6005aae4403bc55d8d5c846726521d))
+
 ## [0.2.15](https://github.com/sergienko4/israeli-bank-importer-app/compare/israeli-bank-importer-app-v0.2.14...israeli-bank-importer-app-v0.2.15) (2026-10-05)
 
 

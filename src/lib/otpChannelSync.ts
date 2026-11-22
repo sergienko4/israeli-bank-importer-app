@@ -28,7 +28,16 @@ let dirtyRevision = 0;
 /** The last channel a particular importer confirmed, for a stale read. */
 let confirmed: { baseUrl: string; channel: OtpChannel } | null = null;
 /** Importers with a user save between its start and cache publication. */
-const savesInFlight = new Set<string>();
+const savesInFlight = new Map<string, number>();
+
+/**
+ * Reports whether an importer has a user save in flight.
+ * @param baseUrl - The importer address.
+ * @returns True while at least one save is between start and publication.
+ */
+function hasSaveInFlight(baseUrl: string): boolean {
+  return (savesInFlight.get(baseUrl) ?? 0) > 0;
+}
 
 /**
  * Records a channel the importer just confirmed and re-syncs the capture flag.
@@ -46,9 +55,11 @@ export async function cacheOtpChannel(
   isCurrent: () => boolean = () => true,
 ): Promise<boolean | 'stale'> {
   generation += 1;
+  const writeGeneration = generation;
   const revisionAtStart = dirtyRevision;
+  const ownerAtWrite = (): boolean => isCurrent() && generation === writeGeneration;
   try {
-    await saveOtpChannel(channel, isCurrent, () => {
+    await saveOtpChannel(channel, ownerAtWrite, () => {
       // Record the importer's answer once its owner was checked in the queue.
       confirmed = { baseUrl, channel };
     });
@@ -64,6 +75,9 @@ export async function cacheOtpChannel(
     }
     // A write that would not take must not stop the gate below from running:
     // re-applying it is what actually closes the receiver, and it fails closed.
+    // The generation moves too: a read that started before this uncertain
+    // failure must not publish its older answer and clear the retry marker.
+    generation += 1;
     dirty = true;
     dirtyRevision += 1;
     await applyStashGate();
@@ -94,7 +108,7 @@ export function confirmedOtpChannel(baseUrl: string): OtpChannel | null {
  * @param baseUrl - The importer being changed.
  */
 export function beginChannelChange(baseUrl: string): void {
-  savesInFlight.add(baseUrl);
+  savesInFlight.set(baseUrl, (savesInFlight.get(baseUrl) ?? 0) + 1);
   generation += 1;
 }
 
@@ -103,11 +117,19 @@ export function beginChannelChange(baseUrl: string): void {
  * @param baseUrl - The importer that was being changed.
  */
 export function endChannelChange(baseUrl: string): void {
-  savesInFlight.delete(baseUrl);
+  const remaining = (savesInFlight.get(baseUrl) ?? 1) - 1;
+  if (remaining > 0) {
+    savesInFlight.set(baseUrl, remaining);
+  } else {
+    savesInFlight.delete(baseUrl);
+  }
 }
 
 /** Forces the next poll to reconcile after a save that may have applied. */
 export function markChannelDirty(): void {
+  // A save that may have applied invalidates every read that started before
+  // it, so none of them can publish the pre-save snapshot over the retry.
+  generation += 1;
   dirty = true;
   dirtyRevision += 1;
 }
@@ -144,7 +166,7 @@ export async function refreshOtpChannel(
   try {
     const settings = await getOtpSettings(session);
     const ownerIsCurrent = (): boolean =>
-      isCurrent() && currentPairing() === pairing && !savesInFlight.has(session.baseUrl);
+      isCurrent() && currentPairing() === pairing && !hasSaveInFlight(session.baseUrl);
     if (!isCurrent() || startedAt !== generation) {
       return { status: 'stale', channel: confirmedOtpChannel(session.baseUrl) };
     }

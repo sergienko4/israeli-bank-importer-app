@@ -29,7 +29,8 @@ import { loadOtpAutoSubmit, saveOtpAutoSubmit } from '../lib/otpAutoSubmitStore'
 import { applyStashGate } from '../lib/otpStashGate';
 import { useTheme } from '../theme/ThemeContext';
 import { AutoReadCard } from './AutoReadCard';
-import { useChannelSave, useOtpChannel } from './otpSettingsData';
+import { useOtpChannel } from './otpSettingsData';
+import { useChannelSave } from './otpSettingsSave';
 
 interface Props {
   onBack: () => void;
@@ -160,7 +161,12 @@ export function OtpSettingsScreen({ onBack }: Readonly<Props>): ReactElement {
   const theme = useTheme();
   const { connection } = useAuth();
   const { channel, loading, error, warning, setChannel, reload } = useOtpChannel(connection);
-  const { saving, saveError, choose } = useChannelSave(connection, channel, setChannel);
+  const { saving, saveError, choose } = useChannelSave({
+    connection,
+    channel,
+    setChannel,
+    reload,
+  });
   const notice = saveError ?? warning;
 
   if (loading) {

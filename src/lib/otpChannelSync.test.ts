@@ -5,8 +5,10 @@
 import { getOtpSettings } from '../api/importerClient';
 import { saveOtpChannel, StaleChannelOwnerError } from './otpChannelStore';
 import {
+  beginChannelChange,
   cacheOtpChannel,
   confirmedOtpChannel,
+  endChannelChange,
   isChannelCacheDirty,
   markChannelDirty,
   refreshOtpChannel,
@@ -160,5 +162,32 @@ describe('refreshOtpChannel', () => {
     await refreshOtpChannel(session);
 
     expect(mockGate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('channel save ownership', () => {
+  it('keeps the save guard until every overlapping save ends', async () => {
+    mockGet.mockResolvedValue({ channel: 'telegram' });
+    beginChannelChange(session.baseUrl);
+    beginChannelChange(session.baseUrl);
+
+    endChannelChange(session.baseUrl);
+    await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
+
+    endChannelChange(session.baseUrl);
+    await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'ok' });
+  });
+
+  it('discards a queued write after an uncertain save failure', async () => {
+    mockGet.mockResolvedValue({ channel: 'telegram' });
+    mockSave.mockImplementation(async (_channel, isCurrent = () => true) => {
+      // The save's answer was lost: the retry marker moves the generation.
+      markChannelDirty();
+      if (!isCurrent()) {
+        throw new StaleChannelOwnerError();
+      }
+    });
+
+    await expect(refreshOtpChannel(session)).resolves.toMatchObject({ status: 'stale' });
   });
 });

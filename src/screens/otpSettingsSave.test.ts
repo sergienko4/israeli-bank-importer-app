@@ -1,0 +1,182 @@
+import { act, renderHook } from '@testing-library/react-native';
+
+import type { Session } from '../api/importerClient';
+import { setOtpSettings } from '../api/importerClient';
+import { haptics } from '../lib/haptics';
+import { beginChannelChange, endChannelChange, markChannelDirty } from '../lib/otpChannelSync';
+import { saveChannel, useChannelSave } from './otpSettingsSave';
+
+jest.mock('../api/importerClient', () => ({ setOtpSettings: jest.fn() }));
+jest.mock('../lib/otpChannelSync', () => ({
+  beginChannelChange: jest.fn(),
+  cacheOtpChannel: jest.fn(),
+  endChannelChange: jest.fn(),
+  markChannelDirty: jest.fn(),
+  refreshOtpChannel: jest.fn(),
+}));
+jest.mock('../lib/haptics', () => ({
+  haptics: { success: jest.fn(), warning: jest.fn() },
+}));
+
+const mockSet = jest.mocked(setOtpSettings);
+const SESSION: Session = { baseUrl: 'https://host:8080', token: 'tok' };
+
+/**
+ * Builds the callbacks a save uses.
+ * @param current - Whether the importer is still current.
+ * @returns The spies and request fields.
+ */
+function setup(current: boolean): {
+  setChannel: jest.Mock;
+  setError: jest.Mock;
+  isCurrent: () => boolean;
+} {
+  const setChannel = jest.fn();
+  const setError = jest.fn();
+  return { setChannel, setError, isCurrent: () => current };
+}
+
+describe('saveChannel', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not roll back another importer after a failed save', async () => {
+    mockSet.mockResolvedValue({ ok: false, error: 'nope' });
+    const spies = setup(false);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: spies.isCurrent,
+    });
+
+    expect(spies.setChannel).toHaveBeenCalledWith('app');
+    expect(spies.setChannel).not.toHaveBeenCalledWith('telegram');
+    expect(spies.setError).toHaveBeenCalledWith(null);
+    expect(spies.setError).not.toHaveBeenCalledWith('nope');
+    expect(markChannelDirty).toHaveBeenCalled();
+    expect(haptics.warning).toHaveBeenCalled();
+    expect(endChannelChange).toHaveBeenCalled();
+    expect(beginChannelChange).toHaveBeenCalled();
+  });
+
+  it('rolls a current importer back to the previous channel', async () => {
+    mockSet.mockResolvedValue({ ok: false, error: 'nope' });
+    const spies = setup(true);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: spies.isCurrent,
+    });
+
+    expect(spies.setChannel).toHaveBeenCalledWith('telegram');
+    expect(spies.setError).toHaveBeenCalledWith('nope');
+  });
+
+  it('starts only one save when the choice is repeated in one tick', async () => {
+    mockSet.mockReturnValue(
+      new Promise<Awaited<ReturnType<typeof setOtpSettings>>>(() => undefined),
+    );
+    const { result } = await renderHook(() =>
+      useChannelSave({
+        connection: SESSION,
+        channel: 'telegram',
+        setChannel: jest.fn(),
+        reload: jest.fn(),
+      }),
+    );
+
+    await act(async () => {
+      void result.current.choose('app');
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
+
+    expect(mockSet).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the guard after a failed save', async () => {
+    mockSet.mockResolvedValueOnce({ ok: false, error: 'nope' }).mockResolvedValueOnce({ ok: true });
+    const { result } = await renderHook(() =>
+      useChannelSave({
+        connection: SESSION,
+        channel: 'telegram',
+        setChannel: jest.fn(),
+        reload: jest.fn(),
+      }),
+    );
+
+    await act(async () => {
+      await result.current.choose('app');
+    });
+    await act(async () => {
+      await result.current.choose('app');
+    });
+
+    expect(mockSet).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not make a second importer look busy or failed', async () => {
+    mockSet.mockResolvedValueOnce({ ok: false, error: 'nope' });
+    const other: Session = { baseUrl: 'https://other.example', token: 'tok' };
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) =>
+        useChannelSave({
+          connection,
+          channel: 'telegram',
+          setChannel: jest.fn(),
+          reload: jest.fn(),
+        }),
+      { initialProps: { connection: SESSION } },
+    );
+
+    await act(async () => {
+      await result.current.choose('app');
+    });
+    expect(result.current.saveError).toBe('nope');
+
+    await rerender({ connection: other });
+
+    expect(result.current.saving).toBe(false);
+    expect(result.current.saveError).toBeNull();
+  });
+
+  it('leaves another importer free to save while one is pending', async () => {
+    mockSet.mockReturnValue(
+      new Promise<Awaited<ReturnType<typeof setOtpSettings>>>(() => undefined),
+    );
+    const other: Session = { baseUrl: 'https://other.example', token: 'tok' };
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) =>
+        useChannelSave({
+          connection,
+          channel: 'telegram',
+          setChannel: jest.fn(),
+          reload: jest.fn(),
+        }),
+      { initialProps: { connection: SESSION } },
+    );
+
+    await act(async () => {
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
+    expect(result.current.saving).toBe(true);
+
+    await rerender({ connection: other });
+    await act(async () => {
+      void result.current.choose('app');
+      await Promise.resolve();
+    });
+
+    expect(mockSet).toHaveBeenCalledTimes(2);
+  });
+});

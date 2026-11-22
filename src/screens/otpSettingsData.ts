@@ -2,18 +2,9 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
-import { type Session, setOtpSettings } from '../api/importerClient';
+import type { Session } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
-import { currentPairing } from '../auth/pairingGeneration';
-import { haptics } from '../lib/haptics';
-import {
-  beginChannelChange,
-  cacheOtpChannel,
-  type ChannelRefreshResult,
-  endChannelChange,
-  markChannelDirty,
-  refreshOtpChannel,
-} from '../lib/otpChannelSync';
+import { type ChannelRefreshResult, refreshOtpChannel } from '../lib/otpChannelSync';
 
 /** What the screen needs from the channel load. */
 export interface ChannelLoad {
@@ -92,6 +83,29 @@ interface ChannelReadOptions {
   readonly setResult: Dispatch<SetStateAction<ChannelResult | null>>;
 }
 
+/** How long a stale read waits for the publication that superseded it. */
+const STALE_RETRY_MS = 250;
+
+/**
+ * Reads the channel, retrying once when a publication superseded the read.
+ * @param read - Performs one read.
+ * @param current - Reports whether the screen still wants the answer.
+ * @returns The read that counts, or the stale one when the screen left.
+ */
+async function readWithRetry(
+  read: () => Promise<ChannelRefreshResult>,
+  current: () => boolean,
+): Promise<ChannelRefreshResult> {
+  const first = await read();
+  if (first.status !== 'stale' || !current()) {
+    return first;
+  }
+  // A watcher publication can land just after a read is superseded. One
+  // bounded retry avoids finalizing an error for a channel that is current.
+  await new Promise((resolve) => setTimeout(resolve, STALE_RETRY_MS));
+  return current() ? read() : first;
+}
+
 /**
  * Reads the channel once per importer or retry.
  * @param options - The latest session ref, importer address, retry key, setter.
@@ -108,6 +122,8 @@ function useChannelRead({
       return undefined;
     }
     let active = true;
+    const stillCurrent = (): boolean =>
+      active && connectionRef.current?.baseUrl === activeConnection.baseUrl;
     const done = (
       channel: OtpChannel | null,
       error: string | null,
@@ -117,14 +133,10 @@ function useChannelRead({
         setResult({ baseUrl: activeConnection.baseUrl, reloadKey, channel, error, warning });
       }
     };
-    void refreshOtpChannel(
-      activeConnection,
-      () => active && connectionRef.current?.baseUrl === activeConnection.baseUrl,
-    )
+    const read = (): Promise<ChannelRefreshResult> =>
+      refreshOtpChannel(activeConnection, stillCurrent);
+    void readWithRetry(read, stillCurrent)
       .then((result) => {
-        if (!active || connectionRef.current?.baseUrl !== activeConnection.baseUrl) {
-          return;
-        }
         const applied = applyChannelResult(result);
         done(applied.channel, applied.error, applied.warning);
       })
@@ -135,200 +147,6 @@ function useChannelRead({
       active = false;
     };
   }, [connectionRef, baseUrl, reloadKey, setResult]);
-}
-
-/**
- * Loads the importer's OTP channel and keeps the device cache in step with it.
- *
- * The cache write is what the SMS receiver reads with no session, and the
- * switches that would otherwise close it are hidden off the app channel. A read
- * started for another importer or before a user save is discarded by the cache
- * owner check; a failed write leaves the error visible while the watcher retries.
- * @param connection - The active importer session, or null when signed out.
- * @returns The loaded channel, the request state, and a way to try again.
- */
-/**
- * Reports whether a session still points at the importer that started a save.
- * @param session - The latest session, or null.
- * @param baseUrl - The importer address the save was made for.
- * @returns True when it is still the active importer.
- */
-function isSameImporter(session: Session | null, baseUrl: string): boolean {
-  return session?.baseUrl === baseUrl;
-}
-
-/** What the settings screen needs to save one channel choice. */
-export interface ChannelSave {
-  /** Whether a save is in flight. */
-  readonly saving: boolean;
-  /** Why the last save failed, or null. */
-  readonly saveError: string | null;
-  /** Saves one choice, optimistically selecting it first. */
-  readonly choose: (next: OtpChannel) => Promise<void>;
-}
-
-/**
- * Marks the cache dirty and warns after a channel save may have applied.
- */
-function warnChannelFailure(): void {
-  markChannelDirty();
-  haptics.warning();
-}
-
-/** What a failed channel save should report. */
-interface ChannelFailure {
-  readonly previous: OtpChannel | null;
-  readonly setChannel: (next: OtpChannel | null) => void;
-  readonly setError: (error: string | null) => void;
-  readonly message: string;
-  readonly isCurrent: () => boolean;
-}
-
-/** What a successful channel save should publish. */
-interface ChannelSuccess {
-  readonly connection: Session;
-  readonly next: OtpChannel;
-  readonly isCurrent: () => boolean;
-  readonly setError: (error: string | null) => void;
-}
-
-/**
- * Publishes a channel the importer accepted, if its owner is still current.
- * @param success - The session, channel, owner check, and error setter.
- */
-async function publishChannel({
-  connection,
-  next,
-  isCurrent,
-  setError,
-}: ChannelSuccess): Promise<void> {
-  if (!isCurrent()) {
-    return;
-  }
-  const cached = await cacheOtpChannel(next, connection.baseUrl, isCurrent);
-  if (cached === 'stale') {
-    return;
-  }
-  haptics.success();
-  if (!cached) {
-    setError('Could not update capture on this device. It will retry automatically.');
-  }
-}
-
-/**
- * Reports a failed save without letting a stale importer roll back another one.
- * @param failure - The previous channel, setters, message, and owner check.
- */
-function reportChannelFailure({
-  previous,
-  setChannel,
-  setError,
-  message,
-  isCurrent,
-}: ChannelFailure): void {
-  warnChannelFailure();
-  if (isCurrent()) {
-    setChannel(previous);
-    setError(message);
-  }
-}
-
-/** What one channel save needs from the screen. */
-interface ChannelSaveRequest {
-  readonly connection: Session;
-  readonly next: OtpChannel;
-  readonly previous: OtpChannel | null;
-  readonly setChannel: (next: OtpChannel | null) => void;
-  readonly setError: (error: string | null) => void;
-  readonly isCurrent: () => boolean;
-}
-
-/**
- * Sends one channel choice and publishes it only for the same importer.
- * @param request - The session, choices, setters, and owner check.
- */
-export async function saveChannel({
-  connection,
-  next,
-  previous,
-  setChannel,
-  setError,
-  isCurrent,
-}: ChannelSaveRequest): Promise<void> {
-  const pairing = currentPairing();
-  const ownerIsCurrent = (): boolean => isCurrent() && currentPairing() === pairing;
-  beginChannelChange(connection.baseUrl);
-  setChannel(next);
-  setError(null);
-  try {
-    const result = await setOtpSettings(connection, next);
-    if (result.ok) {
-      await publishChannel({ connection, next, isCurrent: ownerIsCurrent, setError });
-    } else {
-      reportChannelFailure({
-        previous,
-        setChannel,
-        setError,
-        message: result.error ?? 'Could not save the OTP setting.',
-        isCurrent: ownerIsCurrent,
-      });
-    }
-  } catch (e) {
-    reportChannelFailure({
-      previous,
-      setChannel,
-      setError,
-      message: e instanceof Error ? e.message : 'Could not save the OTP setting.',
-      isCurrent: ownerIsCurrent,
-    });
-  } finally {
-    endChannelChange(connection.baseUrl);
-  }
-}
-
-/**
- * Saves a channel choice and keeps the device cache in step.
- * @param connection - The active session, or null.
- * @param channel - The channel currently shown.
- * @param setChannel - Applies an optimistic choice.
- * @returns The save state and the choice handler.
- */
-export function useChannelSave(
-  connection: Session | null,
-  channel: OtpChannel | null,
-  setChannel: (next: OtpChannel | null) => void,
-): ChannelSave {
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const connectionRef = useRef(connection);
-
-  useEffect(() => {
-    connectionRef.current = connection;
-  }, [connection]);
-
-  const choose = async (next: OtpChannel): Promise<void> => {
-    if (!connection || savingRef.current || next === channel) {
-      return;
-    }
-    savingRef.current = true;
-    setSaving(true);
-    try {
-      await saveChannel({
-        connection,
-        next,
-        previous: channel,
-        setChannel,
-        setError: setSaveError,
-        isCurrent: () => isSameImporter(connectionRef.current, connection.baseUrl),
-      });
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  };
-
-  return { saving, saveError, choose };
 }
 
 /**

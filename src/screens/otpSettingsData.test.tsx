@@ -200,6 +200,52 @@ describe('useOtpChannel', () => {
     expect(result.current.save.saving).toBe(false);
   });
 
+  it('keeps an optimistic choice through a delayed save after renewal', async () => {
+    mockRefresh.mockResolvedValueOnce({ status: 'ok', channel: 'telegram' });
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) => {
+        const load = useOtpChannel(connection);
+        const save = useChannelSave({
+          connection,
+          channel: load.channel,
+          setChannel: load.setChannel,
+          reload: load.reload,
+        });
+        return { load, save };
+      },
+      { initialProps: { connection: A } },
+    );
+    await flush();
+    expect(result.current.load.channel).toBe('telegram');
+
+    await rerender({ connection: { ...A, token: 'fresh' } });
+    await flush();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+    const saving = deferred<Awaited<ReturnType<typeof setOtpSettings>>>();
+    mockSet.mockReturnValue(saving.promise);
+    await act(async () => {
+      void result.current.save.choose('app');
+      await Promise.resolve();
+    });
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(250);
+    });
+    await flush();
+    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(result.current.load.channel).toBe('app');
+
+    saving.resolve({ ok: true });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.load.channel).toBe('app');
+    expect(result.current.save.saving).toBe(false);
+  });
+
   it('keeps a cache failure as a non-blocking warning', async () => {
     mockRefresh.mockResolvedValue({ status: 'cache-failed', channel: 'app' });
     const { result } = await renderHook(() => useOtpChannel(A));

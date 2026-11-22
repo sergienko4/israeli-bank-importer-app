@@ -229,10 +229,13 @@ export function useOtpChannel(connection: Session | null): ChannelLoad {
   });
 
   const setChannel = (next: OtpChannel | null): void => {
+    // Optimistic choices and rollbacks keep the read key of the load they
+    // replace, so a renewal cannot start a competing read during a save.
+    const sameImporter = result !== null && result.baseUrl === connection?.baseUrl;
     setResult({
       baseUrl: connection?.baseUrl ?? '',
       reloadKey,
-      token: connection?.token ?? '',
+      token: sameImporter ? result.token : (connection?.token ?? ''),
       channel: next,
       error: null,
       warning: null,

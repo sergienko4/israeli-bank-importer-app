@@ -101,6 +101,8 @@ of submitting a wrong code is a bank-side attempt, and those run out.
   with that permission when it comes from a browser or files app. Each release
   carries it as a second APK, installed over ADB — see below.
 
+![OTP settings: choose the app or Telegram, and turn on automatic submission](docs/screenshots/otp-settings.png)
+
 ### Zero-touch capture
 
 Everything above still needs the app to be on screen. Turning on **auto-read**

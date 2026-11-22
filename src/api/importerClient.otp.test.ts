@@ -49,6 +49,28 @@ function stubFetch(status: number, body: unknown): void {
   }) as unknown as typeof fetch;
 }
 
+/**
+ * Builds a promise the test can settle later.
+ * @returns The promise and its resolver.
+ */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+/**
+ * Lets queued lanes and async continuations run.
+ * @returns A promise after the current turn.
+ */
+function settle(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 afterEach(() => {
   globalThis.fetch = realFetch;
   setSessionGuard(null);
@@ -148,6 +170,72 @@ describe('submitOtp', () => {
 
     expect(result).toBeNull();
     expect(calls).toHaveLength(0);
+  });
+
+  it('withdraws while waiting for the OTP lane', async () => {
+    calls = [];
+    const responses: ((response: Response) => void)[] = [];
+    globalThis.fetch = jest.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method });
+      return new Promise<Response>((resolve) => {
+        responses.push(resolve);
+      });
+    }) as unknown as typeof fetch;
+
+    const first = submitOtp({ session, id: 'r1', code: '111111' });
+    await settle();
+    const gate = jest.fn(() => Promise.reject(new SubmissionCancelledError()));
+    const second = submitOtp({ session, id: 'r1', code: '222222', beforeSend: gate });
+    await settle();
+    expect(calls).toHaveLength(1);
+
+    responses[0](fakeResponse(200, { ok: true }));
+    await first;
+    await expect(second).resolves.toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(gate).toHaveBeenCalledTimes(1);
+  });
+
+  it('withdraws during session renewal', async () => {
+    calls = [];
+    const guard = deferred<Session>();
+    setSessionGuard(() => guard.promise);
+    const gate = jest.fn(() => Promise.reject(new SubmissionCancelledError()));
+
+    const submission = submitOtp({ session, id: 'r1', code: '123456', beforeSend: gate });
+    await settle();
+    expect(gate).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+
+    guard.resolve(session);
+    await expect(submission).resolves.toBeNull();
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('withdraws during 401 re-authentication after one POST', async () => {
+    calls = [];
+    globalThis.fetch = jest.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method });
+      return Promise.resolve(fakeResponse(401, {}));
+    }) as unknown as typeof fetch;
+    const reauth = deferred<Session>();
+    setReauthHandler(() => reauth.promise);
+    let gateCalls = 0;
+    const gate = jest.fn((start: () => Promise<Response>) => {
+      gateCalls += 1;
+      return gateCalls === 1 ? start() : Promise.reject(new SubmissionCancelledError());
+    });
+
+    const submission = submitOtp({ session, id: 'r1', code: '123456', beforeSend: gate });
+    await settle();
+    expect(calls).toHaveLength(1);
+    expect(gate).toHaveBeenCalledTimes(1);
+
+    reauth.resolve({ baseUrl: 'https://host:8080', token: 'fresh' });
+    await expect(submission).resolves.toBeNull();
+    expect(calls).toHaveLength(1);
+    expect(gate).toHaveBeenCalledTimes(2);
   });
 
   it('does not start a second submission for the same request before it settles', async () => {

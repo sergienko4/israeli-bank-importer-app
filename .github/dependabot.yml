@@ -156,6 +156,12 @@ updates:
       # unicorn 72 peers on eslint >=10.4, which the entry above blocks.
       - dependency-name: eslint-plugin-unicorn
         update-types: ['version-update:semver-major']
+      # typescript-eslint 8.73.0's new no-unsafe-class-instance-assignment
+      # rule recurses infinitely on Button.tsx, so ESLint exits with a stack
+      # overflow and the lint gate cannot run. Only 8.73.1 alphas exist so far;
+      # drop this ignore once 8.73.1 is stable.
+      - dependency-name: typescript-eslint
+        versions: ['>=8.73.0 <8.73.1']
       # jest-expo 54 resolves jest 29 internals. jest-runtime 30 against
       # jest-mock 29 fails every suite with "clearMocksOnScope is not a
       # function", so jest moves when jest-expo moves.

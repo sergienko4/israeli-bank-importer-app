@@ -168,8 +168,8 @@ interface OtpQueue {
 /** What the prompt needs from the watcher. */
 interface OtpWatcher {
   pending: OwnedPendingOtpRequest | null;
-  dismiss: (requestId?: string, deadline?: number) => void;
-  clearAnswered: (requestId: string, deadline: number) => void;
+  dismiss: (requestId: string, deadline: number, pairing: number) => void;
+  clearAnswered: (requestId: string, deadline: number, pairing: number) => void;
   autoSubmitted: ReadonlyMap<string, number>;
   markAutoSubmitted: (id: string, deadline: number) => void;
 }
@@ -322,40 +322,57 @@ function useOtpPolling({ connection, pairing, applyRequests, reset }: OtpPolling
   }, [applyRequests, connection?.baseUrl, pairing, reset]);
 }
 
+/** What the dismissal callbacks need from the queue. */
+interface DismissalQueue {
+  /** The request shown now. */
+  readonly pendingRef: RefObject<OwnedPendingOtpRequest | null>;
+  /** Per-request snooze deadlines. */
+  readonly snoozedUntil: RefObject<Map<string, number>>;
+  /** Shows or clears the prompt. */
+  readonly setPending: Dispatch<SetStateAction<OwnedPendingOtpRequest | null>>;
+  /** The pairing that owns the current queue. */
+  readonly pairing: number;
+}
+
 /**
  * Builds the two ways the visible request can leave: dismiss, or answer.
- * @param pendingRef - The request shown now.
- * @param snoozedUntil - Per-request snooze deadlines.
- * @param setPending - Shows or clears the prompt.
+ * @param queue - The pending ref, snoozes, setter, and owning pairing.
  * @returns The dismiss and answer callbacks.
  */
-function useOtpDismissals(
-  pendingRef: RefObject<OwnedPendingOtpRequest | null>,
-  snoozedUntil: RefObject<Map<string, number>>,
-  setPending: Dispatch<SetStateAction<OwnedPendingOtpRequest | null>>,
-): Pick<OtpWatcher, 'dismiss' | 'clearAnswered'> {
+function useOtpDismissals({
+  pendingRef,
+  snoozedUntil,
+  setPending,
+  pairing,
+}: DismissalQueue): Pick<OtpWatcher, 'dismiss' | 'clearAnswered'> {
   const dismiss = useCallback(
-    (requestId?: string, deadline?: number) => {
-      const current = pendingRef.current;
-      const id = requestId ?? current?.id;
-      const requestDeadline = deadline ?? current?.deadline;
-      if (id === undefined || requestDeadline === undefined) {
+    (requestId: string, deadline: number, ownerPairing: number) => {
+      // A late callback from the previous prompt must not touch the queue that
+      // replaced it, even when the new pairing reuses the request id.
+      if (ownerPairing !== pairing) {
         return;
       }
+      const current = pendingRef.current;
       // Record the snooze for the named request even if a newer one is on
       // screen: a late dismissal must not shorten an answer's quiet window.
-      const quietUntil = snoozeUntil(requestDeadline);
-      snoozedUntil.current.set(id, Math.max(snoozedUntil.current.get(id) ?? 0, quietUntil));
-      if (current?.id === id) {
+      const quietUntil = snoozeUntil(deadline);
+      snoozedUntil.current.set(
+        requestId,
+        Math.max(snoozedUntil.current.get(requestId) ?? 0, quietUntil),
+      );
+      if (current?.id === requestId) {
         pendingRef.current = null;
         setPending(null);
       }
     },
-    [pendingRef, setPending, snoozedUntil],
+    [pairing, pendingRef, setPending, snoozedUntil],
   );
 
   const clearAnswered = useCallback(
-    (requestId: string, deadline: number) => {
+    (requestId: string, deadline: number, ownerPairing: number) => {
+      if (ownerPairing !== pairing) {
+        return;
+      }
       // Suppress until the request itself ends: a fixed quiet period can expire
       // while a lagging importer still lists it, which re-prompts the answer.
       snoozedUntil.current.set(requestId, deadline);
@@ -364,7 +381,7 @@ function useOtpDismissals(
         setPending(null);
       }
     },
-    [pendingRef, setPending, snoozedUntil],
+    [pairing, pendingRef, setPending, snoozedUntil],
   );
 
   return { dismiss, clearAnswered };
@@ -384,11 +401,12 @@ export function useOtpWatcher(): OtpWatcher {
     applyRequests: queue.applyRequests,
     reset: queue.reset,
   });
-  const { dismiss, clearAnswered } = useOtpDismissals(
-    queue.pendingRef,
-    queue.snoozedUntil,
-    queue.setPending,
-  );
+  const { dismiss, clearAnswered } = useOtpDismissals({
+    pendingRef: queue.pendingRef,
+    snoozedUntil: queue.snoozedUntil,
+    setPending: queue.setPending,
+    pairing,
+  });
   return {
     pending: queue.pending,
     dismiss,

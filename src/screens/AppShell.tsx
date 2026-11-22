@@ -119,11 +119,11 @@ export function AppShell(): ReactElement {
           onAutoSubmitUsed={() => {
             markAutoSubmitted(shownRequest.id, shownRequest.deadline);
           }}
-          onSubmitted={(id) => {
-            clearAnswered(id, shownRequest.deadline);
+          onSubmitted={(id, ownerPairing) => {
+            clearAnswered(id, shownRequest.deadline, ownerPairing);
           }}
-          onDismiss={(id) => {
-            dismiss(id, shownRequest.deadline);
+          onDismiss={(id, ownerPairing) => {
+            dismiss(id, shownRequest.deadline, ownerPairing);
           }}
         />
       ) : null}

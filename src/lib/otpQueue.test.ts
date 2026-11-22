@@ -76,7 +76,7 @@ describe('snoozeUntil', () => {
 describe('pruneSnoozed', () => {
   const now = 10_000;
 
-  it('keeps a snooze through its exact end', () => {
+  it('drops a snooze once its end is reached', () => {
     const snoozed = new Map([
       ['a', now],
       ['b', now + 1],

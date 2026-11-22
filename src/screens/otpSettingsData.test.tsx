@@ -4,13 +4,24 @@
  */
 import { act, renderHook } from '@testing-library/react-native';
 
-import type { Session } from '../api/importerClient';
-import { refreshOtpChannel } from '../lib/otpChannelSync';
+import { type Session, setOtpSettings } from '../api/importerClient';
+import { cacheOtpChannel, refreshOtpChannel } from '../lib/otpChannelSync';
 import { useOtpChannel } from './otpSettingsData';
+import { useChannelSave } from './otpSettingsSave';
 
-jest.mock('../lib/otpChannelSync', () => ({ refreshOtpChannel: jest.fn() }));
+jest.mock('../api/importerClient', () => ({ setOtpSettings: jest.fn() }));
+jest.mock('../lib/otpChannelSync', () => ({
+  refreshOtpChannel: jest.fn(),
+  beginChannelChange: jest.fn(),
+  endChannelChange: jest.fn(),
+  cacheOtpChannel: jest.fn(),
+  markChannelDirty: jest.fn(),
+}));
+jest.mock('../lib/haptics', () => ({ haptics: { success: jest.fn(), warning: jest.fn() } }));
 
 const mockRefresh = jest.mocked(refreshOtpChannel);
+const mockSet = jest.mocked(setOtpSettings);
+const mockCache = jest.mocked(cacheOtpChannel);
 const A: Session = { baseUrl: 'https://a.example', token: 't' };
 const B: Session = { baseUrl: 'https://b.example', token: 't' };
 
@@ -41,6 +52,8 @@ describe('useOtpChannel', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockRefresh.mockReset();
+    mockSet.mockReset();
+    mockCache.mockReset().mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -140,6 +153,51 @@ describe('useOtpChannel', () => {
     await flush();
 
     expect(tokens).toEqual(['t', 'fresh']);
+  });
+
+  it('retries a failed load when the session renews', async () => {
+    mockRefresh
+      .mockResolvedValueOnce({ status: 'failed', channel: null, error: 'expired' })
+      .mockResolvedValueOnce({ status: 'ok', channel: 'app' });
+    const { result, rerender } = await renderHook(
+      ({ connection }: { connection: Session }) => useOtpChannel(connection),
+      { initialProps: { connection: A } },
+    );
+    await flush();
+    expect(result.current.error).toBe('expired');
+
+    await rerender({ connection: { ...A, token: 'fresh' } });
+    await flush();
+
+    expect(result.current.error).toBeNull();
+    expect(result.current.channel).toBe('app');
+  });
+
+  it('follows the applied channel after a current save fails', async () => {
+    mockRefresh.mockResolvedValueOnce({ status: 'ok', channel: 'telegram' });
+    mockSet.mockRejectedValue(new Error('timed out'));
+    const { result } = await renderHook(() => {
+      const load = useOtpChannel(A);
+      const save = useChannelSave({
+        connection: A,
+        channel: load.channel,
+        setChannel: load.setChannel,
+        reload: load.reload,
+      });
+      return { load, save };
+    });
+    await flush();
+    expect(result.current.load.channel).toBe('telegram');
+
+    mockRefresh.mockResolvedValueOnce({ status: 'ok', channel: 'app' });
+    await act(async () => {
+      await result.current.save.choose('app');
+    });
+    await flush();
+
+    expect(mockSet).toHaveBeenCalledTimes(1);
+    expect(result.current.load.channel).toBe('app');
+    expect(result.current.save.saving).toBe(false);
   });
 
   it('keeps a cache failure as a non-blocking warning', async () => {

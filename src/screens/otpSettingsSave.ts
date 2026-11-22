@@ -8,6 +8,7 @@
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { useEffect, useRef, useState } from 'react';
 
+import { type BeforeSend, SubmissionCancelledError } from '../api/authedTypes';
 import { type Session, setOtpSettings } from '../api/importerClient';
 import type { OtpChannel } from '../api/otp';
 import { currentPairing } from '../auth/pairingGeneration';
@@ -124,6 +125,15 @@ interface ChannelSaveRequest {
 }
 
 /**
+ * Builds the gate that runs inside the client's write queue.
+ * @param isCurrent - Reports whether the save still owns the pairing.
+ * @returns A gate that refuses a stale owner before any attempt.
+ */
+function ownerGate(isCurrent: () => boolean): BeforeSend {
+  return (start) => (isCurrent() ? start() : Promise.reject(new SubmissionCancelledError()));
+}
+
+/**
  * Sends one channel choice and publishes it only for the same importer.
  * @param request - The session, choices, setters, and owner check.
  */
@@ -142,7 +152,7 @@ export async function saveChannel({
   setChannel(next);
   setError(null);
   try {
-    const result = await setOtpSettings(connection, next);
+    const result = await setOtpSettings(connection, next, ownerGate(ownerIsCurrent));
     if (result.ok) {
       await publishChannel({ connection, next, isCurrent: ownerIsCurrent, setError });
     } else {

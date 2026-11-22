@@ -1,5 +1,6 @@
 import { act, renderHook } from '@testing-library/react-native';
 
+import { SubmissionCancelledError } from '../api/authedTypes';
 import type { Session } from '../api/importerClient';
 import { setOtpSettings } from '../api/importerClient';
 import { haptics } from '../lib/haptics';
@@ -92,6 +93,49 @@ describe('saveChannel', () => {
     expect(spies.setError).not.toHaveBeenCalledWith(
       'Could not update capture on this device. It will retry automatically.',
     );
+  });
+
+  it('gates the queued PUT by its owner', async () => {
+    let owner = true;
+    let gate: ((start: () => Promise<Response>) => Promise<Response>) | undefined;
+    mockSet.mockImplementation(async (_session, _channel, beforeSend) => {
+      gate = beforeSend;
+      return { ok: true };
+    });
+    mockCache.mockResolvedValue(true);
+    const spies = setup(true);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: () => owner,
+    });
+
+    owner = false;
+    const start = jest.fn(() => Promise.resolve({} as Response));
+    await expect(gate?.(start)).rejects.toBeInstanceOf(SubmissionCancelledError);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('reloads a current importer after an ambiguous failure', async () => {
+    mockSet.mockRejectedValue(new Error('offline'));
+    const reload = jest.fn();
+    const spies = setup(true);
+
+    await saveChannel({
+      connection: SESSION,
+      next: 'app',
+      previous: 'telegram',
+      setChannel: spies.setChannel,
+      setError: spies.setError,
+      isCurrent: () => true,
+      onAmbiguousFailure: reload,
+    });
+
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it('reloads after an ambiguous failure only for the current importer', async () => {

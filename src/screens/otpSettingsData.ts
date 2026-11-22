@@ -28,6 +28,8 @@ interface ChannelResult {
   readonly baseUrl: string;
   /** Which attempt this answers, so a retry supersedes the one before it. */
   readonly reloadKey: number;
+  /** The session token the read used, so a renewal can retry a failure. */
+  readonly token: string;
   /** The channel the importer reported, or null when the read failed. */
   readonly channel: OtpChannel | null;
   /** Why the read failed, or null. */
@@ -80,6 +82,8 @@ interface ChannelReadOptions {
   readonly connectionRef: RefObject<Session | null>;
   readonly baseUrl: string | undefined;
   readonly reloadKey: number;
+  /** The token this read belongs to; a renewal reruns a failed read. */
+  readonly readToken: string | undefined;
   readonly setResult: Dispatch<SetStateAction<ChannelResult | null>>;
 }
 
@@ -133,6 +137,7 @@ function useChannelRead({
   connectionRef,
   baseUrl,
   reloadKey,
+  readToken,
   setResult,
 }: ChannelReadOptions): void {
   useEffect(() => {
@@ -141,23 +146,23 @@ function useChannelRead({
       return undefined;
     }
     let active = true;
+    const owner = activeConnection.baseUrl;
+    const token = (): string => connectionRef.current?.token ?? '';
     // The cache update outlives the screen: it is gated by the importer and
     // pairing, while screen updates and retries also need the mount.
-    const ownsConnection = (): boolean =>
-      connectionRef.current?.baseUrl === activeConnection.baseUrl;
-    const stillCurrent = (): boolean => active && ownsConnection();
+    const owns = (): boolean => connectionRef.current?.baseUrl === owner;
+    const live = (): boolean => active && owns();
     const done = (
       channel: OtpChannel | null,
       error: string | null,
       warning: string | null,
     ): void => {
       if (active) {
-        setResult({ baseUrl: activeConnection.baseUrl, reloadKey, channel, error, warning });
+        setResult({ baseUrl: owner, reloadKey, token: token(), channel, error, warning });
       }
     };
-    const read = (): Promise<ChannelRefreshResult> =>
-      readChannel(connectionRef, activeConnection.baseUrl, ownsConnection);
-    void readWithRetry(read, stillCurrent)
+    const read = (): Promise<ChannelRefreshResult> => readChannel(connectionRef, owner, owns);
+    void readWithRetry(read, live)
       .then((result) => {
         const applied = applyChannelResult(result);
         done(applied.channel, applied.error, applied.warning);
@@ -168,7 +173,27 @@ function useChannelRead({
     return () => {
       active = false;
     };
-  }, [connectionRef, baseUrl, reloadKey, setResult]);
+  }, [connectionRef, baseUrl, reloadKey, readToken, setResult]);
+}
+
+/**
+ * Names the token the current screen state belongs to.
+ *
+ * A failed read keeps the current token as its key, so only a renewal moves it
+ * and reruns the read. A successful or optimistic result keeps its own token,
+ * so the same renewal does not restart it.
+ * @param result - The last channel result, or null.
+ * @param connection - The active session, or null.
+ * @returns The token to read under.
+ */
+function readTokenFor(
+  result: ChannelResult | null,
+  connection: Session | null,
+): string | undefined {
+  if (result === null || (result.baseUrl === connection?.baseUrl && result.error !== null)) {
+    return connection?.token;
+  }
+  return result.token;
 }
 
 /**
@@ -192,12 +217,22 @@ export function useOtpChannel(connection: Session | null): ChannelLoad {
     connectionRef.current = connection;
   }, [connection]);
 
-  useChannelRead({ connectionRef, baseUrl: connection?.baseUrl, reloadKey, setResult });
+  // A renewed session keeps the base URL, so only a failed read is retried on
+  // the new token; a successful or optimistic state is left alone.
+  const readToken = readTokenFor(result, connection);
+  useChannelRead({
+    connectionRef,
+    baseUrl: connection?.baseUrl,
+    reloadKey,
+    readToken,
+    setResult,
+  });
 
   const setChannel = (next: OtpChannel | null): void => {
     setResult({
       baseUrl: connection?.baseUrl ?? '',
       reloadKey,
+      token: connection?.token ?? '',
       channel: next,
       error: null,
       warning: null,
